@@ -1,0 +1,324 @@
+/* ============================================================
+   闯·达梦笔记 —— 站点样式（多主题）
+   ------------------------------------------------------------
+   【想改配色？只改下面的主题变量块即可，不用碰任何组件样式】
+
+   现有主题：
+     ink  —— 水墨风（宣纸底 + 朱砂 + 衬线标题 + 小圆角）【默认】
+     sar  —— SAR 速查风（深色 + 青色 + 无衬线 + 大圆角）
+
+   新增一套主题只要两步：
+     ① 复制一份  html[data-theme="sar"]{...}  改名为你的主题
+     ② 在页面脚本的 THEMES 数组里加上这个 id（见 gen_blog.py 的 HEAD_SCRIPT）
+   ------------------------------------------------------------
+   变量速查：
+     --bg / --bg-2 / --bg-3   页面底色 / 卡片 / 更浅一层（标签）
+     --text / --text-2 / --text-3   正文 / 次要 / 弱化
+     --line / --line-2        分隔线 / 强调分隔线
+     --accent / --accent-2    强调色 / 强调色亮版
+     --accent-soft / --accent-line   强调色淡背景 / 淡边框
+     --code-bg / --code-fg    代码块底色 / 字色
+     --inline-bg / --inline-fg  行内代码底色 / 字色
+     --th-bg / --row-hover    表头底色 / 行悬停
+     --quote-bg               引用块底色
+     --radius / --radius-lg   小圆角 / 大圆角
+     --font-title / --font-body   标题字体 / 正文字体
+     --hero-grad              Hero 大标题的渐变
+     --paper-tex              页面底纹（纯色主题设为 none）
+   ============================================================ */
+
+/* ================= 默认：水墨 ink ================= */
+html{
+  --bg:#f8f5ee;
+  --bg-2:#f2ede2;
+  --bg-3:#eae3d5;
+  --text:#211d18;
+  --text-2:#4c453b;
+  --text-3:#8a8172;
+  --line:rgba(33,29,24,.10);
+  --line-2:rgba(33,29,24,.18);
+  --accent:#a8332a;
+  --accent-2:#c2604c;
+  --accent-soft:rgba(168,51,42,.055);
+  --accent-line:rgba(168,51,42,.30);
+  --code-bg:#221f1a;
+  --code-fg:#e8e2d6;
+  --inline-bg:#eae3d5;
+  --inline-fg:#8f2f24;
+  --th-bg:#f2ede2;
+  --row-hover:rgba(168,51,42,.035);
+  --quote-bg:#f2ede2;
+  --radius:2px;
+  --radius-lg:4px;
+  --font-title:"Songti SC","Source Han Serif CN","Noto Serif SC",SimSun,"STSong",serif;
+  --font-body:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Source Han Sans CN",sans-serif;
+  --hero-grad:linear-gradient(168deg,#211d18 0%,#3d352a 38%,#7d7362 72%,#a39a89 100%);
+  --paper-tex:
+    repeating-linear-gradient(0deg, rgba(120,108,88,.026) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgba(120,108,88,.016) 0 1px, transparent 1px 5px);
+  --btn-shadow:0 3px 14px rgba(168,51,42,.20);
+  --nav-bg:rgba(248,245,238,.86);
+}
+
+/* ================= SAR 速查风（深色数据风） ================= */
+html[data-theme="sar"]{
+  --bg:#0f1419;
+  --bg-2:#1a2230;
+  --bg-3:#222d3d;
+  --text:#e6edf3;
+  --text-2:#b9c5d3;
+  --text-3:#9aa7b8;
+  --line:#2e3b4e;
+  --line-2:#3a4a60;
+  --accent:#4cc9f0;
+  --accent-2:#7ee787;
+  --accent-soft:rgba(76,201,240,.10);
+  --accent-line:rgba(76,201,240,.38);
+  --code-bg:#0b0f14;
+  --code-fg:#a5d6ff;
+  --inline-bg:#222d3d;
+  --inline-fg:#7ee787;
+  --th-bg:#222d3d;
+  --row-hover:rgba(76,201,240,.06);
+  --quote-bg:#1a2230;
+  --radius:8px;
+  --radius-lg:12px;
+  --font-title:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-body:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --hero-grad:linear-gradient(160deg,#e6edf3 0%,#9fd8ea 55%,#4cc9f0 100%);
+  --paper-tex:none;
+  --btn-shadow:0 3px 14px rgba(76,201,240,.22);
+  --nav-bg:rgba(15,20,25,.88);
+}
+
+/* ================= 基础 ================= */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font-body);
+  color:var(--text);
+  background-color:var(--bg);
+  background-image:var(--paper-tex);
+  line-height:1.85;
+  -webkit-font-smoothing:antialiased;
+  transition:background-color .25s ease,color .25s ease;
+}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:900px;margin:0 auto;padding:0 28px}
+
+/* ================= 顶部导航 ================= */
+.nav{
+  position:sticky;top:0;z-index:50;
+  background:var(--nav-bg);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+}
+.nav-in{max-width:900px;margin:0 auto;padding:13px 28px;display:flex;align-items:center;gap:16px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;flex:1;min-width:0}
+.brand:hover{text-decoration:none}
+.brand-mark{
+  width:28px;height:28px;border-radius:calc(var(--radius) + 3px);background:var(--accent);color:var(--bg);
+  display:grid;place-items:center;font-family:var(--font-title);font-size:16px;flex:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.28);
+}
+.brand-txt{font-family:var(--font-title);font-size:17px;letter-spacing:.08em;white-space:nowrap}
+.nav-links{display:flex;gap:22px;list-style:none}
+.nav-links a{color:var(--text-2);font-size:14px;letter-spacing:.05em}
+.nav-links a:hover{color:var(--accent);text-decoration:none}
+
+/* 主题切换按钮 */
+.theme-btn{
+  display:inline-flex;align-items:center;gap:7px;flex:none;
+  font-family:var(--font-body);font-size:12.5px;letter-spacing:.08em;
+  color:var(--text-2);background:var(--bg-2);
+  border:1px solid var(--line);border-radius:calc(var(--radius) + 2px);
+  padding:5px 11px;cursor:pointer;
+  transition:color .2s,border-color .2s,background .2s;
+}
+.theme-btn:hover{color:var(--accent);border-color:var(--accent-line)}
+.theme-dot{
+  width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;
+  box-shadow:0 0 0 3px var(--accent-soft);
+}
+
+/* ================= 首页 Hero ================= */
+.hero{position:relative;padding:88px 0 76px;overflow:hidden;border-bottom:1px solid var(--line)}
+.hero-inner{position:relative;z-index:3;text-align:center}
+.eyebrow{font-size:12.5px;letter-spacing:.4em;color:var(--accent);margin-bottom:20px;padding-left:.4em}
+.hero h1{
+  font-family:var(--font-title);font-size:clamp(64px,13vw,124px);font-weight:400;
+  line-height:1.12;letter-spacing:0;margin-bottom:20px;
+  background:var(--hero-grad);
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;color:transparent;
+}
+/* 副标题 / slogan（改文字见 gen_blog.py 的 SITE_SLOGAN） */
+.hero .slogan{
+  font-family:var(--font-title);font-size:17px;
+  letter-spacing:.42em;text-indent:.42em;
+  color:var(--accent);margin:0 0 22px;
+}
+.hero .lead{max-width:600px;margin:0 auto;color:var(--text-2);font-size:16px;line-height:1.95}
+.hero .seal-row{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:28px}
+.seal{
+  width:50px;height:50px;border-radius:calc(var(--radius) + 2px);background:var(--accent);color:var(--bg);
+  display:grid;place-items:center;font-family:var(--font-title);font-size:24px;line-height:1;
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.38),var(--btn-shadow);
+  transform:rotate(-2.5deg);
+}
+.seal-note{font-family:var(--font-title);font-size:13px;color:var(--text-3);letter-spacing:.28em;writing-mode:vertical-rl;height:68px}
+
+/* ================= 统计条 ================= */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--bg);padding:24px 14px;text-align:center}
+.stat b{display:block;font-family:var(--font-title);font-size:27px;font-weight:400;line-height:1.2}
+.stat span{font-size:12px;color:var(--text-3);letter-spacing:.18em}
+
+/* ================= 分类与文章列表 ================= */
+.sec{padding:56px 0 20px}
+.sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:22px;padding-bottom:12px;border-bottom:2px solid var(--text)}
+.sec-head h2{font-family:var(--font-title);font-size:23px;font-weight:400;letter-spacing:.08em}
+.sec-head .cnt{font-size:12.5px;color:var(--text-3);font-family:ui-monospace,Consolas,monospace;margin-left:auto}
+.posts{list-style:none}
+.posts li{border-bottom:1px solid var(--line)}
+.posts a{
+  display:flex;align-items:baseline;gap:16px;padding:15px 6px;
+  color:var(--text);text-decoration:none;transition:padding .25s ease,background .25s ease;
+}
+.posts a:hover{padding-left:16px;background:linear-gradient(90deg,var(--accent-soft),transparent);text-decoration:none}
+.posts .idx{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--accent);min-width:26px}
+.posts .t{font-size:16px;letter-spacing:.01em;flex:1}
+.posts a:hover .t{color:var(--accent)}
+.posts .d{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text-3);white-space:nowrap}
+
+/* ================= 文章页 ================= */
+.article{padding:52px 0 30px}
+.art-head{margin-bottom:36px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+.art-head .meta{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--text-3);letter-spacing:.1em;margin-bottom:14px}
+.art-head h1{
+  font-family:var(--font-title);font-size:clamp(26px,4.2vw,38px);font-weight:400;
+  line-height:1.35;letter-spacing:.03em;color:var(--text);
+}
+.art-head .cat{
+  display:inline-block;margin-top:16px;font-size:12.5px;color:var(--accent);
+  border:1px solid var(--accent-line);padding:3px 11px;border-radius:var(--radius);letter-spacing:.1em;
+}
+
+/* ================= 正文 ================= */
+.content{font-size:16px;line-height:1.95;color:var(--text-2)}
+.content h1,.content h2,.content h3,.content h4{
+  font-family:var(--font-title);font-weight:400;color:var(--text);
+  letter-spacing:.04em;line-height:1.45;
+}
+.content h1{font-size:27px;margin:44px 0 18px}
+.content h2{font-size:23px;margin:40px 0 16px;padding-left:13px;border-left:3px solid var(--accent)}
+.content h3{font-size:19px;margin:32px 0 13px;padding-left:17px;position:relative}
+.content h3::before{
+  content:'';position:absolute;left:0;top:.55em;
+  width:7px;height:7px;background:var(--accent);border-radius:var(--radius);
+}
+.content h4{font-size:16.5px;margin:26px 0 11px;color:var(--text-2)}
+.content p{margin:15px 0}
+.content strong{color:var(--text);font-weight:600}
+.content ul,.content ol{margin:15px 0 15px 24px}
+.content li{margin:7px 0}
+.content li.sub{list-style:none;margin-left:-8px}
+.content blockquote{
+  margin:20px 0;padding:14px 20px;background:var(--quote-bg);
+  border-left:3px solid var(--accent);border-radius:var(--radius);color:var(--text-2);font-size:15.5px;
+}
+.content blockquote p{margin:9px 0}
+.content blockquote p:first-child{margin-top:0}
+.content blockquote p:last-child{margin-bottom:0}
+.content blockquote table{font-size:13.5px;background:var(--bg)}
+.content blockquote th{background:var(--bg-3)}
+.content blockquote .tbl-wrap{margin:12px 0}
+.content hr{border:none;border-top:1px solid var(--line-2);margin:34px 0}
+.content img{max-width:100%;height:auto;border-radius:var(--radius);border:1px solid var(--line);margin:10px 0;display:block}
+
+/* 行内代码 */
+.content code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px;
+  background:var(--inline-bg);color:var(--inline-fg);
+  padding:2px 6px;border-radius:calc(var(--radius) + 1px);word-break:break-word;
+}
+/* 代码块 */
+.content pre.code{
+  background:var(--code-bg);color:var(--code-fg);
+  padding:18px 20px;border-radius:var(--radius-lg);overflow-x:auto;
+  margin:20px 0;border-left:3px solid var(--accent);
+  line-height:1.7;
+}
+.content pre.code code{
+  background:none;color:inherit;padding:0;font-size:13.5px;white-space:pre;
+}
+/* mermaid 未渲染时的降级外观 */
+.content .mermaid{
+  background:var(--bg-2);border:1px dashed var(--line-2);
+  padding:16px 18px;border-radius:var(--radius-lg);margin:20px 0;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;
+  white-space:pre;overflow-x:auto;color:var(--text-2);
+}
+/* 表格 */
+.content .tbl-wrap{overflow-x:auto;margin:22px 0;border:1px solid var(--line);border-radius:var(--radius)}
+.content table{border-collapse:collapse;width:100%;font-size:14px}
+.content th{
+  background:var(--th-bg);color:var(--text);font-weight:600;
+  padding:10px 14px;border-bottom:2px solid var(--line-2);
+  text-align:left;white-space:nowrap;
+}
+.content td{padding:9px 14px;border-bottom:1px solid var(--line);color:var(--text-2);vertical-align:top}
+.content tr:last-child td{border-bottom:none}
+.content tbody tr:hover td{background:var(--row-hover)}
+
+/* 缺失图片占位 */
+.img-missing{
+  display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;
+  background:var(--accent-soft);color:var(--accent);
+  border:1px dashed var(--accent-line);border-radius:var(--radius);
+  padding:6px 12px;margin:6px 0;word-break:break-all;
+}
+
+/* 文章内嵌视频（"不想看文字"的读者可以直接看演示） */
+.content .video-block{
+  margin:0 0 32px;background:var(--bg-2);
+  border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:var(--radius-lg);overflow:hidden;
+}
+.content .video-head{
+  font-family:var(--font-body);font-size:14.5px;font-weight:600;
+  color:var(--text);padding:14px 18px 0;
+}
+.content .video-block video{
+  display:block;width:100%;height:auto;background:#000;
+  margin:14px 0 0;border:none;border-radius:0;
+}
+.content .video-block figcaption{
+  font-size:12.5px;color:var(--text-3);padding:11px 18px 14px;line-height:1.7;
+}
+
+/* 文章底部导航 */
+.art-foot{margin-top:52px;padding-top:24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.art-foot a{font-size:14px;color:var(--text-2)}
+.art-foot a:hover{color:var(--accent)}
+
+/* ================= 页脚 ================= */
+footer{border-top:1px solid var(--line);margin-top:40px;padding:32px 0}
+.foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+.foot p{font-size:12.5px;color:var(--text-3);letter-spacing:.06em}
+.foot .quote{font-family:var(--font-title);letter-spacing:.18em}
+
+/* 水墨主题才显示远山 */
+html[data-theme="sar"] .mountains{display:none}
+
+@media (max-width:720px){
+  .wrap,.nav-in{padding-left:18px;padding-right:18px}
+  .nav-links{display:none}
+  .hero{padding:60px 0 56px}
+  .content{font-size:15.5px}
+  .content table{font-size:13px}
+  .posts a{flex-wrap:wrap;gap:8px}
+  .posts .t{flex-basis:100%;order:3}
+  .foot{flex-direction:column;text-align:center}
+}
