@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMISP 数据库巡检 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'sar'];
+  var NAMES = { ink: '水墨', sar: 'SAR' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  try {
+    var s = localStorage.getItem(KEY);
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=sar 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m && THEMES.indexOf(m[1]) >= 0) { cur = m[1]; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2022-12-28 &nbsp;·&nbsp; 日常运维</div>
+    <h1>DMISP 数据库巡检</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+<h2>方式一：Shell脚本-推荐</h2>
+<blockquote><p>主要推荐的巡检方式，巡检报告完整度更高（包含操作系统层面的巡检），依赖的命令会更多。</p></blockquote>
+<h3>1、上传解压程序包</h3>
+<p>将 <a href="https://gitee.com/jiangchuang/jiangchuang/releases/download/V3.1.0612/DmInspection.zip" target="_blank" rel="noopener">DmInspection.zip</a> 巡检程序包上传到要巡检的服务器任意目录后，使用<code>unzip DmInspection.zip</code>命令解压巡检程序包</p>
+<pre class="code"><code class="lang-bash">unzip DmInspection.zip</code></pre>
+<h3>2、修改巡检程序配置文件</h3>
+<pre class="code"><code>cd DmInspection
+vi dm.conf
+
+# 一般只需要修改以下配置项（请按实际情况填写）
+
+XTMC=系统名称
+YHDW=系统所属用户单位
+
+DB_USER=数据库管理员用户名
+DB_PWD=数据库管理员密码
+DB_PORT=数据库实例端口号</code></pre>
+<h3>3、授权巡检程序</h3>
+<p>给巡检程序包授权递归授予755权限</p>
+<pre class="code"><code class="lang-bash">chmod 755 -R .</code></pre>
+<h3>4、启动巡检程序</h3>
+<pre class="code"><code>./DmInspectionService start</code></pre>
+<h3>5、下载巡检报告</h3>
+<p>​	下载<code>log</code>目录的所有<code>html</code>巡检结果报告文件，并将巡检结果发送给达梦公司工作人员查看确认。</p>
+<h2>方式二：SQL方式</h2>
+<blockquote><p>在某些无法使用shell脚本的环境下（如ZYJ）使用。或者某些生产环境隔离性较强，缺少部分程序包（如iostat、ethtools等）且不便于安装的情况下采用。</p></blockquote>
+<h3>1、上传解压程序包</h3>
+<p>将 <a href="https://gitee.com/jiangchuang/jiangchuang/releases/download/SQL_V3.1.0612/SqlDmInspection.zip" target="_blank" rel="noopener">SqlDmInspection.zip</a> 巡检程序包上传到要巡检的服务器任意目录后，使用<code>unzip SqlDmInspection.zip</code>命令解压巡检程序包</p>
+<pre class="code"><code class="lang-bash">unzip SqlDmInspection.zip</code></pre>
+<h3>2、创建SQL巡检程序</h3>
+<ul><li>使用<code>DM管理工具</code>以数据库管理员账号登陆要巡检的数据库服务器</li><li>在菜单中选择<code>查询(Q)</code>-&gt;<code>执行脚本(F)</code>依次选择<code>SqlDmInspection</code>文件夹中的<code>DmInspection.sql</code>和<code>PKG_DmInspection.sql</code>文件进行执行（请严格按照此顺序执行SQL文件）。</li></ul>
+<h3>3、调用巡检程序</h3>
+<p>在<code>SQL窗口</code>中执行过程<code>PKG_DMINSPECTION.PRO_DMINSPECTION;</code></p>
+<h3>4、收集巡检结果生成报告</h3>
+<ul><li>在<code>SQL窗口</code>中执行<code>select RST from "SYSDBA"."DMINSPECTION" order by id desc limit 1;</code></li><li>双击<code>RST</code>列中的<code>长文本</code>文字，然后点击<code>另存为(S)...</code>将内容保存为<code>html</code>后缀的报告文件</li></ul>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="recover-deleted-dbf.html">数据文件误删后的恢复方案 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

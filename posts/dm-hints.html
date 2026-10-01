@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦 Hint 笔记 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'sar'];
+  var NAMES = { ink: '水墨', sar: 'SAR' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  try {
+    var s = localStorage.getItem(KEY);
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=sar 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m && THEMES.indexOf(m[1]) >= 0) { cur = m[1]; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2023-03-06 &nbsp;·&nbsp; 性能与调优</div>
+    <h1>达梦 Hint 笔记</h1>
+    <span class="cat">性能与调优</span>
+  </div>
+  <div class="content">
+<h2>子查询</h2>
+<h3>ENABLE_DIST_IN_SUBQUERY_OPT</h3>
+<ul><li>官方解释：</li></ul>
+<blockquote><p>IN 子查询的优化方式：</p>
+<p>0：不优化；</p>
+<p>1：对 IN 子查询进行去掉子查询的优化；</p>
+<p>2：IN 子查询中的等值连接转换为多个IN；</p>
+<p>4：IN 子查询中移除与外表相同的内表</p>
+<p>8：IN 相关子查询中，将WHERE条件的OR合并成一个整体（CASE WHEN形式），期望后面能进行SEMI的规则优化</p>
+<p>支持使用上述有效值的组合值，如 5 表示同时进行 1 和 4 的优化</p></blockquote>
+<ul><li>应用实例:</li></ul>
+<pre class="code"><code class="lang-sql">  SELECT
+   *
+  FROM test_tb_test_query
+  WHERE table_name IN (SELECT table_name
+                       FROM test_tb_test_query
+                       WHERE table_name = 'ACCESSPOINT');
+  
+  1   #NSET2: [1, 4, 296] 
+  2     #PRJT2: [1, 4, 296]; exp_num(7), is_atom(FALSE) 
+  3       #HASH RIGHT SEMI JOIN2: [1, 4, 296]; n_keys(1) KEY(TEST_TB_TEST_QUERY.TABLE_NAME=TEST_TB_TEST_QUERY.TABLE_NAME) KEY_NULL_EQU(0)
+  4         #SSEK2: [1, 2, 48]; scan_type(ASC), IDX_TEST_TB_TEST_QUERY_TABLE_NAME(TEST_TB_TEST_QUERY), scan_range['ACCESSPOINT','ACCESSPOINT']
+  5         #CSCN2: [1, 844, 296]; INDEX33556849(TEST_TB_TEST_QUERY)
+  ------------------------------------------------------------------------------------------------------------------------------------------
+  ENABLE_DIST_IN_SUBQUERY_OPT = 4
+  
+  1   #NSET2: [1, 2, 296] 
+  2     #PRJT2: [1, 2, 296]; exp_num(7), is_atom(FALSE) 
+  3       #BLKUP2: [1, 2, 296]; IDX_TEST_TB_TEST_QUERY_TABLE_NAME(TEST_TB_TEST_QUERY)
+  4         #SSEK2: [1, 2, 296]; scan_type(ASC), IDX_TEST_TB_TEST_QUERY_TABLE_NAME(TEST_TB_TEST_QUERY), scan_range['ACCESSPOINT','ACCESSPOINT']</code></pre>
+<ul><li>简要说明：将<code>ENABLE_DIST_IN_SUBQUERY_OPT</code>设置为 4 将去除相同表的多次扫描</li></ul>
+<h3>ENABLE_RQ_TO_NONREF_SPL</h3>
+<ul><li>官方解释：</li></ul>
+<blockquote><p>相关查询表达式转化为非相关查询表达式，目的在于相关查询表达式的执行处理由之前的平坦化方式转化为一行一行处理，类似 ORACLE 的每行处理机制。</p>
+<p>0：不启用该优化；</p>
+<p>1：对查询项中出现的相关子查询表达式进行优化处理；</p>
+<p>2：对查询项和 WHERE 表达式中出 现的相关子查询表达式进行优化处理；</p>
+<p>4：相关查询采用 SPL 方式去相关性后，可以作为单表过滤条件</p>
+<p>支持使用上述有效值的组合值，如 3 表示同时进行 1 和 2 的优化</p></blockquote>
+<ul><li>常用解读：</li><li class="sub">1：标量子查询的结果集较大时，将外表平坦</li><li class="sub">2：where条件后也使用单行循环处理方式，而非多次扫描、多次关联</li><li class="sub">取相关子查询时的处理方式，取 0 时，以 hash 形式做，对于主查寻结果集较大时性能较号，取 1 时对查询项的子查询以 nest loop 形式， 对于小结果集效果非常好，取 7 时可以将 where 中的相关子查询转换为非相关，需要注意 出现 SSS3 时，要注意单表的过滤性和子查询的过滤性，尤其需要注意的是在大表 update 和 merge into 语句时，如果主表结果集很大，转换成 nest loop 时反而会出现性能下降的问题</li></ul>
+<ul><li>使用方式：当主查询结果集较大时，建议使用默认的0，即临时表HASH方式；当主查询结果集小时，开启1、2、4等优化</li></ul>
+<h2>条件分支</h2>
+<h3>OPTIMIZER_OR_NBEXP</h3>
+<ul><li>官方解释：</li></ul>
+<blockquote><p>OR 表达式的优化方式。</p>
+<p>0：不优化；</p>
+<p>1：生成 UNION_FOR_OR 操作符时，优化为无 KEY 比较方式；</p>
+<p>2：OR 表达式优先考虑整体处理方式；</p>
+<p>4：相关子查询的 OR 表达也优先考虑整体处理方式；</p>
+<p>8：OR 布尔表达式的范围合并优化；</p>
+<p>16：同一列上同时存在常量范围过滤和 IS NULL 过滤时的优化，如 C1 &gt; 5 OR C1 IS NULL。</p>
+<p>支持使用上述有效值的组合值，如 7 表示同时进行 1、2、4 的优化</p>
+<p>默认把Or拆分计算每个分支的结果集，然后UNION方式汇总。存在可以使用索引的过滤条件，则性能较好。如果是大数据量表，没有可利用的索引，则反复全表扫描，性能较差。</p></blockquote>
+<ul><li>常用解读：</li><li class="sub">0：是使用 UNION_FOR_OR 处理OR表达式，然后通过ROWID去掉重复数据。查看执行计划可见key_num(1) ，表示存在去重步骤。</li><li class="sub">1：扩展OR条件，加入LNNVL函数，使用UNION ALL方式实现。查看执行计划可见key_num(0) ，表示无需去重，而是增加使用LNNVL过滤以排除满足其他分支的数据行。</li><li class="sub">2：优先作为公共部分整体考虑，以减少表扫描次数。查看执行计划通常可见SLCT的单分支多条件硬过滤，或是使用堆表。</li></ul>
+<h2>关联相关</h2>
+<h3>OUTER_OPT_NLO_FLAG</h3>
+<ul><li>官方解释：</li></ul>
+<blockquote><p>是否进行外连接和内连接的相关优化。</p>
+<p>0：不优化；</p>
+<p>1：满足条件时，将外连接转换为嵌套外连接进行优化；</p>
+<p>2：满足条件时，将内连接转换为嵌套连接+VAR 方式进行优化；</p>
+<p>4：打开外连接操作符 HLO/HRO 只返回不满足条件 值的优化。 取值 1、2 仅在 OPTIMIZER_MODE = 0 时生效。</p>
+<p>支持使用上述有效值的组合值，如 5 表示同时进行 1 和 4 的优化</p></blockquote>
+<ul><li>常用解读：</li><li class="sub">当转换为内连接后，存在明显的小结果集驱动表时使用</li></ul>
+<h3>PHC_MODE_ENFORCE</h3>
+<ul><li>官方解释：</li></ul>
+<blockquote><p>控制连接的实现方式。</p>
+<p>0：优化器根据代价情况自由选择连接方式；</p>
+<p>1：考虑使用 NEST LOOP INNER JOIN；</p>
+<p>2：考虑使用索引连接；</p>
+<p>4：考虑使用哈希连接；</p>
+<p>8：考虑使用归并连接</p>
+<p>支持使用上述有效值的组合值，如 6 表示优化器根据代价情况在索引连接和哈希连接间进行选择。</p></blockquote>
+<ul><li>应用举例：</li></ul>
+<pre class="code"><code class="lang-sql">  SELECT
+   *
+  FROM test_tb_test_query o
+  WHERE table_name IN (SELECT table_name
+                       FROM test_tb_test_query i
+                       WHERE table_name = 'ACCESSPOINT');
+  
+  1   #NSET2: [1, 4, 296] 
+  2     #PRJT2: [1, 4, 296]; exp_num(7), is_atom(FALSE) 
+  3       #HASH RIGHT SEMI JOIN2: [1, 4, 296]; n_keys(1) KEY(i.TABLE_NAME=o.TABLE_NAME) KEY_NULL_EQU(0)
+  4         #SSEK2: [1, 2, 48]; scan_type(ASC), IDX_TEST_TB_TEST_QUERY_TABLE_NAME(TEST_TB_TEST_QUERY as i), scan_range['ACCESSPOINT','ACCESSPOINT']
+  5         #CSCN2: [1, 844, 296]; INDEX33556849(TEST_TB_TEST_QUERY as o)
+  ------------------------------------------------------------------------------------------------------------------------------------------
+  PHC_MODE_ENFORCE = 1
+  
+  1   #NSET2: [23, 4, 344] 
+  2     #PRJT2: [23, 4, 344]; exp_num(7), is_atom(FALSE) 
+  3       #SLCT2: [23, 4, 344]; DMTEMPVIEW_16785492.colname = o.TABLE_NAME
+  4         #NEST LOOP INNER JOIN2: [23, 4, 344]; 
+  5           #DISTINCT: [1, 2, 48]
+  6             #PRJT2: [1, 2, 48]; exp_num(1), is_atom(FALSE) 
+  7               #SSEK2: [1, 2, 48]; scan_type(ASC), IDX_TEST_TB_TEST_QUERY_TABLE_NAME(TEST_TB_TEST_QUERY as i), scan_range['ACCESSPOINT','ACCESSPOINT']
+  8           #CSCN2: [1, 844, 296]; INDEX33556849(TEST_TB_TEST_QUERY as o)
+  ------------------------------------------------------------------------------------------------------------------------------------------
+  PHC_MODE_ENFORCE = 2                     
+  
+  1   #NSET2: [1, 4, 344] 
+  2     #PRJT2: [1, 4, 344]; exp_num(7), is_atom(FALSE) 
+  3       #NEST LOOP INDEX JOIN2: [1, 4, 344] 
+  4         #DISTINCT: [1, 2, 48]
+  5           #PRJT2: [1, 2, 48]; exp_num(1), is_atom(FALSE) 
+  6             #SSEK2: [1, 2, 48]; scan_type(ASC), IDX_TEST_TB_TEST_QUERY_TABLE_NAME(TEST_TB_TEST_QUERY as i), scan_range['ACCESSPOINT','ACCESSPOINT']
+  7         #BLKUP2: [1, 2, 0]; IDX_TEST_TB_TEST_QUERY_TABLE_NAME(o)
+  8           #SSEK2: [1, 2, 0]; scan_type(ASC), IDX_TEST_TB_TEST_QUERY_TABLE_NAME(TEST_TB_TEST_QUERY as o), scan_range[DMTEMPVIEW_16785486.colname,DMTEMPVIEW_16785486.colname]</code></pre>
+<h2>视图相关</h2>
+<h3>VIEW_FILTER_MERGING</h3>
+<ul><li>官方解释：</li></ul>
+<blockquote><p>是否对视图条件进行优化以及如何优化。</p>
+<p>0：不优化；</p>
+<p>1：尽可能地进行视图条件合并；</p>
+<p>2：自动判断是否进行视图条件合并；</p>
+<p>4：视图包含分析函数时，如果分析函数的 PARTITION BY 具有唯一性，则外层过滤条件下推到视图内部；</p>
+<p>8：如果派生表存在集函数，则不进行条件下推优化；</p>
+<p>16：收集公用表达式相关的所有过滤条件，改写合并所有条件，并下放到公用表达式的内部；</p>
+<p>32：TOP信息下放至派生表内部；</p>
+<p>64：外层表达式扩展视图内部 IS NOT NULL 过滤条件；</p>
+<p>128：外层 ROWNUM 过滤条件转为内层 TOP 子句；</p>
+<p>256：满足条件时，对相关派生表过滤条件进行下推优化。</p>
+<p>支持使用上述有效值的组合值，如 138 表示同时进行 2、8、128 的优化</p></blockquote>
+<ul><li>常用解读：</li></ul>
+<ul><li class="sub">0：当内层视图结果集较小时，可能没有必要将过滤条件下放（尤其是外层过滤条件有复杂函数时，反而可以减少函数调用的次数）。</li><li class="sub">1：尽可能进行合并。终极优化，尚不清楚此激进参数是否有其他影响</li><li class="sub">2：自动判断是否合并。如果自动能解决问题，那么很显然都不需要考虑此参数的存在</li><li class="sub">8：如果存在集函数有可能会合并优化失败，可以考虑去掉8</li><li class="sub">16：增加合并所有过滤条件下推</li><li class="sub">32：尽量提前TOP过滤，满足条数限制后提前中断</li><li class="sub">64：如果IS NOT NULL有较好过滤性可考虑</li><li class="sub">256：尽可能将外层过滤条件下推至内部</li></ul>
+<h3>VIEW_PULLUP_FLAG</h3>
+<ul><li>官方解释：</li></ul>
+<blockquote><p>是否对视图进行上拉优化，把视图转换为其原始定义，消除视图。</p>
+<p>0：不进行视图上拉优化；</p>
+<p>1：对不包含别名和同名列的视图进行上拉优化；</p>
+<p>2：对包含别名和同名列的视图也进行上拉优化；</p>
+<p>4：强制允许带变量的查询语句进行视图上拉优化，有可能造成结果集错误；</p>
+<p>8：不对 LEFT JOIN 的右孩子\RIGHT JOIN 的左孩子\FULL JOIN 左右孩子进行上拉；</p>
+<p>16：不对 LEFT JOIN 的左孩子进行上拉；</p>
+<p>32：视图上拉后，从视图符号表删除不被引用的列</p>
+<p>支持使用上述有效值的组合值，如 3 表示同时进行 1 和 2 的优化</p></blockquote>
+<ul><li>常用解读：</li><li class="sub">3：正常来说，如果1和2没有逻辑错误，都可以都开启</li><li class="sub">4：强制解除视图嵌套，结果集正确性需要程序判断</li><li class="sub">32：针对视图排序过多列的性能问题，可以尝试</li></ul>
+<h3>FILTER_PUSH_DOWN</h3>
+<ul><li>官方解释：</li></ul>
+<blockquote><p>对单表条件是否下放的不同处理方式。</p>
+<p>0：表示条件不下放；</p>
+<p>1：表示在新优化器下，对单表过滤条件进行下放处理；</p>
+<p>2：表示在新优化器下对外连接、半连接进行下放条件优化处理；</p>
+<p>4：语义分析阶段考虑单表过滤条件的选择率，超过 0.5 则不下放，由后面进行代价计算选择是否下放，参数值 4 仅在参数取值包含 2 时有效，即将参数值设为 6 时有效；</p>
+<p>8：表示尝试将包含非相关子查询的布尔表达式进行下放。</p>
+<p>16：where 条件尽可能下放，即便 where 之后还有rownum,order 等操作。</p>
+<p>支持使用上述有效值的组合值，如 6 表示同时进行 2 和 4 的优化</p></blockquote>
+<ul><li>常用解读：</li><li class="sub">根据情况选择下放级别，原则上只开启能有效优化的级别，其他保持默认，减少未知影响</li></ul>
+<h2>层次查询</h2>
+<h3>CNNTB_OPT_FLAG</h3>
+<p>CNNTB_OPT_FLAG = 1/2 #大多数层次查询使用该参数后性能提升会非常大， 部分场景使用 hint，取 0 时是以 nest loop 形式做，取 1 时以 hash 形式做，需要注意层次 查询结果集的估算，可以利用参数 BEXP_CACL_ST_FLAG 修正估算</p>
+<p>当 CNNTB_OPT_FLAG=1 时，以 hash 方式来实现，取 0/2 时，以 nest loop 实现</p>
+<p>是否使用优化的层次查询执行机制。 0：不使用； 1：强制使用； 2：优化器自动决定是否使用； 4：层次查询不支持并行； 8：检查层次查询的表达式是否包含 ROWNUM，若包含则报错； 16：层次查询的条件包含 OR 时仍尝试使用优化，且将 OR 连接的条件表达式当做整体处理； 32：根据 PRIOR 关联列的 DISTINCT 值与统计信息中总行数的比例自适应选择执行机制； 64：对于简单条件（如：DUAL.LEVEL&lt;=10）准确估算层次查询行数； 128：对层次查询的执行计划节点分析时，如果右孩子包含参数无法生成临时表，依然向下分析右孩子的子节点 能否生成临时表以提升性能。 支持使用上述有效值的组合值，如 31 表示同时进行 1、2、4、8、16 的优化</p>
+<h2>临时表</h2>
+<h3>OR_CVT_HTAB_FLAG</h3>
+<h2>索引下推过滤</h2>
+<h3>ENABLE_INDEX_FILTER</h3>
+<p>例如这样一个查询条件 a like %?% or b like %?% or c like %?% or d like %?%，假设在实际执行时每个 OR 条件的过滤性都非常好，那么可以考虑给 a,b,c,d 建 一 个 组 合 索 引 ， 并 hint 访 问 该 表 时 强 制 走 索 引 ， 配 合 参 数 ENABLE_INDEX_FILTER=1,这样可以在访问完基表后利用索引有效的减少后 续操作中的回表或者关联的计算量，极大的提升性能。</p>
+<p>-- 翻转函数索引自动优化应用到前like匹配</p>
+<p>create index idx_titles_title on TITLES(REVERSE(title));</p>
+<p>sp_set_para_value(1,'STR_LIKE_IGNORE_MATCH_END_SPACE',0);</p>
+<p>select * from TITLES where title like '%Engineer';</p>
+<p>1   #NSET2: [17, 16624, 90]<br>2     #PRJT2: [17, 16624, 90]; exp_num(5), is_atom(FALSE)<br>3       #BLKUP2: [17, 16624, 90]; IDX_TITLES_TITLE(TITLES)<br>4         #SSEK2: [17, 16624, 90]; scan_type(ASC), IDX_TITLES_TITLE(TITLES), scan_range['reenignE','reenignF')</p>
+<h3>LIKE和instr</h3>
+<p>instr()函数在处理&gt;0 的情形，是可以进行批量扫描的，在很多时候会比 like %str%要快，但是如果开启优化参数将 like 优化为 position()函数来处理的话， 效率相差不多。 在处理=0 的情况，like 可以有效的利用索引来扫描，通常情况下 like 的性能 会较好，因此在优化改写这一块的内容的时候需要注意比较各种实现方式的执行 效率。</p>
+<p>STAT 100 SIZE 10000 ON TABLE(COLUMN); --直方图桶数 size 的默认值是 254</p>
+<h2>统计信息</h2>
+<h3>HP_STAT_SAMPLE_COUNT</h3>
+<h3>ENABLE_CHOOSE_BY_ESTIMATE_FLAG</h3>
+<p>WHERE EXISTS ( SELECT 1 FROM T2 WHERE T1.ID = T2.ID AND T2.C2 LIKE ? ||'%' and rownum = 1 )</p>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dm-parallel.html">达梦并行查询 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

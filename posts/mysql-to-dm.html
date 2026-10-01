@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>从 MySQL 到达梦：对比学习 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'sar'];
+  var NAMES = { ink: '水墨', sar: 'SAR' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  try {
+    var s = localStorage.getItem(KEY);
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=sar 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m && THEMES.indexOf(m[1]) >= 0) { cur = m[1]; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2023-08-22 &nbsp;·&nbsp; 达梦杂谈</div>
+    <h1>从 MySQL 到达梦：对比学习</h1>
+    <span class="cat">达梦杂谈</span>
+  </div>
+  <div class="content">
+<blockquote><p>面对刚接触的新领域，我们大多数人都会手足无措，一时之间不知道该从何下手，通常在这种时候，我们总会喜欢通过类比自己已经熟悉的概念来努力尝试走进这个新的领域。</p></blockquote>
+<p>有些刚从<code>MySQL</code>转过来的朋友，因为不太熟悉 [DM][达梦数据库官方文档] 的使用方式，经常会提出诸如「<code>MySQL</code>的 xx 功能在 [DM][达梦数据库官方文档] 怎么实现？」、「<code>MySQL</code>的 xx 对象应该对应 [DM][达梦数据库官方文档] 里面的什么对象？」之类的问题。在此，我通过例举<code>MySQL</code>和 [DM][达梦数据库官方文档] 的一些对应[^1]关系，希望能在一些地方帮助到大家。</p>
+<h2>元数据</h2>
+<blockquote><p>元数据：描述数据的数据，对数据及信息资源的描述性信息。<code>数据库元数据</code>可以用来了解数据库内部的数据结构，常见的数据库元数据有<code>模式（库）、表、列、视图、触发器、存储过程</code>等数据库对象。</p></blockquote>
+<div class="tbl-wrap"><table><thead><tr><th>相关命令</th><th>MySQL</th><th>达梦</th></tr></thead><tbody><tr><td>show databases/schemas</td><td>information_schema.schemata</td><td>all_users</td></tr><tr><td>show tables</td><td>information_schema.tables</td><td>user_tables</td></tr><tr><td>desc table_name</td><td>information_schema.columns</td><td>user_tab_columns</td></tr><tr><td>show full columns from table_name</td><td>information_schema.columns</td><td>user_tab_comments</td></tr><tr><td>show processlist</td><td>information_schema.processlist</td><td>v$sessions</td></tr><tr><td>show create</td><td>show create table sysdba.t1</td><td>select dbms_metadata.get_ddl('table','t1','sysdba')</td></tr></tbody></table></div>
+<h2>常用函数</h2>
+<blockquote><p>函数大部分情况会使用在查询语句中。函数名在各个数据库厂商之间具有较大差异的部分，下面例举部分比较常用的函数作为参考。</p></blockquote>
+<div class="tbl-wrap"><table><thead><tr><th>函数名</th><th>MySQL</th><th>达梦</th></tr></thead><tbody><tr><td>group_concat</td><td>select group_concat(c) as l from (select 1 as c union all select 2) t</td><td>SELECT listagg(c, ',') within GROUP(ORDER BY c) AS l from (select 1 as c union all select 2) t；<br>SELECT listagg(c, ',') AS l from (select 1 as c union all select 2) t； -- 达梦新版本无缝替换</td></tr><tr><td>find_in_set</td><td>SELECT find_in_set('c', 'a,b,c,d') AS l</td><td>with #t as<br> (select regexp_substr('a,b,c,d', '\[^,]+', 1, level) as e, level as l<br>  from dual<br>  connect by level &lt;= regexp_count('a,b,c,d', ',') + 1)<br>select l<br>from #t<br>where e = 'c';<br>SELECT find_in_set('c', 'a,b,c,d') AS l; -- 新版本已支持</td></tr><tr><td>if</td><td>select if(1=2,'Y','N') as r</td><td>select decode(1,2,'Y','N') as r;<br>select if(1=2,'Y','N') as r; -- 新版本已支持</td></tr><tr><td>if(非等值)</td><td>select if(1&gt;2,'√','x')</td><td>select case when 1&gt;2 then '√' else 'x' end;<br>select if(1&gt;2,'√','x');-- 新版本已支持</td></tr><tr><td>last_insert_id</td><td>select last_insert_id()</td><td>select @@identity;</td></tr><tr><td>md5</td><td>select md5('123')</td><td>select to_char(md5('123'));</td></tr><tr><td>date_add/date_sub</td><td>select date_add(now(),interval 1 day) as da, date_sub(now(),interval 1 minute) as ds;</td><td>select now()+1 as da, now()-1.0/24/60 as ds;</td></tr></tbody></table></div>
+<h2>DML语法</h2>
+<blockquote><p><code>MySQL</code>的<code>DML</code>有较多方便开发实现业务功能的语法（但使用不当通常会引发逻辑错误和性能问题），在 [DM][达梦数据库官方文档] )中也基本都能找到类似的实现，但通常不推荐使用。</p></blockquote>
+<div class="tbl-wrap"><table><thead><tr><th>功能简述</th><th>MySQL</th><th>达梦</th></tr></thead><tbody><tr><td>replace into</td><td>replace into test (code,number,age) values (2,100,15);</td><td>MERGE INTO table1<br>USING (SELECT 2 code, 100 "number", 15 age<br>       FROM dual) t<br>ON (table1.code = t.code)<br>WHEN MATCHED THEN<br>  UPDATE<br>  SET table1."number" = t."number", table1.age = t.age<br>WHEN NOT MATCHED THEN<br>  INSERT<br>    (code, "number", age)<br>  VALUES<br>    (t.code, t."number", t.age)</td></tr><tr><td>insert ignore into</td><td>insert ignore into tb_test(id,name) values (1,'dm')</td><td>insert /<em>+ IGNORE_ROW_ON_DUPKEY_INDEX(tb_test(id)) </em>/ into tb_test(id,name)values(1,'dm')</td></tr><tr><td>on duplicate key update</td><td>INSERT INTO mrowupdate(id,cnt) VALUES (3, 'SuperMan') on duplicate key update cnt='SuperMan';</td><td>MERGE INTO mrowupdate AS t1<br>USING (SELECT 3 id, 'SuperMan' cnt<br>       FROM dual) AS t2<br>ON t1.id = t2.id<br>WHEN MATCHED THEN<br>  UPDATE<br>  SET t1.cnt = t2.cnt<br>WHEN NOT MATCHED THEN<br>  INSERT<br>  VALUES (3, 'SuperMan');</td></tr></tbody></table></div>
+<h2>对象关系</h2>
+<blockquote><p>[DM][达梦数据库官方文档] 中的数据库对象大多与<code>Oracle</code>类似，与<code>MySQL</code>却有不少概念上的不同，但实现的功能基本上都大同小异。</p></blockquote>
+<div class="tbl-wrap"><table><thead><tr><th>涉及命令</th><th>MySQL</th><th>达梦</th></tr></thead><tbody><tr><td>数据库 &lt;——&gt; 模式</td><td>show databases</td><td>SELECT sch.name FROM sysobjects sch WHERE sch."TYPE$" = 'SCH'</td></tr><tr><td>事件 &lt;——&gt; 代理</td><td>show events</td><td>SELECT * FROM sysjob.sysjobs</td></tr><tr><td>查询日志 &lt;——&gt; sqllog</td><td>show variables like 'general_log%';</td><td>SELECT * FROM v$DM_INI WHERE para_name LIKE 'SVR_LOG%'</td></tr><tr><td>慢查询日志 &lt;——&gt; 最近1000条慢SQL</td><td>mysql.slow_log</td><td>SELECT * FROM SYS."V$LONG_EXEC_SQLS"</td></tr><tr><td>超级管理员 &lt;——&gt; 系统管理员</td><td>root</td><td>SYSDBA</td></tr></tbody></table></div>
+<h2>常用工具</h2>
+<blockquote><p>该部分主要例举官方安装程序<code>bin</code>目录下的命令行工具，主要用于数据库的初始化、启动、连接、导出、导入、查询等功能。</p></blockquote>
+<div class="tbl-wrap"><table><thead><tr><th>功能简述</th><th>MySQL</th><th>达梦</th></tr></thead><tbody><tr><td>mysql</td><td>mysql -uroot -pxxx</td><td>disql SYSDBA/SYSDBA</td></tr><tr><td>mysqld</td><td>mysqld --defaults-file=xxx</td><td>dmserver path=/xxx/dm.ini</td></tr><tr><td>mysql_install_db(已弃用)</td><td>mysqld --initialize --datadir=xxx --basedir=xxx</td><td>dminit path=xxx</td></tr><tr><td>mysqldump</td><td>mysqldump -uroot -pxxx db_name</td><td>dexp SYSDBA/SYSDBA schemas=xxx</td></tr><tr><td>mysqlimport</td><td>mysqlimport -uroot -pxxx yyy.sql</td><td>dimp SYSDBA/SYSDBA file=yyy.dmp</td></tr><tr><td>查询工具</td><td>MySQL Workbench(第三方：Navicat/Datagrip/SQLyog)</td><td>DM管理工具</td></tr></tbody></table></div>
+<h2>配置文件</h2>
+<blockquote><p>该部分包括默认的配置文件名称、常用参数信息、常用环境变量等信息。</p></blockquote>
+<div class="tbl-wrap"><table><thead><tr><th>配置名称</th><th>MySQL</th><th>达梦</th></tr></thead><tbody><tr><td>主配置文件</td><td>my.ini</td><td>dm.ini</td></tr><tr><td>实例端口</td><td>my.ini —&gt; port</td><td>dm.ini –&gt; port_num</td></tr><tr><td>数据目录/实例目录</td><td>my.ini —&gt; datadir</td><td>dm.ini –&gt; system_path</td></tr><tr><td>软件目录/DM_HOME</td><td>my.ini —&gt; basedir</td><td>$DM_HOME(如未配置该环境变量，则为数据库软件安装目录 —&gt; dmdbms/)</td></tr><tr><td>实例日志/错误日志</td><td>my.ini —&gt; log-error</td><td>$DM_HOME/log/dm\_实例名\_年份月份.log</td></tr><tr><td>数据缓存</td><td>my.ini —&gt; innodb_buffer_pool_size</td><td>dm.ini –&gt; BUFFER</td></tr><tr><td>缓冲实例数</td><td>my.ini —&gt; innodb_buffer_pool_instances</td><td>dm.ini –&gt; BUFFER_POOLS</td></tr><tr><td>在线日志</td><td>my.ini —&gt; innodb_log_file_size</td><td>alter database resize logfile 'DMSERVER01.log' size 1024;</td></tr><tr><td>最大连接数/最大会话数</td><td>my.ini —&gt; max_connections</td><td>dm.ini –&gt; MAX_SESSIONS</td></tr></tbody></table></div>
+<p>[^1]:不同的数据库通常有不同的实现方式，有些概念关系不一定有完全合适的对应。<br>[达梦数据库官方文档]:https://eco.dameng.com/document/dm/zh-cn/start/index.html '点击前往达梦数据库在线官方文档'</p>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="case-sensitive.html">再谈大小写敏感设置 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

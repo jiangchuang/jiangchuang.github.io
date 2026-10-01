@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦数据库物理备份还原速查手册 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'sar'];
+  var NAMES = { ink: '水墨', sar: 'SAR' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  try {
+    var s = localStorage.getItem(KEY);
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=sar 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m && THEMES.indexOf(m[1]) >= 0) { cur = m[1]; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2025-10-10 &nbsp;·&nbsp; 日常运维</div>
+    <h1>达梦数据库物理备份还原速查手册</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+<hr>
+<p><strong>核心提示：</strong> 以下所有命令行操作，请务务必先切换到 <code>dmdba</code> 用户以获取正确的环境变量：</p>
+<pre class="code"><code class="lang-bash">su - dmdba</code></pre>
+<hr>
+<h3>第零步：前置检查与准备 (Prerequisite)</h3>
+<p><strong>备份与恢复的基石是归档模式。</strong> 在执行任何备份前，必须确保数据库已开启归档。</p>
+<h4>1. 确认归档状态</h4>
+<p><strong>方法一：数据库运行时（在线查询）</strong><br>在 Disql 或任何 SQL 工具中执行：</p>
+<pre class="code"><code class="lang-sql">SELECT NAME, ARCHIVELOG_MODE FROM V$DATABASE;
+-- 如果 ARCHIVELOG_MODE 列显示 "Y"，则表示归档已开启。</code></pre>
+<p><strong>方法二：数据库停止时（离线检查）</strong><br>查看实例的 <code>dm.ini</code> 配置文件:</p>
+<pre class="code"><code class="lang-bash"># 示例路径：/dmdata/DAMENG/dm.ini
+grep ARCH_INI /dmdata/DAMENG/dm.ini
+-- 如果结果为 ARCH_INI = 1，则表示归档已开启。</code></pre>
+<h4>2. （若未开启）一次性开启归档</h4>
+<p><strong>注意：</strong> 开启归档需在 <code>MOUNT</code> 状态下操作, 此过程会短暂中断服务。</p>
+<pre class="code"><code class="lang-sql">-- 在 Disql 或管理工具中，按顺序执行以下SQL：
+ALTER DATABASE MOUNT;
+ALTER DATABASE ARCHIVELOG;
+ALTER DATABASE ADD ARCHIVELOG 'DEST=/dmarch, TYPE=LOCAL, FILE_SIZE=2048, SPACE_LIMIT=204800';
+ALTER DATABASE OPEN;</code></pre>
+<hr>
+<h3>一、 核心步骤命令速览</h3>
+<ol><li><strong>全量热备（在线备份）</strong></li></ol>
+<ul><li class="sub"><strong>前提：</strong> 数据库运行中, 且已开启归档。</li><li class="sub"><strong>工具：</strong> <code>Disql</code> 或达梦管理工具。</li></ul>
+<pre class="code"><code class="lang-sql">   -- 语法：BACKUP DATABASE FULL BACKUPSET '备份集绝对路径';
+   BACKUP DATABASE FULL BACKUPSET '/dmbackup/DB_DAMENG_FULL_20250923_220000';</code></pre>
+<blockquote><p><strong>小贴士：</strong> 在规范的生产环境中，此操作通常由<strong>达梦代理作业</strong>定时自动运行，无需手动执行。</p></blockquote>
+<ol><li><strong>停库还原与恢复（离线恢复）</strong></li></ol>
+<ul><li class="sub"><strong>前提：</strong> 这是一个使用 <code>dmrman</code> 工具的离线操作。</li><li class="sub">对于<strong>【原地覆盖】</strong>恢复 (<code>RESTORE DATABASE '/path/to/dm.ini'</code>)：目标实例<strong>【必须】</strong>处于<strong>关闭</strong>状态，以释放对数据文件的锁定。</li><li class="sub">对于<strong>【还原到新目录】</strong> (<code>RESTORE DATABASE TO ...</code>)：由于操作不影响原始实例，原库可以保持运行。但为避免操作混淆和资源争用，<strong>【推荐】</strong>在执行恢复前也停止原始实例。</li><li class="sub"><strong>工具：</strong> <code>dmrman</code> 命令行工具。</li></ul>
+<pre class="code"><code class="lang-bash">   # 步骤1: 使用备份集还原数据文件
+   
+   #   方法A (【生产环境强烈推荐】): 还原到新的、隔离的目录
+   dmrman CTLSTMT="RESTORE DATABASE TO '/dmdata/DAMENG_NEW' FROM BACKUPSET '/dmbackup/DB_DAMENG_FULL_20250923_220000'"
+   
+   #   方法B (【极高风险操作】): 原地覆盖还原
+   #   警告：此命令将直接覆盖并销毁 '/dmdata/DAMENG' 目录下的现有数据文件，操作不可逆！
+   #   适用场景与重大风险提示：
+   #   1. 这是“整库恢复”操作, 会将数据库中【所有对象】的状态完全恢复到过去的某个时间点。
+   #   2. 对于仅误删【部分表】数据的场景, 请【极其谨慎】使用此方法！因为它会同时将其他未受影响的、业务数据已正常更新的表也强制恢复到备份时的旧状态, 从而导致【更大范围的有效数据丢失】。
+   # dmrman CTLSTMT="RESTORE DATABASE '/dmdata/DAMENG/dm.ini' FROM BACKUPSET '/dmbackup/DB_DAMENG_FULL_20250923_220000'"
+   
+   # 步骤2: 应用归档日志进行恢复（根据目标选择一种）
+   
+   #   场景A: 恢复到指定时间点 (Point-in-Time Recovery)
+   dmrman CTLSTMT="RECOVER DATABASE '/dmdata/DAMENG_NEW/dm.ini' WITH ARCHIVEDIR '/dmarch' UNTIL TIME '2025-09-24 10:30:00'"
+   
+   #   场景B: 恢复到最新状态 (应用所有归档)
+   dmrman CTLSTMT="RECOVER DATABASE '/dmdata/DAMENG_NEW/dm.ini' WITH ARCHIVEDIR '/dmarch'"</code></pre>
+<ol><li><strong>完成恢复, 更新数据库魔数</strong></li></ol>
+<ul><li class="sub"><strong>目的：</strong> 使数据库能够被正常启动, 这是恢复流程的<strong>最后一步</strong>。</li></ul>
+<pre class="code"><code class="lang-bash">   dmrman CTLSTMT="RECOVER DATABASE '/dmdata/DAMENG_NEW/dm.ini' UPDATE DB_MAGIC"</code></pre>
+<hr>
+<h3>二、 常见场景实战</h3>
+<h4><strong>场景 1：误删部分表数据, 进行逻辑恢复</strong></h4>
+<p><strong>场景描述：</strong> 开发人员误操作 <code>TRUNCATE</code> 了 <code>ORDER_MAIN</code> 表, 但其他表（如 <code>CUSTOMER_INFO</code>）的数据在误操作后仍在正常更新。目标是只恢复 <code>ORDER_MAIN</code> 表, 同时保全其他表的新数据。</p>
+<p><strong>前提：</strong></p>
+<ul><li>有2025年9月23日22点的全量备份 <code>/dmbackup/DB_DAMENG_FULL_20250923_220000</code>。</li><li>归档日志完整, 可以恢复到误操作之前的任一时间点, 例如 <code>2025-09-24 10:30:00</code>。</li></ul>
+<ol><li><strong>协调业务, 暂停对【受影响表】的写入</strong></li></ol>
+<ul><li class="sub">与应用团队沟通, 暂停所有对 <code>ORDER_MAIN</code> 表的DML操作。<strong>注意：生产数据库保持在线运行！</strong></li></ul>
+<ol><li><strong>建立一个临时的“时间机器”实例</strong></li></ol>
+<ul><li class="sub"><strong>说明</strong>：我们将在同一台服务器上, 将备份恢复到一个<strong>新的、隔离的</strong>目录, 创建一个包含旧数据的临时数据库。</li></ul>
+<ol><li><strong>还原数据库到新目录</strong></li></ol>
+<pre class="code"><code class="lang-bash">      dmrman CTLSTMT="RESTORE DATABASE TO '/dmdata/DAMENG_RESTORE' FROM BACKUPSET '/dmbackup/DB_DAMENG_FULL_20250923_220000'"</code></pre>
+<ol><li><strong>恢复到指定时间点</strong></li></ol>
+<pre class="code"><code class="lang-bash">      dmrman CTLSTMT="RECOVER DATABASE '/dmdata/DAMENG_RESTORE/dm.ini' WITH ARCHIVEDIR '/dmarch' UNTIL TIME '2025-09-24 10:30:00'"</code></pre>
+<ol><li><strong>更新魔数</strong></li></ol>
+<pre class="code"><code class="lang-bash">      dmrman CTLSTMT="RECOVER DATABASE '/dmdata/DAMENG_RESTORE/dm.ini' UPDATE DB_MAGIC"</code></pre>
+<blockquote><p><strong>小贴士：</strong> 手册中的 <code>/dmarch</code> 是示例路径。可用以下命令查找您的<strong>实际归档目录</strong>，并在<code>RECOVER</code>命令中替换它：<br><code>grep ARCH_DEST $(find / -name dmarch.ini 2&gt;/dev/null)</code></p></blockquote>
+<ol><li><strong>配置并临时启动“时间机器”实例</strong></li></ol>
+<ul><li class="sub"><strong>说明</strong>：为避免与正在运行的生产库（端口5236）冲突, 我们必须先修改临时实例的配置文件, 将其端口号改为一个未被占用的端口（如5237）, 然后再以前台方式启动。</li></ul>
+<ol><li><strong>修改临时实例端口号</strong></li></ol>
+<pre class="code"><code class="lang-bash">      # 此命令能兼容各种空白字符和原始端口号，非常健壮。
+      sed -i '/^[[:space:]]*PORT_NUM/c\PORT_NUM = 5237' /dmdata/DAMENG_RESTORE/dm.ini</code></pre>
+<ol><li><strong>前台启动临时实例</strong></li></ol>
+<pre class="code"><code class="lang-bash">      dmserver /dmdata/DAMENG_RESTORE/dm.ini</code></pre>
+<ul><li class="sub">此命令会占用当前终端, 请<strong>打开一个新的SSH窗口</strong>进行后续操作。</li></ul>
+<ol><li><strong>进行“跨库”数据迁移</strong></li></ol>
+<p><strong>步骤 4.1：【安全第一】准备生产库：重命名目标表</strong></p>
+<ul><li class="sub">在执行任何数据导入前，先将生产库中被误操作的表重命名。这相当于创建了一个即时、零成本的“快照”，如果后续导入出现任何问题，只需将表名改回即可实现秒级回退。</li></ul>
+<pre class="code"><code class="lang-bash">   # 注意：为处理密码中的特殊字符，密码部分使用 '"..."' 格式包裹。
+   disql SYSDBA/'"Your_P@ssw0rd!"'@localhost:5236 &lt;&lt;EOF
+   ALTER TABLE SCHEMA_NAME.ORDER_MAIN RENAME TO ORDER_MAIN_BAK_$(date +%Y%m%d_%H%M);
+   exit;
+   EOF</code></pre>
+<p><strong>步骤 4.2：迁移数据（选择以下一种方法执行）</strong></p>
+<ul><li class="sub"><strong>方法一：使用命令行工具（<code>dexp</code>/<code>dimp</code>）</strong></li></ul>
+<ol><li>从临时库(5237)导出 <code>ORDER_MAIN</code> 表的健康数据。</li></ol>
+<pre class="code"><code class="lang-bash">        dexp USERID=SYSDBA/'"Your_P@ssw0rd!"'@localhost:5237 FILE=/dmbackup/ORDER_MAIN.dmp TABLES=SCHEMA_NAME.ORDER_MAIN</code></pre>
+<ol><li>将健康数据导入到生产库(5236)。因为原表已重命名，<code>dimp</code> 会自动创建新表。</li></ol>
+<pre class="code"><code class="lang-bash">        dimp USERID=SYSDBA/'"Your_P@ssw0rd!"'@localhost:5236 FILE=/dmbackup/ORDER_MAIN.dmp</code></pre>
+<ul><li class="sub"><strong>方法二：使用可视化工具（<code>DTS</code>）</strong></li></ul>
+<blockquote><p>如果您偏好图形化界面，也可以使用达梦的DTS（数据迁移）工具来完成此步骤。</p>
+<ol><li>在DTS中，配置一个数据同步任务。</li><li><strong>源端：</strong> 连接到临时恢复的数据库（<code>服务器IP:5237</code>）。</li><li><strong>目标端：</strong> 连接到生产数据库（<code>服务器IP:5236</code>）。</li><li>选择需要恢复的表（如 <code>ORDER_MAIN</code>）进行单向同步。DTS会自动在目标端创建新表。</li></ol>
+<p><strong>注意：</strong> 运行DTS工具的客户端计算机必须能够同时访问服务器的5236和5237两个端口。</p></blockquote>
+<ol><li><strong>验证、清理并恢复业务</strong></li></ol>
+<ol><li><strong>验证数据</strong>：在生产数据库中查询 <code>ORDER_MAIN</code> 表, 确认数据已成功恢复。</li></ol>
+<ol><li><strong>清理环境</strong>：</li></ol>
+<ol><li>返回第3步中前台启动的终端, 按 <code>Ctrl+C</code> 关闭临时实例。</li></ol>
+<ol><li>删除不再需要的临时文件、目录和备份表。</li></ol>
+<pre class="code"><code class="lang-bash">         rm -rf /dmdata/DAMENG_RESTORE
+         rm /dmbackup/ORDER_MAIN.dmp
+         # 确认无误后，在 disql 中删除备份表
+         # DROP TABLE SCHEMA_NAME.ORDER_MAIN_BAK_...;</code></pre>
+<ol><li><strong>恢复业务</strong>：通知应用团队, 可以恢复对 <code>ORDER_MAIN</code> 表的正常读写操作。</li></ol>
+<h4><strong>场景 2：异机恢复（原服务器灾难性损坏）</strong></h4>
+<p>此场景本身就是在新机器上操作, 因此天然就是安全的“还原到新目录”模式。</p>
+<ol><li><strong>新机器准备</strong></li></ol>
+<ol><li>安装同版本的达梦数据库软件, <strong>无需初始化实例</strong>。</li></ol>
+<ol><li>创建 <code>dmdba</code> 用户。</li></ol>
+<ol><li><strong>创建目录</strong></li></ol>
+<pre class="code"><code class="lang-bash">      # -p 参数确保父目录存在，且如果目录已存在也不会报错，非常安全。
+      mkdir -p /dmbackup /dmarch /dmdata</code></pre>
+<ol><li><strong>授权目录</strong></li></ol>
+<pre class="code"><code class="lang-bash">      chown -R dmdba:dinstall /dmbackup /dmarch /dmdata</code></pre>
+<ol><li><strong>拷贝备份与归档</strong></li></ol>
+<ul><li class="sub">将原服务器的备份集和所有归档日志, 通过网络或介质拷贝到新服务器的对应目录下。</li></ul>
+<pre class="code"><code class="lang-bash">   # 示例：从 old_host 拷贝文件
+   scp -r dmdba@old_host:/dmbackup/DB_DAMENG_FULL_20250923_220000 /dmbackup/
+   scp -r dmdba@old_host:/dmarch /dmarch</code></pre>
+<ol><li><strong>执行还原恢复</strong></li></ol>
+<ol><li><strong>还原数据库</strong></li></ol>
+<pre class="code"><code class="lang-bash">      dmrman CTLSTMT="RESTORE DATABASE TO '/dmdata/DAMENG' FROM BACKUPSET '/dmbackup/DB_DAMENG_FULL_20250923_220000'"</code></pre>
+<ol><li><strong>恢复到最新状态</strong></li></ol>
+<pre class="code"><code class="lang-bash">      dmrman CTLSTMT="RECOVER DATABASE '/dmdata/DAMENG/dm.ini' WITH ARCHIVEDIR '/dmarch'"</code></pre>
+<ol><li><strong>更新魔数</strong></li></ol>
+<pre class="code"><code class="lang-bash">      dmrman CTLSTMT="RECOVER DATABASE '/dmdata/DAMENG/dm.ini' UPDATE DB_MAGIC"</code></pre>
+<blockquote><p><strong>小贴士：</strong> 拷贝过来的 <code>/dmarch</code> 目录即为归档目录，请在<code>RECOVER</code>命令中确保路径正确。</p></blockquote>
+<ol><li><strong>注册服务并启动</strong></li></ol>
+<ol><li><strong>执行服务注册脚本</strong></li></ol>
+<pre class="code"><code class="lang-bash">      /opt/dmdbms/script/root/dm_service_installer.sh -t dmserver -p DMSERVER -dm_ini /dmdata/DAMENG/dm.ini</code></pre>
+<blockquote><p><strong>小贴士：</strong> 可用 <code>find / -name dm_service_installer.sh 2&gt;/dev/null</code> 查找脚本准确路径。</p></blockquote>
+<ol><li><strong>启动实例</strong></li></ol>
+<pre class="code"><code class="lang-bash">      systemctl start DmServiceDMSERVER</code></pre>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dm-backup-check.html">达梦（DM8）数据库备份检查与验证 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

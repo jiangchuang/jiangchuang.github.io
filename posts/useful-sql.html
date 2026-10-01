@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实用 SQL 集合 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'sar'];
+  var NAMES = { ink: '水墨', sar: 'SAR' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  try {
+    var s = localStorage.getItem(KEY);
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=sar 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m && THEMES.indexOf(m[1]) >= 0) { cur = m[1]; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2023-05-22 &nbsp;·&nbsp; 日常运维</div>
+    <h1>实用 SQL 集合</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+<h2>开发类</h2>
+<h3>程序中批量执行DDL</h3>
+<pre class="code"><code class="lang-sql">CREATE OR REPLACE PROCEDURE pro_exec_ddl(v_sql VARCHAR) AS
+BEGIN
+  EXECUTE IMMEDIATE v_sql;
+END;
+
+call pro_exec_ddl('select 1;select 1;');</code></pre>
+<h3>查看绑定变量的值</h3>
+<blockquote><p>程序中执行某条SQL性能有时跟管理工具效率相差较远，可以尝试查看程序中的绑定变量是否存在数据类型隐式转换、数据倾斜等问题</p></blockquote>
+<pre class="code"><code class="lang-sql">-- 开启监控绑定变量的参数
+SF_SET_PARA_VALUE(1,'ENABLE_MONITOR_BP',1);
+
+-- 根据其他条件搜索执行号 exec_id
+SELECT exec_id,* FROM SYS."V$SQL_HISTORY"WHERE top_sql_text LIKE '%select%dual%'; -- 或者从sql日志中获取trx_id，根据trx_id过滤
+
+-- 根据上一步中得到的执行号代入下方问号处
+WITH SBH AS
+ (SELECT EXEC_ID, SF_EXTRACT_BIND_DATA_NUM(BINDDATA, 1) AS ARG_NUM, BINDDATA
+  FROM V$SQL_BINDDATA_HISTORY S
+  WHERE EXEC_ID = ?)
+SELECT SBH.EXEC_ID,
+       SBH.ARG_NUM,
+       LEVEL AS ARG_POS,
+       SF_EXTRACT_BIND_DATA(BINDDATA, LEVEL, 1) AS ARG_TYPE,
+       SF_EXTRACT_BIND_DATA(BINDDATA, LEVEL, 2) AS ARG_VAL
+FROM SBH
+CONNECT BY LEVEL &lt;= ARG_NUM;</code></pre>
+<h3>查看包调用方式</h3>
+<pre class="code"><code class="lang-sql">SELECT OBJECT_ID,
+       OVERLOAD,
+       PACKAGE_NAME,
+       OBJECT_NAME,
+       ARGUMENT_NAME,
+       DATA_TYPE,
+       DEFAULT_VALUE,
+       IN_OUT,
+       PACKAGE_NAME || '.' || OBJECT_NAME || '(' ||
+       LISTAGG(ARGUMENT_NAME || '=&gt;', ' , ')
+               WITHIN GROUP (ORDER BY SEQUENCE)
+               OVER (PARTITION BY OBJECT_ID,OBJECT_NAME,OVERLOAD) || DEFAULT_VALUE || ' );' AS CMD
+FROM SYS.DBA_ARGUMENTS
+WHERE OBJECT_NAME LIKE UPPER('%GET_DDL%')
+  AND NOT (ARGUMENT_NAME = 'RET' AND IN_OUT = 'OUT');</code></pre>
+<h3>show create table</h3>
+<blockquote><p>实现类似MySQL show create table命令，查看表结构定义</p></blockquote>
+<pre class="code"><code class="lang-sql">-- 表定义
+select TABLEDEF(USER, 'YOUR_TABLE_NAME');
+
+-- 表注释
+select null as COLNAME, COMMENT$ from SYSTABLECOMMENTS where TABLE_TYPE='TABLE' and SCHNAME=USER and TVNAME='YOUR_TABLE_NAME';
+
+-- 列注释
+select COLNAME, COMMENT$ from SYSCOLUMNCOMMENTS where TABLE_TYPE='TABLE' and SCHNAME=USER and TVNAME='YOUR_TABLE_NAME';
+
+-- 索引定义
+SELECT indexdef(id, 1)
+FROM sysobjects
+WHERE pid = (SELECT id
+             FROM sys.sysobjects
+             WHERE NAME = 'YOUR_TABLE_NAME'
+                   AND "SUBTYPE$" = 'UTAB'
+                   AND schid = sf_get_schema_id_by_name(USER))
+      AND subtype$ = 'INDEX'
+      AND NAME != 'INDEX' || id;</code></pre>
+<h3>查看函数参数调用方法</h3>
+<pre class="code"><code class="lang-sql">-- 模糊搜索函数名
+SELECT ID,
+       NAME,
+       ARG_NUM,
+       IS_INCLUDE_SQL,
+       CLASS$,
+       COMMENT$,
+       NAME || (SELECT '(' || LISTAGG(A.NAME || '=&gt; ', ' , ') WITHIN GROUP (ORDER BY SEQ) || ');' FROM V$IFUN_ARG A WHERE A.ID = F.ID AND A.SEQ != -1) AS CMD
+FROM V$IFUN F
+WHERE NAME LIKE UPPER('%STAT%')
+ORDER BY F.ARG_NUM;
+
+-- 根据上一步id查询函数参数
+-- SELECT * FROM V$IFUN_ARG WHERE id= 705 ;</code></pre>
+<h3>获取包含自增列的表</h3>
+<pre class="code"><code class="lang-sql">-- 获取表结构信息（包括注释和是否自增列）
+SELECT SF_GET_SCHEMA_NAME_BY_ID(S.SCHID) AS 模式名,
+       S.ID                              AS 对象ID,
+       S.NAME                            AS 表名,
+       C.NAME                            AS 列名,
+       C.TYPE$                           AS 类型,
+       C.LENGTH$                         AS 长度,
+       C.SCALE                           AS 标度,
+       C.INFO2&amp;1 AS 自增字段,
+    C.NULLABLE$ AS 可为空,
+    C.DEFVAL AS 默认值,
+    (SELECT COMMENTS
+    FROM ALL_COL_COMMENTS CC
+    WHERE CC.OWNER = SF_GET_SCHEMA_NAME_BY_ID(S.SCHID)
+    AND CC.TABLE_NAME = S.NAME
+    AND CC.COLUMN_NAME = C.NAME) AS 列注释
+FROM SYSOBJECTS S,
+    SYSCOLUMNS C
+WHERE S.ID = C.ID
+-- 默认查询当前用户下面的用户表，要查看其他模式的表，请取消注释并替换下面的USER函数为指定的模式名
+    -- AND S.SCHID = SF_GET_SCHEMA_ID_BY_NAME(USER)
+  AND SUBTYPE$ = 'UTAB'
+-- 默认查询指定模式下所有的表，取消下方注释，替换表名DICT_AREA为你需要查看的表名
+--  AND S.NAME = 'DICT_AREA'
+ORDER BY S.NAME, C.COLID;</code></pre>
+<h3>根据过程或函数内容模糊搜索</h3>
+<blockquote><p>有时候我们可能只记得<code>存储过程</code>、<code>函数</code>、<code>视图</code>、<code>触发器</code>等数据库对象定义的部分关键字，希望模糊搜索查找这些对象和完整定义，可使用下面的SQL</p></blockquote>
+<pre class="code"><code class="lang-sql">SELECT t.txt, o.name, o."SUBTYPE$"
+FROM sys.systexts t
+JOIN sys.sysobjects o ON t.id = o.id
+WHERE t.txt LIKE '%DBA_TABLES%';</code></pre>
+<h3>获取完整的SQL语句和执行次数</h3>
+<pre class="code"><code class="lang-sql">-- SQL执行次数N_EXEC、根据SQL_ID获取完整的SQL语句listagg(SQL_TEXT) within group(order by sql_nth)
+SELECT * FROM V$SQLTEXT;</code></pre>
+<h2>运维类</h2>
+<h3>手动执行代理作业</h3>
+<blockquote><p>新建代理作业后，为了验证作业是否配置正确，可以立即调用一次该作业</p></blockquote>
+<pre class="code"><code class="lang-sql">-- 查看所有作业，并生成立即执行的命令
+SELECT id,
+       NAME,
+       describe,
+       createtime,
+       modifytime,
+       'dbms_job.run(' || id || ');' AS run_now_command -- 确认无误后，复制该字段值到SQL窗口执行
+FROM sysjob.sysjobs;</code></pre>
+<h3>查看每个表的空间使用情况</h3>
+<pre class="code"><code class="lang-sql">-- 通过页数和显示单位(可选参数MB/GB，默认KB为单位显示)
+WITH FUNCTION GET_SIZE_BY_PAGES(NUM_OF_PAGE NUMBER, KB_MB_GB VARCHAR(2) DEFAULT 'KB') RETURN NUMBER(15, 2) AS
+    V_SIZE_KB NUMBER(15, 2) := ROUND(PAGE() * NUM_OF_PAGE / 1024.00, 2);
+BEGIN
+    IF KB_MB_GB = 'MB' THEN
+        RETURN V_SIZE_KB / 1024.00;
+    ELSIF KB_MB_GB = 'GB' THEN
+        RETURN V_SIZE_KB / 1024.00 / 1024.00;
+    END IF;
+    RETURN V_SIZE_KB;
+END;
+-- 查看每个表的空间占用情况和行数
+SELECT T.TABLESPACE_NAME,
+       T.OWNER,
+       T.TABLE_NAME,
+       GET_SIZE_BY_PAGES(TABLE_USED_PAGES(T.OWNER, T.TABLE_NAME), 'MB') AS TABLE_USED_SPACE_MB,
+       GET_SIZE_BY_PAGES(TABLE_USED_PAGES(T.OWNER, T.TABLE_NAME), 'GB') AS TABLE_USED_SPACE_GB,
+       TABLE_ROWCOUNT(T.OWNER, T.TABLE_NAME)                            AS TABLE_ROWCOUNT
+FROM DBA_TABLES T
+WHERE T.OWNER = USER -- 可更换USER为具体的模式名：如 T.OWNER = 'TEST'
+ORDER BY TABLE_USED_SPACE_MB DESC, TABLE_ROWCOUNT DESC;</code></pre>
+<h3>查看用户和模式对应</h3>
+<pre class="code"><code class="lang-sql">-- 查询用户模式对应
+SELECT ur.name AS user_name, -- 用户名
+       listagg(sch.name, ',') within GROUP(ORDER BY sch.id) AS schema_name -- 模式名
+FROM sysobjects ur
+JOIN sysobjects sch ON ur.id = sch.pid
+WHERE ur."TYPE$" = 'UR'
+      AND sch."TYPE$" = 'SCH'
+GROUP BY ur.name
+ORDER BY 1;</code></pre>
+<h3>开启慢查询日志</h3>
+<pre class="code"><code class="lang-sql">-- 设置为异步日志
+SP_SET_PARA_VALUE(1, 'SVR_LOG_ASYNC_FLUSH',1);
+-- 下面这个语句设置只记录执行时间超过100ms的语句
+-- SP_SET_PARA_VALUE(1, ' SVR_LOG_MIN_EXEC_TIME',100);
+-- 开启SQL日志
+SP_SET_PARA_VALUE(1, 'SVR_LOG', 1);
+-- 修改sqllog.ini文件后需要执行刷新配置文件的过程
+SP_REFRESH_SVR_LOG_CONFIG();
+-- 关闭SQL日志
+-- SP_SET_PARA_VALUE(1, 'SVR_LOG', 0);
+-- # 查看最慢的TOP50的SQL执行时间
+-- grep -Pno  'EXECTIME:\s\d+' dmsql_DMSERVER_* |sort -t : -k 3 -nr|head -n 50</code></pre>
+<h3>并行收集统计信息</h3>
+<pre class="code"><code class="lang-sql">-- 并行16、采样率100%、桶10000、级联更新模式统计信息
+DBMS_STATS.GATHER_SCHEMA_STATS(OWNNAME=&gt;'SYSDBA',ESTIMATE_PERCENT=&gt;100,DEGREE=&gt;16,METHOD_OPT=&gt;'FOR ALL COLUMNS SIZE 10000',CASCADE=&gt;TRUE);
+-- 并行16、采样率100%、桶10000、级联更新表统计信息
+DBMS_STATS.GATHER_TABLE_STATS(OWNNAME=&gt; USER, TABNAME=&gt; 'EMPLOYEES', ESTIMATE_PERCENT=&gt; 100, METHOD_OPT=&gt; 'FOR ALL COLUMNS SIZE 10000', DEGREE=&gt; 16,  CASCADE=&gt; true);
+-- 并行16、采样率100%、更新索引统计信息
+DBMS_STATS.GATHER_INDEX_STATS(OWNNAME=&gt; USER, INDNAME=&gt; 'IDX_EMP_LAST_NAME', ESTIMATE_PERCENT=&gt; 100, DEGREE=&gt; 16);</code></pre>
+<h3>查看索引统计信息</h3>
+<pre class="code"><code class="lang-sql">-- 查看表、字段、索引统计信息
+WITH #STAT_INFO AS(
+   SELECT SF_GET_SCHEMA_NAME_BY_ID(O.SCHID) AS SCH_NAME,
+          NVL(I.TABLE_NAME, O.NAME) AS TABLE_NAME,
+          NVL(C.NAME, I.COLUMN_NAME) AS COLUMN_NAME,
+          I.INDEX_NAME,
+          S.*
+     FROM SYSSTATS S
+     JOIN SYSOBJECTS O
+       ON S.ID = O.ID
+LEFT JOIN DBA_IND_COLUMNS I
+       ON I.INDEX_NAME = O.NAME
+      AND O."SUBTYPE$" = 'INDEX'
+      AND SF_GET_SCHEMA_NAME_BY_ID(O.SCHID) = I.INDEX_OWNER
+LEFT JOIN SYSCOLUMNS C
+       ON S.ID = C.ID
+      AND S.COLID = C.COLID
+      AND S.T_FLAG='C')
+SELECT SCH_NAME,TABLE_NAME,COLUMN_NAME,INDEX_NAME,T_TOTAL,N_SAMPLE,N_DISTINCT,N_NULL,BLEVEL,N_BUCKETS,COL_AVG_LEN,LAST_GATHERED
+  FROM #STAT_INFO SI 
+ WHERE SI.TABLE_NAME='EMPLOYEES'	-- 过滤表名
+   AND SI.COLUMN_NAME LIKE '%LAST_NAME%';	-- 过滤列名</code></pre>
+<h3>查看真实执行计划</h3>
+<pre class="code"><code class="lang-sql">-- 开启会话级监控SQL执行的参数
+ALTER SESSION SET 'MONITOR_SQL_EXEC' = 1;
+
+-- 执行目标SQL语句
+SELECT XXX FROM XXX ...
+
+-- 复制目标SQL语句的执行号，调用下面的函数生成报告（如查询结果不全，请等待1-2秒后再调用下面的函数）
+SELECT DBMS_SQLTUNE.REPORT_SQL_MONITOR(SQL_EXEC_ID=&gt;2073) FROM DUAL;</code></pre>
+<h3>查看等待锁定的会话和SQL</h3>
+<pre class="code"><code class="lang-sql">-- 可复制下方HOLD_LOCK_SESSION_KILL字段返回的kill命令结束长时间持有锁定的会话
+SELECT H.SESS_ID AS HOLD_LOCK_SESSION_ID,
+       CONCAT('SP_CLOSE_SESSION(', H.SESS_ID, ');') AS HOLD_LOCK_SESSION_KILL,
+       H.TRX_ID AS HOLD_LOCK_TRX_ID,
+       H.CLNT_HOST AS HOLD_LOCK_CLIENT_HOST,
+       H.CLNT_IP AS HOLD_LOCK_CLIENT_IP,
+       H.CLNT_VER AS HOLD_LOCK_CLNT_VER,
+       H.SQL_TEXT AS HOLD_LOCK_SESSION_SQL,
+       H.STATE AS HOLD_LOCK_SESSION_STATE,
+       T.WAIT_TIME / 1000.00 AS WAIT_LOCK_SECOND,
+       W.SQL_TEXT AS WAIT_LOCK_SESSION_SQL,
+       W.STATE AS WAIT_LOCK_SESSION_STATE,
+       W.SESS_ID AS WAIT_LOCK_SESSION_ID,
+       W.CLNT_HOST AS WAIT_LOCK_CLIENT_HOST,
+       W.CLNT_IP AS WAIT_LOCK_CLIENT_IP,
+	   W.TRX_ID AS WAIT_LOCK_TRX_ID,
+       W.CLNT_VER AS WAIT_LOCK_CLNT_VER
+FROM SYS."V$TRXWAIT" T
+JOIN SYS."V$SESSIONS" H ON T.WAIT_FOR_ID = H.TRX_ID
+JOIN SYS."V$SESSIONS" W ON T.ID = W.TRX_ID
+--WHERE EXISTS(SELECT NULL FROM V$LOCK L WHERE T.TRX_ID=L.TID AND L.ltype='TID' AND SF_GET_TABLENAME_BY_ID(L.TABLE_ID)='bzjl')
+ORDER BY WAIT_LOCK_SECOND DESC;</code></pre>
+<h3>查看等待事件历史</h3>
+<pre class="code"><code class="lang-sql">SELECT CAST(SESSADDR AS BIGINT) AS SESS_ID,
+       (SELECT S.SQL_TEXT
+        FROM V$SQLTEXT S
+        WHERE S.SQL_ID = SWH.SQL_ID) AS BLOCKED_SQL,
+       (SELECT LISTAGG(SH.TOP_SQL_TEXT, ';'||CHR(10)) WITHIN GROUP(ORDER BY SH.START_TIME)
+        FROM V$SQL_HISTORY SH
+        WHERE SH.TRX_ID = SWH.P3) AS WAITED_SQL,
+       TIME_WAITED / 100.0 || 'S' AS WAITED_SECOND,
+       SWH.*
+FROM V$SESSION_WAIT_HISTORY SWH;</code></pre>
+<h3>生成AWR报告</h3>
+<pre class="code"><code class="lang-sql">-- 调用系统过程初始化AWR功能
+SP_INIT_AWR_SYS(1);
+-- 设置AWR自动快照时间间隔
+CALL DBMS_WORKLOAD_REPOSITORY.AWR_SET_INTERVAL(10);
+-- 或者手动创建快照
+DBMS_WORKLOAD_REPOSITORY.CREATE_SNAPSHOT();
+-- 查询已有快照列表
+SELECT * FROM SYS.WRM$_SNAPSHOT;
+-- 根据已有快照ID范围生成AWR报告的html文件
+SYS.AWR_REPORT_HTML(1,2,'D:\data','AWR1.HTML');
+-- 或者通过表函数形式复制粘贴到文本文件（无法登陆服务器情况下）
+--SELECT * FROM TABLE (DBMS_WORKLOAD_REPOSITORY.AWR_REPORT_HTML(1,2));
+-- 清理所有快照
+CALL DBMS_WORKLOAD_REPOSITORY.AWR_CLEAR_HISTORY();
+-- 清理指定范围的快照
+CALL DBMS_WORKLOAD_REPOSITORY.DROP_SNAPSHOT_RANGE(22,32);</code></pre>
+<h3>清理指定SQL执行计划缓存</h3>
+<blockquote><p>因性能优化调整索引或者修改数据库参数后，希望数据库使用新的查询执行计划</p></blockquote>
+<pre class="code"><code class="lang-sql">SELECT concat('CALL SP_CLEAR_PLAN_CACHE(', cache_item, ');') AS clear_cmd, -- 第3步：复制这个字段的值到管理工具执行
+       cache_item,
+       sqlstr, -- 第2步：核对要清除的SQL语句
+       p.*
+FROM   SYS."V$CACHEPLN" p
+WHERE  sqlstr LIKE '%第1步复制一段你要清理的sql语句到此处替换%';</code></pre>
+<h3>查看授权信息</h3>
+<pre class="code"><code class="lang-sql">-- 查看授权信息
+SELECT SERIES_NO,
+       EXPIRED_DATE,
+       AUTHORIZED_CUSTOMER,
+       PROJECT_NAME,
+       CLUSTER_TYPE
+FROM V$LICENSE;
+-- 重新载入授权
+CALL P_LOAD_LIC_INFO();</code></pre>
+<h2>内存类</h2>
+<h3>查看数据库总内存占用</h3>
+<pre class="code"><code class="lang-sql">-- 查看总内存大小。也可以用来确定是数据缓存还是共享内存增长过快（增长前执行一次，增长后执行一次）
+SELECT (SELECT SUM(n_pages * page_size) / 1024 / 1024
+        FROM v$bufferpool) || 'MB' AS buffer_size,
+       (SELECT SUM(total_size) / 1024 / 1024
+        FROM v$mem_pool) || 'MB' AS mem_pool,
+       (SELECT SUM(n_pages * page_size) / 1024 / 1024
+        FROM v$bufferpool) + (SELECT SUM(total_size) / 1024 / 1024
+                              FROM v$mem_pool) || 'MB' AS total_size
+FROM dual;</code></pre>
+<h3>查看BUFFER是否合理</h3>
+<pre class="code"><code class="lang-sql">-- 关注是否有频繁淘汰页面
+--（1）如果 free 较大，说明该缓冲区空闲，可以适当的调整降低 buffer 缓冲 区参数值。
+--（2）如果 free 项为 0，或者 N_DISCARD64 非零，表示该缓冲区经常淘汰， 说明对应的缓冲区参数太小，导致频繁淘汰，需要调整对应的缓冲区的参数
+SELECT NAME, --缓冲区名称
+       n_pages, --页数
+       free, --空闲页数目
+       n_discard64 --淘汰的页数
+FROM v$bufferpool;</code></pre>
+<h3>查看共享内存是否合理</h3>
+<pre class="code"><code class="lang-sql">--（1）目标外扩展次数 如果长期大于 0，说明长期从池外扩展，可能存在内存泄露，需要重点关注。
+--（2）若使用到备份池，需要保持高度关注，此时系统非常危险。
+--（3）内存池创建的线程号 creator 可以与 session 的 thrd_id 关联，查看对应的某个会话的内存使用情况，查看方法可以参考单个会话内存使用情况（链接）。
+--（4）若 当前已分配大小 比 内存池初始大小 小，说明内存池非常空闲，可以减小对应的初始内存，避免浪费。
+--（5）若 内存池总大小 比 目标大小 大，说明内存池不够，经常向池外申请，需要把对应参数调大。
+  SELECT NAME AS 内存池名称,
+         IS_SHARED AS 是否是共享的,
+         IS_OVERFLOW AS 是否用到了备份池,
+         round(ORG_SIZE/1024.0/1024.0,2) AS 内存池初始大小,
+         round(RESERVED_SIZE/1024.0/1024.0,2) AS 当前已分配大小,
+         round(TOTAL_SIZE/1024.0/1024.0,2) AS 内存池总大小,
+         TARGET_SIZE/1024.0/1024.0 AS 目标大小,
+--         round(DATA_SIZE/1024.0/1024.0,2) AS 实际有效字节,
+--         EXTEND_SIZE AS 每次扩展大小,
+         N_EXTEND_NORMAL AS 目标内扩展次数,
+         N_EXTEND_EXCLUSIVE AS 目标外扩展次数
+    FROM V$MEM_POOL
+ORDER BY TOTAL_SIZE DESC;</code></pre>
+<h3>查看字典缓冲是否够用</h3>
+<pre class="code"><code class="lang-sql">select total_size,used_size FROM SYS."V$DICT_CACHE";</code></pre>
+<h3>查看SQL缓存区是否够用</h3>
+<blockquote><p>v\$cacheitem记录总的SQL缓存区，其中 v\$cachepln、v\$cachers、v\$cachesql 分别记录了执行计划缓存、结果集缓存、SQL 语句缓存。</p></blockquote>
+<pre class="code"><code class="lang-sql">SELECT sf_get_para_value(2, 'CACHE_POOL_SIZE') || 'MB' AS cache_pool_size,
+       sf_get_para_value(2, 'CACHE_POOL_SIZE') * 3 || 'MB' AS cache_pool_size_max,
+       round(SUM(item_size) / 1024.0 / 1024.0, 2) || 'MB' AS used_size
+FROM v$cacheitem;</code></pre>
+<h2>其他</h2>
+<h3>归档日志挖掘</h3>
+<blockquote><p>当开启<code>RLOG_APPEND_LOGIC</code>= 1时，可查看归档日志中详细执行的SQL语句</p></blockquote>
+<pre class="code"><code class="lang-sql">-- 开启逻辑日志
+sp_set_para_value(1,'RLOG_APPEND_LOGIC',1)
+-- 查看归档日志文件
+SELECT * FROM V$ARCHIVED_LOG;
+-- 将需要挖掘分析的归档日志使用DBMS_LOGMNR.ADD_LOGFILE进行添加，有多个归档日志需要分析时，需调用多次。
+DBMS_LOGMNR.ADD_LOGFILE('D:\dmdbms\data\DAMENG\arch\ARCHIVE_LOCAL1_0x66E5D0BC[0]_2022-03-04_17-02-32.log');
+DBMS_LOGMNR.ADD_LOGFILE('D:\dmdbms\data\DAMENG\arch\ARCHIVE_LOCAL1_0x66E5D0BC[0]_2022-03-02_11-42-53.log');
+-- 查看等待分析的归档日志列表（可选）
+SELECT LOW_SCN, NEXT_SCN, LOW_TIME, HIGH_TIME, LOG_ID, FILENAME FROM V$LOGMNR_LOGS;
+-- 开始分析归档日志
+DBMS_LOGMNR.START_LOGMNR();
+-- 查看分析结果
+SELECT OPERATION_CODE , SCN, SQL_REDO , TIMESTAMP ,SEG_OWNER, TABLE_NAME FROM V$LOGMNR_CONTENTS ;
+-- 结束分析，清理资源
+DBMS_LOGMNR.END_LOGMNR();</code></pre>
+<h3>自定义备份</h3>
+<pre class="code"><code class="lang-plsql">create or replace procedure pro_db_backup_manual(p_type int default 0,
+                                                 p_path varchar default '') as
+  v_filename_tail       VARCHAR(50) := to_char(sysdate, 'yymmdd_hh24mi');
+  v_backupset_name_full VARCHAR(50) := 'DB_BAK_FULL_' || v_filename_tail;
+  v_backupset_name_inc  VARCHAR(50) := 'DB_BAK_INC_' || v_filename_tail;
+  v_os_path_tail        VARCHAR(2) default '\';
+  v_backup_cmd_full     varchar(1000);
+  v_backup_cmd_inc      varchar(1000);
+begin
+  -- 如果未指定备份路径，则使用dm.ini中的BAK_PATH参数作为默认值
+  if p_path = '' then
+    select para_value
+      into p_path
+      from v$dm_ini
+     where para_name = 'BAK_PATH';
+  end if;
+  -- 如果是Linux路径格式，则目录路径尾巴使用'/'分隔符
+  if instr(p_path, '/') &gt; 0 then
+    v_os_path_tail := '/';
+  end if;
+  -- 去掉用户指定的路径斜杠尾巴
+  p_path := rtrim(rtrim(p_path, '/'), '\');
+
+  v_backup_cmd_full := 'backup database backupset ''' || p_path ||
+                       v_os_path_tail || '' || v_backupset_name_full || '''';
+
+  v_backup_cmd_inc := 'backup database increment with backupdir ''' ||
+                      p_path || ''' backupset ''' || p_path ||
+                      v_os_path_tail || v_backupset_name_inc || '''';
+  -- 执行全量备份命令
+  if p_type = 0 THEN
+    EXECUTE IMMEDIATE v_backup_cmd_full;
+  else
+    begin
+      -- 执行增量备份命令
+      EXECUTE IMMEDIATE v_backup_cmd_inc;
+    exception
+      when others THEN
+        -- 如果增备出错，则在指定的路径下立即执行一次全量备份
+        EXECUTE IMMEDIATE v_backup_cmd_full;
+    end;
+  end if;
+end;</code></pre>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dmisp-inspection.html">DMISP 数据库巡检 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

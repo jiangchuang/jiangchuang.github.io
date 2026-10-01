@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>看图学达梦 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'sar'];
+  var NAMES = { ink: '水墨', sar: 'SAR' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  try {
+    var s = localStorage.getItem(KEY);
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=sar 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m && THEMES.indexOf(m[1]) >= 0) { cur = m[1]; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2023-03-27 &nbsp;·&nbsp; 图文入门</div>
+    <h1>看图学达梦</h1>
+    <span class="cat">图文入门</span>
+  </div>
+  <div class="content">
+<blockquote><p>对于很多不太熟悉达梦数据库的同学来说，无论是官方文档还是网站博客大多都是一些干巴巴的文字，可能并不能让我们这种达梦小白迅速理解并解决当下的问题，这种时候往往最能体会「一图胜千言」这句话的含义。</p></blockquote>
+<h2>运维</h2>
+<h3>查看数据库初始化参数</h3>
+<ul><li>功能说明：查看数据库初始化参数：如页大小、大小写敏感、字符集编码、长度是否以字符为单位等</li></ul>
+<ul><li>操作路径：右键<code>数据库链接</code>-&gt; <code>管理服务器</code></li></ul>
+<ul><li>动图演示：</li></ul>
+<p><img src="../assets/img/gif-guide-01.gif" alt="查看初始化参数" loading="lazy"></p>
+<h3>查看数据库文件总大小</h3>
+<ul><li>功能说明：查看整个数据库文件总大小</li></ul>
+<ul><li>操作路径：右键<code>数据库链接</code>-&gt; <code>管理服务器</code>-&gt; <code>系统概览</code></li></ul>
+<ul><li>动图演示：<img src="../assets/img/gif-guide-02.gif" alt="查看数据库文件总大小" loading="lazy"></li></ul>
+<h3>查看表占用空间大小</h3>
+<ul><li>功能说明：查看某些（或所有）表的空间占用情况</li></ul>
+<ul><li>操作路径：右键<code>数据库链接</code>-&gt; <code>管理服务器</code>-&gt; <code>表使用空间</code></li></ul>
+<ul><li>动图演示：</li></ul>
+<p><img src="../assets/img/gif-guide-03.gif" alt="查看表空间占用情况" loading="lazy"></p>
+<h3>手动更新统计信息</h3>
+<ul><li>功能说明：更新指定模式下统计信息</li></ul>
+<ul><li>操作路径：右键<code>数据库链接</code>-&gt; 双击<code>模式</code>-&gt; 双击目标<code>模式名</code> -&gt; 双击<code>表</code> -&gt; 选择一个或多个表 -&gt; 右键 -&gt; <code>更新统计信息</code></li></ul>
+<ul><li>动图显示：</li></ul>
+<p><img src="../assets/img/gif-guide-04.gif" alt="更新模式统计信息" loading="lazy"></p>
+<h3>移动表空间</h3>
+<ul><li>功能说明：因磁盘空间不足或其它原因，需要将某个表移动至其它表空间</li></ul>
+<ul><li>操作路径：右键目标表 -&gt; <code>存储选项</code> -&gt; <code>移动表空间</code></li></ul>
+<ul><li>动图演示：</li></ul>
+<p><img src="../assets/img/gif-guide-05.gif" alt="移动表空间" loading="lazy"></p>
+<h2>开发</h2>
+<h3>执行SQL脚本文件</h3>
+<ul><li>功能说明：当需要执行某个SQL文件当中的所有SQL查询语句时使用</li></ul>
+<ul><li>操作路径：在菜单中选择<code>查询</code>-&gt; <code>执行脚本</code></li></ul>
+<ul><li>动图演示：</li></ul>
+<p><img src="../assets/img/gif-guide-06.gif" alt="执行SQL文件" loading="lazy"></p>
+<h2>迁移</h2>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dm-license-update.html">达梦数据库在线更换授权文件（不停机版） →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据文件误删后的恢复方案 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'sar'];
+  var NAMES = { ink: '水墨', sar: 'SAR' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  try {
+    var s = localStorage.getItem(KEY);
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=sar 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m && THEMES.indexOf(m[1]) >= 0) { cur = m[1]; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2023-02-23 &nbsp;·&nbsp; 日常运维</div>
+    <h1>数据文件误删后的恢复方案</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+<h2>方法1：DTS迁移到新实例</h2>
+<blockquote><p>数据文件删除之后只要未做数据文件检查，数据文件中对应的表数据还是可以正常访问的，可以使用不同的端口重新初始化一个参数一致的数据库，然后启动新实例，将应用停掉后，再使用迁移工具将数据完整迁移过来。</p></blockquote>
+<h2>方法2：利用操作系统命令cp</h2>
+<h3>创建测试环境（可选）</h3>
+<h4>创建测试表空间</h4>
+<pre class="code"><code class="lang-sql">SQL&gt; create tablespace TEST_RM datafile 'TEST_RM01.DBF' size 128 autoextend on next 128 CACHE = NORMAL;
+操作已执行
+已用时间: 13.499(毫秒). 执行号:53300.
+SQL&gt;  create user TEST_RM identified by 123456789 default tablespace TEST_RM;
+操作已执行
+已用时间: 5.172(毫秒). 执行号:53301.
+SQL&gt;  grant "PUBLIC","RESOURCE","SOI","VTI" to TEST_RM;
+操作已执行
+已用时间: 3.186(毫秒). 执行号:53302.
+SQL&gt; create table TEST_RM.T1 as select * from v$sessions;
+操作已执行
+已用时间: 10.411(毫秒). 执行号:53303.
+SQL&gt; select tablespace_name, file_name, status from dba_data_files;
+
+行号     TABLESPACE_NAME FILE_NAME                                STATUS   
+---------- --------------- ---------------------------------------- ---------
+1          SYSTEM          /home/dmdba/TEST_RM/DAMENG/SYSTEM.DBF    AVAILABLE
+2          TEST_RM         /home/dmdba/TEST_RM/DAMENG/TEST_RM01.DBF AVAILABLE
+3          MAIN            /home/dmdba/TEST_RM/DAMENG/MAIN.DBF      AVAILABLE
+4          TEMP            /home/dmdba/TEST_RM/DAMENG/TEMP.DBF      AVAILABLE
+5          ROLL            /home/dmdba/TEST_RM/DAMENG/ROLL.DBF      AVAILABLE
+
+已用时间: 7.356(毫秒). 执行号:53304.
+SQL&gt; select * from TEST_RM.T1;</code></pre>
+<h4>模拟删除表空间数据文件</h4>
+<pre class="code"><code class="lang-shell">[dmdba@RH6 bin]$ cd /home/dmdba/TEST_RM/DAMENG/
+[dmdba@RH6 DAMENG]$ mv TEST_RM01.DBF /tmp</code></pre>
+<h4>未做数据文件校验仍可查询</h4>
+<pre class="code"><code class="lang-sql">SQL&gt; select * from TEST_RM.T1;
+
+SQL&gt; SELECT GROUP_ID,PATH,CLIENT_PATH FROM "V$DATAFILE";
+
+行号     GROUP_ID    PATH                                                               CLIENT_PATH
+---------- ----------- ------------------------------------------------------------------ -----------
+1          0           /home/dmdba/TEST_RM/DAMENG/SYSTEM.DBF                              SYSTEM.DBF
+2          1           /home/dmdba/TEST_RM/DAMENG/ROLL.DBF                                ROLL.DBF
+3          3           /home/dmdba/TEST_RM/DAMENG/TEMP.DBF                                TEMP.DBF
+4          4           /home/dmdba/TEST_RM/DAMENG/MAIN.DBF                                MAIN.DBF
+5          NULL        文件或目录[/home/dmdba/TEST_RM/DAMENG/TEST_RM01.DBF]不存在 NULL
+
+已用时间: 0.669(毫秒). 执行号:53308.
+SQL&gt; </code></pre>
+<h4>校验之后无法查询数据</h4>
+<pre class="code"><code class="lang-sql">SQL&gt; call SP_FILE_SYS_CHECK();
+DMSQL 过程已成功完成
+已用时间: 1.861(毫秒). 执行号:53309.
+SQL&gt;  select * from TEST_RM.T1;
+
+[-3430]:表空间[TEST_RM]中文件[/home/dmdba/TEST_RM/DAMENG/TEST_RM01.DBF]已被删除.</code></pre>
+<h3>开始操作系统恢复</h3>
+<h4>恢复准备</h4>
+<pre class="code"><code class="lang-sql">SQL&gt; call sp_tablespace_prepare_recover('TEST_RM');
+DMSQL 过程已成功完成
+已用时间: 1.018(毫秒). 执行号:53311.</code></pre>
+<h4>定位删除进程句柄(带deleted字眼)</h4>
+<pre class="code"><code class="lang-shell"># 找到dmserver进程号27296
+[dmdba@RH6 DAMENG]$ ps -ef|grep TEST_RM
+dmdba    **27296**     1  0 16:01 pts/4    00:00:03 /home/dmdba/dm46/bin/dmserver path=/home/dmdba/TEST_RM/DAMENG/dm.ini -noconsole
+dmdba    27444 26219  0 16:20 pts/5    00:00:00 grep TEST_RM
+
+# 根据上面的dmserver进程号，切换到相应句柄目录
+[dmdba@RH6 DAMENG]$ cd /proc/27296/fd
+[dmdba@RH6 fd]$ ls -ltr|grep deleted
+total 0
+**lrwx------ 1 dmdba dinstall 64 Oct 28 16:20 45 -&gt; /home/dmdba/TEST_RM/DAMENG/TEST_RM01.DBF (deleted)**
+
+# 记录删除句柄号45</code></pre>
+<h4>使用句柄复制到源目录(dmdba用户)</h4>
+<pre class="code"><code class="lang-shel"># 根据上面找到到删除句柄45，使用cp命令复制数据文件到原始目录
+[dmdba@RH6 fd]$ cp 45 /home/dmdba/TEST_RM/DAMENG/TEST_RM01.DBF</code></pre>
+<h4>执行数据文件恢复</h4>
+<pre class="code"><code class="lang-sql">SQL&gt; call sp_tablespace_recover('TEST_RM');
+DMSQL 过程已成功完成
+已用时间: 6.302(毫秒). 执行号:53312.
+SQL&gt; call SP_FILE_SYS_CHECK();
+DMSQL 过程已成功完成
+已用时间: 0.254(毫秒). 执行号:53313.</code></pre>
+<h4>验证数据</h4>
+<pre class="code"><code class="lang-sql">SQL&gt; select * from TEST_RM.T1;</code></pre>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="install-kafka.html">快速安装 Kafka →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
