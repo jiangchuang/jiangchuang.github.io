@@ -213,7 +213,11 @@ a:hover{text-decoration:underline}
 }
 .content h1{font-size:27px;margin:44px 0 18px}
 .content h2{font-size:23px;margin:40px 0 16px;padding-left:13px;border-left:3px solid var(--accent)}
-.content h3{font-size:19px;margin:32px 0 13px}
+.content h3{font-size:19px;margin:32px 0 13px;padding-left:17px;position:relative}
+.content h3::before{
+  content:'';position:absolute;left:0;top:.55em;
+  width:7px;height:7px;background:var(--accent);border-radius:var(--radius);
+}
 .content h4{font-size:16.5px;margin:26px 0 11px;color:var(--text-2)}
 .content p{margin:15px 0}
 .content strong{color:var(--text);font-weight:600}

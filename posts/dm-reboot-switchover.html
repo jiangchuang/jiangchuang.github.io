@@ -80,8 +80,25 @@
 <h2>一、先认清演示环境</h2>
 <p>这一节只是为了让你看懂后面的输出示例。<strong>你的环境路径和实例名大概率不同，照着换成自己的即可。</strong></p>
 <div class="tbl-wrap"><table><thead><tr><th>角色</th><th>实例名</th><th>IP</th><th>守护状态</th></tr></thead><tbody><tr><td><strong>主库</strong></td><td>DB139</td><td>192.168.16.139</td><td>PRIMARY</td></tr><tr><td><strong>备库</strong></td><td>DB138</td><td>192.168.16.138</td><td>STANDBY</td></tr></tbody></table></div>
-<ul><li>守护组名：<code>GRP1</code></li><li>数据目录：<code>/data/dmdata</code></li><li>监视器程序：<code>/data/dmdata/bin/dmonitor</code></li><li>监视器配置：<code>/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></li></ul>
+<ul><li>守护组名：<code>GRP1</code></li><li><strong>软件安装目录（DM_HOME）</strong>：<code>/data/dmdata</code></li><li>监视器程序：<code>/data/dmdata/bin/dmonitor</code></li><li>监视器配置：<code>/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></li></ul>
 <p>后面每处需要替换成你自己环境的，我都会标出来。</p>
+<h3>先记住达梦的这条目录约定</h3>
+<blockquote><p><strong>达梦所有可执行文件，都在「软件安装目录」的 <code>bin/</code> 子目录下。</strong><br><code>dmserver</code>、<code>dmonitor</code>（监视器）、<code>disql</code>、<code>dmap</code>、<code>dmrman</code>…… 一个都没有例外。</p></blockquote>
+<p>安装目录的<strong>目录名惯例就叫 <code>dmdbms</code></strong> —— Linux 上默认装到 <code>/opt/dmdbms</code>，也常见 <code>/home/dmdba/dmdbms</code>。上面演示环境因为单独做了目录规划，装在了 <code>/data/dmdata</code>，所以监视器是 <code>/data/dmdata/bin/dmonitor</code>。</p>
+<p><strong>记住这个规律就够了：<code>bin/</code> 前面那一段，就是这台机器上的安装目录</strong>，换成你自己的即可。</p>
+<h3>生产环境建议：软件和数据放开两个目录</h3>
+<p>业界通行做法是<strong>把软件目录和数据目录彻底分开</strong>，例如：</p>
+<pre class="code"><code>/u01/dmdbms/     ← 只放软件（约 2–3 GB）：bin/、jar/、tool/、jdk/、doc/
+/u02/dmdata/     ← 只放数据：数据文件、控制文件、联机日志、归档、备份</code></pre>
+<p>这么做有两个实实在在的好处：</p>
+<ol><li><strong>升级更安全</strong> —— 换版本时只替换软件目录，数据目录一个字节都不动；万一新版本有问题，回退旧软件目录就能恢复</li><li><strong>扩容更方便</strong> —— 数据目录可以单独挂一块大容量、高 IOPS 的盘；软件目录不用跟着搬</li></ol>
+<blockquote><p>⚠️ <strong>反过来说：不要把数据库软件装在数据目录下面。</strong> 数据目录是业务数据的地盘，混进软件文件后，做备份、迁移、磁盘扩容时都会变得很别扭。</p></blockquote>
+<p><strong>想知道自己这台机器装在哪</strong>，两条命令：</p>
+<pre class="code"><code class="lang-bash"># 1) 软件目录
+echo $DM_HOME
+
+# 2) 数据目录（dmserver 的 ps 输出里 path= 指向实例的 dm.ini，它所在目录就是实例目录）
+ps -ef | grep dmserver</code></pre>
 <hr>
 <h2>二、重启前：先确认集群是健康的</h2>
 <h3>第 1 步：登录任意一个节点</h3>
@@ -92,7 +109,7 @@
 <p>会看到类似这样一行，<strong>记下它</strong>：</p>
 <pre class="code"><code>dmdba  1015  1  0 Dec17 ?  00:00:06 /data/dmdata/bin/dmonitor path=/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></pre>
 <p>这一行信息量很大，拆开看：</p>
-<div class="tbl-wrap"><table><thead><tr><th>片段</th><th>含义</th></tr></thead><tbody><tr><td><code>dmdba</code></td><td>运行监视器的系统用户</td></tr><tr><td><code>/data/dmdata/bin/dmonitor</code></td><td>监视器程序本体</td></tr><tr><td><code>path=/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></td><td>它加载的配置文件</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table><thead><tr><th>片段</th><th>含义</th></tr></thead><tbody><tr><td><code>dmdba</code></td><td>运行监视器的系统用户</td></tr><tr><td><code>/data/dmdata/bin/dmonitor</code></td><td>监视器程序本体 —— <strong>在软件安装目录的 <code>bin/</code> 下</strong>（<code>$DM_HOME/bin/dmonitor</code>）</td></tr><tr><td><code>path=/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></td><td>它加载的配置文件（可以放在数据目录，和软件分开）</td></tr></tbody></table></div>
 <h3>第 3 步：连上监视器</h3>
 <p>把上面那行里的 <strong><code>path=</code> 去掉</strong>，剩下的整串就是启动命令：</p>
 <pre class="code"><code class="lang-bash">/data/dmdata/bin/dmonitor path=/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></pre>
@@ -161,15 +178,19 @@ Instance DB138 startup success, please wait</code></pre>
 <pre class="code"><code class="lang-bash"># 找到监视器进程与配置路径
 ps -ef | grep dmonitor
 
-# 连上监视器（路径换成你自己的）
-/data/dmdata/bin/dmonitor path=/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></pre>
+# 确认本机软件安装目录（可执行文件在它的 bin/ 下）
+echo $DM_HOME
+
+# 连上监视器（$DM_HOME/bin/dmonitor，路径换成你自己环境的）
+/data/dmdata/bin/dmonitor /data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></pre>
 <p><strong>监视器交互界面内（<code>[monitor]</code> 提示符下）</strong></p>
 <div class="tbl-wrap"><table><thead><tr><th>命令</th><th>作用</th><th>是否需要先登录</th></tr></thead><tbody><tr><td><code>show</code></td><td>查看各实例状态（STATUS / RSTAT / FLSN / CLSN）</td><td>不需要</td></tr><tr><td><code>tip</code></td><td>查看监视器与实例的详细诊断信息</td><td>不需要</td></tr><tr><td><code>login</code></td><td>登录监视器（管理操作的前置）</td><td>—</td></tr><tr><td><code>stop group</code></td><td>停止整个守护组（先主后备）</td><td><strong>需要</strong></td></tr><tr><td><code>start group</code></td><td>启动整个守护组（先主后备）</td><td><strong>需要</strong></td></tr><tr><td><code>switchover</code></td><td>计划内主备切换</td><td><strong>需要</strong></td></tr></tbody></table></div>
 <hr>
-<h2>七、三个容易踩的坑</h2>
+<h2>七、四个容易踩的坑</h2>
 <p><strong>1. 把监视器命令敲到了 shell 里。</strong><br><code>show</code>、<code>login</code> 这些是<strong>监视器内部命令</strong>，必须先在 <code>[monitor]</code> 提示符下才能用。在 Linux shell 里敲 <code>show</code> 只会报 <code>command not found</code>。</p>
 <p><strong>2. 没确认 FLSN/CLSN 就动手。</strong><br>重启前如果主备的 FLSN/CLSN 不一致，说明备库有延迟。此时停库，重启后备库还得重新追平，期间集群是<strong>不可用</strong>的。<strong>先等到两行数值一致再操作。</strong></p>
 <p><strong>3. 忽略了 <code>not in CONFIRM mode</code> 的警告。</strong><br>这条 TIP 决定了主库真出故障时，监视器能不能自动接管。如果你依赖自动切换，务必按官方文档把监视器配成 CONFIRM 模式；只是做计划内维护的话，看到它就不用紧张。</p>
+<p><strong>4. 照抄别人环境里的路径。</strong><br>达梦的安装目录没有唯一答案 —— <code>/opt/dmdbms</code>、<code>/home/dmdba/dmdbms</code>、<code>/dm8</code>、<code>/u01/dmdbms</code>、<code>/data/dmdata</code> 都见过。<strong>唯一不变的是：可执行文件一定在安装目录的 <code>bin/</code> 下。</strong><br>抄命令前先 <code>echo $DM_HOME</code> 确认自己的软件目录，别拿着本文演示环境的 <code>/data/dmdata</code> 硬敲 —— 十有八九会 <code>No such file or directory</code>。</p>
 <hr>
 <blockquote><p><strong>看视频版</strong> → 本文顶部同一篇文章内嵌的录屏演示（3 分 15 秒）</p></blockquote>
   </div>
