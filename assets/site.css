@@ -5,10 +5,10 @@
 
    现有主题：
      ink  —— 水墨风（宣纸底 + 朱砂 + 衬线标题 + 小圆角）【默认】
-     sar  —— SAR 速查风（深色 + 青色 + 无衬线 + 大圆角）
+     dark —— 墨夜（深色 + 青色 + 无衬线 + 大圆角）
 
    新增一套主题只要两步：
-     ① 复制一份  html[data-theme="sar"]{...}  改名为你的主题
+     ① 复制一份  html[data-theme="dark"]{...}  改名为你的主题
      ② 在页面脚本的 THEMES 数组里加上这个 id（见 gen_blog.py 的 HEAD_SCRIPT）
    ------------------------------------------------------------
    变量速查：
@@ -63,8 +63,8 @@ html{
   --nav-bg:rgba(248,245,238,.86);
 }
 
-/* ================= SAR 速查风（深色数据风） ================= */
-html[data-theme="sar"]{
+/* ================= 墨夜（深色数据风） ================= */
+html[data-theme="dark"]{
   --bg:#0f1419;
   --bg-2:#1a2230;
   --bg-3:#222d3d;
@@ -316,8 +316,8 @@ footer{border-top:1px solid var(--line);margin-top:40px;padding:32px 0}
 .foot p{font-size:12.5px;color:var(--text-3);letter-spacing:.06em}
 .foot .quote{font-family:var(--font-title);letter-spacing:.18em}
 
-/* 水墨主题才显示远山 */
-html[data-theme="sar"] .mountains{display:none}
+/* 远山只有水墨主题才画 */
+html[data-theme="dark"] .mountains{display:none}
 
 @media (max-width:720px){
   .wrap,.nav-in{padding-left:18px;padding-right:18px}
@@ -334,4 +334,87 @@ html[data-theme="sar"] .mountains{display:none}
   .posts a{flex-wrap:wrap;gap:8px}
   .posts .t{flex-basis:100%;order:3}
   .foot{flex-direction:column;text-align:center}
+}
+
+/* ================= 搜索：导航入口 ================= */
+.nav-search{
+  display:flex;align-items:center;gap:6px;flex:none;
+  padding:6px 12px;border:1px solid var(--line-2);border-radius:999px;
+  color:var(--text-2);font-size:13px;text-decoration:none;
+  transition:border-color .2s ease,color .2s ease,background .2s ease;
+}
+.nav-search:hover{
+  border-color:var(--accent-line);color:var(--accent);text-decoration:none;
+  background:var(--accent-soft);
+}
+.nav-search svg{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+
+/* ================= 搜索页 ================= */
+.search-page{padding:38px 0 30px}
+.search-head h1{font-family:var(--font-title);font-size:30px;font-weight:500;letter-spacing:.06em}
+.search-tip{margin-top:8px;font-size:13.5px;color:var(--text-3)}
+.search-tip b{color:var(--accent);font-weight:600}
+
+.search-box{position:relative;margin:22px 0 0}
+.search-box input{
+  width:100%;height:50px;padding:0 46px;
+  font-family:var(--font-body);font-size:16px;color:var(--text);
+  background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--radius-lg);
+  outline:none;transition:border-color .2s ease,background .2s ease,box-shadow .2s ease;
+}
+.search-box input::placeholder{color:var(--text-3)}
+.search-box input:focus{
+  border-color:var(--accent-line);background:var(--bg);
+  box-shadow:0 0 0 3px var(--accent-soft);
+}
+.search-box input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.search-box .sicon{
+  position:absolute;left:17px;top:50%;width:18px;height:18px;transform:translateY(-50%);
+  fill:none;stroke:var(--text-3);stroke-width:2;stroke-linecap:round;
+}
+#clr{
+  position:absolute;right:9px;top:50%;transform:translateY(-50%);
+  width:32px;height:32px;line-height:1;font-size:19px;cursor:pointer;
+  color:var(--text-3);background:none;border:0;border-radius:50%;
+}
+#clr:hover{color:var(--accent);background:var(--accent-soft)}
+
+.search-meta{min-height:20px;margin:12px 0 4px;font-size:12.5px;color:var(--text-3);letter-spacing:.04em}
+.search-meta a{color:var(--accent)}
+
+.sres{list-style:none}
+.sres li{border-bottom:1px solid var(--line)}
+.sres a{
+  display:block;padding:15px 8px;color:var(--text);text-decoration:none;
+  transition:padding .2s ease,background .2s ease;
+}
+.sres a:hover,.sres li.on a{
+  padding-left:16px;text-decoration:none;
+  background:linear-gradient(90deg,var(--accent-soft),transparent);
+}
+.sr-top{display:flex;align-items:baseline;gap:14px}
+.sr-t{font-size:16.5px;font-weight:500}
+.sres li.on .sr-t,.sres a:hover .sr-t{color:var(--accent)}
+.sr-d{margin-left:auto;flex:none;font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text-3)}
+.sr-x{margin-top:6px;font-size:14px;line-height:1.7;color:var(--text-2)}
+.sr-c{
+  display:inline-block;margin-top:8px;font-size:11.5px;color:var(--accent);
+  border:1px solid var(--accent-line);padding:1px 8px;border-radius:var(--radius);letter-spacing:.08em;
+}
+/* 命中关键词：底色用强调色，字色用页面底色，两套主题都自然 */
+mark{background:var(--accent);color:var(--bg);padding:0 2px;border-radius:calc(var(--radius) + 1px)}
+
+.sempty{padding:46px 0;text-align:center}
+.se-t{font-family:var(--font-title);font-size:18px;font-weight:500;color:var(--text-2);margin-bottom:8px}
+.se-s{font-size:13.5px;color:var(--text-3)}
+.sempty a{color:var(--accent)}
+
+@media (max-width:720px){
+  .nav-search{padding:6px 9px}
+  .nav-search span{display:none}
+  .search-page{padding:24px 0 20px}
+  .search-head h1{font-size:25px}
+  .search-box input{height:46px;padding:0 42px}
+  .sr-t{font-size:16px}
+  .sr-d{font-size:11.5px}
 }

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>搜索 · 闯</title>
+<meta name="description" content="站内笔记搜索：标题与正文全文检索">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html">目录</a></li>
+      <li><a href="index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <a class="nav-search" href="search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap search-page">
+  <div class="search-head">
+    <h1>搜索</h1>
+    <p class="search-tip">共 <b>25</b> 篇笔记，标题和正文都能搜</p>
+  </div>
+
+  <div class="search-box">
+    <svg class="sicon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+    <input id="q" type="search" autocomplete="off" autocapitalize="off" spellcheck="false"
+           placeholder="输入关键词，例如：主备、dm.key、死锁、迁移">
+    <button id="clr" type="button" title="清空" aria-label="清空" hidden>&times;</button>
+  </div>
+
+  <p class="search-meta" id="meta" role="status" aria-live="polite"></p>
+  <ul class="sres" id="res"></ul>
+
+  <div class="sempty" id="empty" hidden>
+    <p class="se-t">没有匹配的笔记</p>
+    <p class="se-s">换个关键词，或者<a href="index.html">回目录</a>翻一翻</p>
+  </div>
+
+  <noscript>
+    <p class="search-meta">搜索需要浏览器启用 JavaScript。可以直接<a href="index.html">回目录</a>浏览全部笔记。</p>
+  </noscript>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script>
+(function () {
+  var qEl = document.getElementById('q'),
+      resEl = document.getElementById('res'),
+      metaEl = document.getElementById('meta'),
+      clrEl = document.getElementById('clr'),
+      emptyEl = document.getElementById('empty');
+  var items = [], active = -1, timer = null;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+    });
+  }
+  function reEsc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  /* 先转义再高亮：高亮的搜索词也要用同样的规则转义，否则 & < 会错位 */
+  function hl(text, ts) {
+    var out = esc(text);
+    ts.forEach(function (t) {
+      if (!t) return;
+      try {
+        out = out.replace(new RegExp(reEsc(esc(t)), 'gi'), function (m) {
+          return '<mark>' + m + '</mark>';
+        });
+      } catch (e) {}
+    });
+    return out;
+  }
+  function terms(q) {
+    return q.toLowerCase().split(/\s+/).filter(function (s) { return s.length > 0; });
+  }
+  function snippet(text, ts) {
+    var low = text.toLowerCase(), pos = -1;
+    ts.forEach(function (t) {
+      var i = low.indexOf(t);
+      if (i >= 0 && (pos < 0 || i < pos)) pos = i;
+    });
+    if (pos < 0) return hl(text.slice(0, 90), ts) + (text.length > 90 ? '…' : '');
+    var a = Math.max(0, pos - 34), b = Math.min(text.length, pos + 96);
+    return (a > 0 ? '…' : '') + hl(text.slice(a, b), ts) + (b < text.length ? '…' : '');
+  }
+
+  function search(q) {
+    var ts = terms(q);
+    clrEl.hidden = !qEl.value;
+    if (!ts.length) {
+      resEl.innerHTML = ''; emptyEl.hidden = true; metaEl.textContent = ''; active = -1;
+      return;
+    }
+    var hits = [];
+    items.forEach(function (it) {
+      var score = 0;
+      for (var i = 0; i < ts.length; i++) {
+        var t = ts[i], inT = it.tl.indexOf(t) >= 0, inC = it.cl.indexOf(t) >= 0,
+            inX = it.xl.indexOf(t) >= 0;
+        if (!inT && !inC && !inX) return;          /* 多词 = AND */
+        if (inT) score += 120;
+        if (inC) score += 30;
+        if (inX) {
+          var n = it.xl.split(t).length - 1;
+          score += 10 + Math.min(n, 8) * 4;
+        }
+      }
+      if (it.tl.indexOf(ts[0]) === 0) score += 40;
+      hits.push({ it: it, s: score });
+    });
+    hits.sort(function (a, b) {
+      return b.s - a.s || (a.it.d < b.it.d ? 1 : a.it.d > b.it.d ? -1 : 0);
+    });
+
+    active = -1;
+    if (!hits.length) {
+      resEl.innerHTML = '';
+      emptyEl.hidden = false;
+      metaEl.textContent = '没有找到匹配「' + qEl.value.trim() + '」的笔记';
+      return;
+    }
+    emptyEl.hidden = true;
+    metaEl.textContent = '找到 ' + hits.length + ' 篇' + (hits.length > 60 ? '（显示前 60 篇）' : '');
+    resEl.innerHTML = hits.slice(0, 60).map(function (h) {
+      var it = h.it;
+      return '<li><a href="' + it.u + '">'
+        + '<div class="sr-top"><span class="sr-t">' + hl(it.t, ts) + '</span>'
+        + '<span class="sr-d">' + esc(it.d) + '</span></div>'
+        + '<div class="sr-x">' + snippet(it.x, ts) + '</div>'
+        + '<div class="sr-c">' + esc(it.c) + '</div>'
+        + '</a></li>';
+    }).join('');
+  }
+
+  function run() { search(qEl.value); }
+  function delay() { clearTimeout(timer); timer = setTimeout(run, 90); }
+
+  function move(d) {
+    var as = resEl.querySelectorAll('a');
+    if (!as.length) return;
+    active += d;
+    if (active < 0) active = as.length - 1;
+    if (active >= as.length) active = 0;
+    for (var i = 0; i < as.length; i++) {
+      as[i].parentNode.classList.toggle('on', i === active);
+    }
+    as[active].scrollIntoView({ block: 'nearest' });
+  }
+
+  qEl.addEventListener('input', delay);
+  qEl.addEventListener('keydown', function (e) {
+    var as = resEl.querySelectorAll('a');
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (e.key === 'Enter') {
+      if (active >= 0 && as[active]) { location.href = as[active].getAttribute('href'); }
+      else if (as.length) { location.href = as[0].getAttribute('href'); }
+    } else if (e.key === 'Escape') { qEl.value = ''; run(); }
+  });
+  clrEl.addEventListener('click', function () { qEl.value = ''; qEl.focus(); run(); });
+
+  /* 支持 ?q=关键词 直接搜（也方便分享某个搜索） */
+  fetch('assets/search.json')
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (d) {
+      items = (d.items || []).map(function (it) {
+        return {
+          t: it.t, c: it.c, d: it.d, u: it.u, x: it.x,
+          tl: it.t.toLowerCase(), cl: it.c.toLowerCase(), xl: it.x.toLowerCase()
+        };
+      });
+      var m = location.search.match(/[?&]q=([^&]*)/);
+      if (m) {
+        try { qEl.value = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) {}
+      }
+      if (qEl.value) { run(); }
+      else if (window.innerWidth > 760) { qEl.focus(); }
+    })
+    .catch(function () {
+      metaEl.textContent = '搜索索引加载失败。'
+        + (location.protocol === 'file:'
+            ? '本地直接双击打开 HTML 时浏览器会拦截索引文件，请通过 http 访问（部署到 GitHub Pages 或本地起个服务器即可）。'
+            : '请刷新页面重试。');
+    });
+})();
+</script>
+</body>
+</html>
