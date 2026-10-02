@@ -71,18 +71,18 @@
 </nav>
 <main class="wrap article">
   <div class="art-head">
-    <div class="meta">2026-10-02 &nbsp;·&nbsp; 高可用与集群</div>
+    <div class="meta">2026-10-03 &nbsp;·&nbsp; 高可用与集群</div>
     <h1>达梦主备集群：重启与切换的完整操作</h1>
     <span class="cat">高可用与集群</span>
   </div>
   <div class="content">
 <figure class="video-block">
-  <div class="video-head">不想看文字？这里有 3 分 15 秒的视频演示</div>
+  <div class="video-head">不想看文字？这里有 1 分 40 秒的视频演示</div>
   <video controls preload="metadata" playsinline poster="../assets/video/main-standby.jpg">
     <source src="../assets/video/main-standby.mp4" type="video/mp4">
     你的浏览器不支持视频播放，<a href="../assets/video/main-standby.mp4">点此下载视频</a>。
   </video>
-  <figcaption>真实环境下的主备集群重启全流程录屏 —— 从查状态到 stop group / start group</figcaption>
+  <figcaption>真实环境下的主备集群重启与切换全流程 —— 从查状态到 stop group / startup group / switchover，七步实操</figcaption>
 </figure>
 
 <blockquote><p><strong>不想看视频？这篇就是它的文字版。</strong><br>配套视频演示的是真实环境下的操作，下面把每一步拆开写清楚 —— 可以照着做，也可以用来快速定位某一步。</p></blockquote>
@@ -163,13 +163,17 @@ Instance DB138 shutdown success, please wait</code></pre>
 <hr>
 <h2>四、启动主备集群</h2>
 <h3>第 7 步：启动整个守护组</h3>
-<pre class="code"><code>start group</code></pre>
-<p>输出：</p>
-<pre class="code"><code>Start dmonitor process of instance DB139[PRIMARY, OPEN, ISTAT_SAME_TRUE] success
-Notify instance[dmdba] startup...
-Start dmonitor process of instance DB138[NONE]
-Instance DB138 startup success, please wait</code></pre>
-<p>启动顺序和停止<strong>正好相反</strong>：<strong>先起主库，再起备库</strong> —— 备库要跟着主库走，主库没起来时它会先进入 NONE 状态等待。</p>
+<pre class="code"><code>startup group GRP1</code></pre>
+<blockquote><p>⚠️ <strong>注意命令不对称</strong>：停用的是 <code>stop group</code>，启动用的是 <strong><code>startup group</code></strong> —— 不是 <code>start group</code>。<br>写成 <code>start group</code> 监视器会直接回「输入命令非法」，并提示正确用法。这是实测踩过的坑。</p></blockquote>
+<p>输出（监视器会逐条推进守护进程与实例状态）：</p>
+<pre class="code"><code>STARTUP实例GRP1_RT_02[PRIMARY, SHUTDOWN]的守护进程
+守护进程(GRP1_RT_02)状态切换 [SHUTDOWN--&gt;STARTUP]
+STARTUP实例GRP1_RT_01[STANDBY, SHUTDOWN]的守护进程
+守护进程(GRP1_RT_01)状态切换 [SHUTDOWN--&gt;STARTUP]
+...
+STARTUP  OK  GRP1_RT_02  OPEN  PRIMARY  VALID
+STARTUP  OK  GRP1_RT_01  OPEN  STANDBY</code></pre>
+<p>启动顺序和停止<strong>正好相反</strong>：<strong>先起主库，再起备库</strong> —— 备库要跟着主库走，主库没起来时它会先等待。</p>
 <h3>第 8 步：再确认一次状态</h3>
 <pre class="code"><code>show</code></pre>
 <p><strong>验收标准</strong>：</p>
