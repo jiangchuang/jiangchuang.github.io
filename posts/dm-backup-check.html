@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦（DM8）数据库备份检查与验证 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2025-09-25 &nbsp;·&nbsp; 日常运维</div>
+    <h1>达梦（DM8）数据库备份检查与验证</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+<hr>
+<p><strong>手册概述</strong></p>
+<p>本手册旨在为数据库管理员和技术人员提供一套完整、清晰的操作指南，用于检查和验证达梦（Dameng）数据库的备份情况。通过遵循本手册的步骤，您可以有效地确认自动备份策略、核查备份执行状态、定位备份文件，并验证备份文件的有效性，从而确保数据的安全与可恢复性。</p>
+<p><strong>核心内容</strong></p>
+<ol><li><strong>确定数据库是否开启自动备份</strong></li><li><strong>查看定时备份作业是否成功执行</strong></li><li><strong>查看数据库的备份文件路径</strong></li><li><strong>验证数据库备份的有效性</strong></li><li><strong>查看数据库的整体备份策略</strong></li></ol>
+<hr>
+<h3><strong>一、如何确定数据库是否开启了自动备份</strong></h3>
+<p>达梦数据库的自动备份通常通过其 <strong>代理作业 (Agent Job)</strong> 功能实现。因此，检查是否配置了自动备份，关键在于查看是否存在相应的代理作业。</p>
+<p><strong>操作步骤：</strong></p>
+<ol><li>打开 <strong>达梦管理工具</strong> 并连接到目标数据库实例。</li><li>在左侧的对象导航器中，找到并展开 <strong>代理</strong> 节点。</li><li>展开 <strong>作业</strong> 子节点。</li></ol>
+<p><strong>结果判断：</strong></p>
+<ul><li><strong>已开启：</strong> 如果您在“作业”节点下看到类似 <code>DB_BAK_FULL</code> (全量备份) 或 <code>DB_BAK_INC</code> (增量备份) 的作业名称，这通常意味着自动备份已经配置。</li><li><strong>未开启：</strong> 如果“作业”节点下为空，则很可能没有通过代理配置自动备份策略。</li></ul>
+<p><strong>深入验证作业类型：</strong></p>
+<p>为确保该作业确实是备份任务，可以按以下步骤进行确认：</p>
+<ol><li>右键点击疑似备份的作业（如 <code>DB_BAK_FULL</code>）。</li><li>在右键菜单中选择 <strong>属性</strong>。</li><li>在弹出的“作业属性”窗口中，切换到 <strong>步骤</strong> 标签页。</li><li>双击列表中的作业步骤，在弹出的“作业步骤属性”窗口中，查看 <strong>步骤类型</strong> 是否为 <strong>备份数据库</strong>。</li></ol>
+<h3><strong>二、如何查看定时备份作业是否成功执行</strong></h3>
+<p>确认备份作业存在后，下一步是检查其历史执行记录，确保它们按计划成功运行。</p>
+<h4><strong>方法一：通过图形化界面（推荐）</strong></h4>
+<ol><li>在 <strong>代理 -&gt; 作业</strong> 节点下，右键点击您想检查的备份作业（如 <code>DB_BAK_FULL</code>）。</li><li>选择 <strong>查看作业历史信息</strong>。</li><li>在弹出的历史记录窗口中，查看每一次的执行记录。重点关注以下几列：</li></ol>
+<ul><li class="sub"><strong>开始时间</strong> 和 <strong>结束时间</strong>：确认作业是否在预定时间运行。</li><li class="sub"><strong>错误代码</strong> 和 <strong>错误信息</strong>：如果这两列为空或显示成功信息，则表示作业执行成功。</li></ul>
+<h4><strong>方法二：通过SQL查询</strong></h4>
+<p>您也可以通过查询系统视图来获取作业历史记录，这种方法适用于无法使用图形化界面或需要自动化脚本检查的场景。</p>
+<p>执行以下SQL语句：</p>
+<pre class="code"><code class="lang-sql">-- 查询作业历史记录，按开始时间降序排列，只显示最近20条
+SELECT * 
+FROM SYSJOB.SYSJOBHISTORIES2 
+ORDER BY START_TIME DESC 
+LIMIT 20;</code></pre>
+<p><strong>结果解读：</strong></p>
+<ul><li>查询结果会列出作业的执行历史。</li><li>同样地，检查 <code>ERRORCODE</code> 和 <code>ERRINFO</code> 字段。如果值为 <code>NULL</code> 或 <code>0</code>，代表该次执行成功。</li></ul>
+<h3><strong>三、如何查看数据库的备份文件路径</strong></h3>
+<p>了解备份文件的存储位置对于后续的文件管理和验证至关重要。</p>
+<h4><strong>方法一：通过图形化界面</strong></h4>
+<ol><li>右键点击备份作业，选择 <strong>属性</strong> -&gt; <strong>步骤</strong>。</li><li>双击作业步骤，打开“作业步骤属性”窗口。</li><li>在 <strong>常规</strong> 标签页中，您可以看到 <strong>备份路径</strong> 字段，这里明确指定了备份文件存放的目录。</li></ol>
+<h4><strong>方法二：通过SQL查询</strong></h4>
+<p>执行以下SQL查询作业步骤的详细信息：</p>
+<pre class="code"><code class="lang-sql">-- 查询所有作业步骤的详细信息
+SELECT * FROM SYSJOB.SYSJOBSTEPS;</code></pre>
+<p><strong>结果解读：</strong></p>
+<ul><li>找到与您的备份作业相对应的行。</li><li>查看 <code>COMMAND</code> 字段的内容。该字段包含了备份命令的详细参数，其中就包括了备份文件的完整路径。</li><li class="sub"><strong>全量备份</strong>：直接显示备份路径，如 <code>D:\dmdms\data\bak\full</code>。</li><li class="sub"><strong>增量备份</strong>：备份路径通常会以竖线|分割，竖线前面是全量备份路径，后面是跟着本次增量备份的存放路径，如 <code>D:\dmdms\data\bak\full|D:\dmdms\data\bak\inc'</code>。</li></ul>
+<h3><strong>四、如何验证数据库备份的有效性</strong></h3>
+<p>仅仅确认备份成功执行是不够的，还需要验证生成的备份文件本身是完整且可用的。</p>
+<blockquote><p><strong>⚠️ 重要提示：</strong> 备份校验是一项占用大量磁盘I/O的操作，可能会对正在运行的业务系统性能产生影响。<strong>强烈建议在业务低峰期或维护窗口进行此项操作。</strong></p></blockquote>
+<h4><strong>方法一：通过图形化界面</strong></h4>
+<ol><li>在达梦管理工具左侧导航栏中，找到 <strong>备份</strong> 节点。</li><li>右键点击 <strong>库备份</strong>，选择 <strong>指定工作目录</strong>。</li><li>默认情况下，工具可能不会扫描到您的备份文件。点击 <strong>添加</strong> 按钮，将您在第三步中找到的全量和增量备份路径添加进来，然后点击 <strong>确定</strong>。</li><li>此时，展开 <strong>库备份</strong> 节点，您应该能看到所有扫描到的备份集。</li><li>找到您想校验的最新备份集，右键点击它，选择 <strong>备份校验</strong>。</li><li>系统会开始校验过程。如果弹出提示 “备份校验成功”，则证明该备份文件是有效和完整的。</li></ol>
+<h4><strong>方法二：通过SQL函数</strong></h4>
+<p>您可以使用系统提供的 <code>SF_BAKSET_CHECK</code> 函数来通过SQL命令校验备份。</p>
+<p>执行以下SQL语句：</p>
+<pre class="code"><code class="lang-sql">-- 校验指定的备份集文件
+-- 将 'D:\dmdms\data\bak\inc\DB_DAMENG_INCREMENT_...' 替换为您实际的备份集路径
+SELECT SF_BAKSET_CHECK('DISK', 'D:\dmdms\data\bak\inc\DB_DAMENG_INCREMENT_2025_03_04_08_58_14');</code></pre>
+<p><strong>结果解读：</strong></p>
+<ul><li>如果函数执行后返回结果为 <code>1</code>，则表示备份集校验通过，文件有效。</li><li>如果返回其他值或报错，则表示备份文件可能存在问题。</li></ul>
+<h3>五、查看数据库的自动备份策略</h3>
+<blockquote><p>使用说明：直接将以下SQL语句复制到disql、达梦管理工具等查询工具中执行即可</p></blockquote>
+<pre class="code"><code class="lang-sql">-- ===================================================================
+-- 脚本名称: DM数据库定时备份策略巡检脚本
+-- 功能描述: 本脚本用于 DM8 查询达梦数据库中所有通过内置作业系统配置的
+--           定时备份任务。查询结果以关键信息优先的顺序展示，包括
+--           作业名称、状态、执行计划及最近运行状态，便于DBA快速审计。
+-- 作者:     JC
+-- 版本:     3.6 (优化版)
+-- 最后修改: 2025-08-01
+-- ===================================================================
+
+WITH job_history AS (
+    SELECT
+        jobid, start_time, end_time, errcode, errinfo, ep_seqno,
+        ROW_NUMBER() OVER (PARTITION BY jobid ORDER BY start_time DESC) as rn
+    FROM sysjob.sysjobhistories2
+),
+schedule_info AS (
+    SELECT 
+        jobid,
+        name,
+        describe,
+        -- 优化调度描述生成逻辑
+        CASE type
+            WHEN 0 THEN '仅执行一次于 ' || starttime
+            WHEN 1 THEN '每 ' || freq_interval || ' 天, 于 ' || starttime || ' 执行'
+            WHEN 2 THEN 
+                '每 ' || freq_interval || ' 周的 ' ||
+                -- 使用DECODE简化周几的判断
+                RTRIM(
+                    DECODE(BITAND(freq_sub_interval, 1), 0, '', '周日 ') ||
+                    DECODE(BITAND(freq_sub_interval, 2), 0, '', '周一 ') ||
+                    DECODE(BITAND(freq_sub_interval, 4), 0, '', '周二 ') ||
+                    DECODE(BITAND(freq_sub_interval, 8), 0, '', '周三 ') ||
+                    DECODE(BITAND(freq_sub_interval, 16), 0, '', '周四 ') ||
+                    DECODE(BITAND(freq_sub_interval, 32), 0, '', '周五 ') ||
+                    DECODE(BITAND(freq_sub_interval, 64), 0, '', '周六 ')
+                ) || ' 于 ' || starttime || ' 执行'
+            WHEN 3 THEN '每 ' || freq_interval || ' 个月的第 ' || freq_sub_interval || ' 天, 于 ' || starttime || ' 执行'
+            WHEN 4 THEN '每 ' || freq_interval || ' 个月的第一周的星期' || (freq_sub_interval-1) || ', 于 ' || starttime || ' 执行'
+            WHEN 5 THEN '每 ' || freq_interval || ' 个月的第二周的星期' || (freq_sub_interval-1) || ', 于 ' || starttime || ' 执行'
+            WHEN 6 THEN '每 ' || freq_interval || ' 个月的第三周的星期' || (freq_sub_interval-1) || ', 于 ' || starttime || ' 执行'
+            WHEN 7 THEN '每 ' || freq_interval || ' 个月的第四周的星期' || (freq_sub_interval-1) || ', 于 ' || starttime || ' 执行'
+            WHEN 8 THEN '每 ' || freq_interval || ' 个月的最后一周的星期' || (freq_sub_interval-1) || ', 于 ' || starttime || ' 执行'
+            WHEN 9 THEN '由 DBMS_JOB 定义'
+            ELSE '未知调度类型'
+        END || 
+        -- 优化重复间隔的表示
+        DECODE(freq_minute_interval, 0, '', NULL, '', ' (且日内每 ' || freq_minute_interval || ' 分钟重复)')
+        AS schedule_desc
+    FROM sysjob.sysjobschedules
+)
+SELECT
+    j.name                          AS "作业名称",
+    DECODE(j.enable, 1, '启用', '禁用') AS "作业状态",
+    s.name                          AS "作业步骤名称",
+    CASE 
+        WHEN INSTR(s.command, '|') &gt; 0 THEN '增量备份' 
+        ELSE '全量备份' 
+    END                             AS "推断备份类型",
+    sch.name                        AS "调度计划名称",
+    sch.schedule_desc               AS "执行计划描述",
+    lh.start_time                   AS "最近运行开始时间",
+    DECODE(lh.errcode, 0, '成功', NULL, '未运行', '失败') AS "最近运行状态",
+    lh.errinfo                      AS "最近错误信息",
+    lh.errcode                      AS "最近错误码",
+    j.username                      AS "作业所有者",
+    s.command                       AS "备份命令详情",
+    DECODE(s.type, 
+           6, '备份程序 V2.0',
+           5, '备份程序 V1.0 (带选项)',
+           1, '备份程序 V1.0',
+           '其他')                  AS "备份程序"
+FROM
+    sysjob.sysjobs j
+    INNER JOIN sysjob.sysjobsteps s ON j.id = s.jobid
+    INNER JOIN schedule_info sch ON j.id = sch.jobid
+    LEFT JOIN job_history lh ON j.id = lh.jobid AND lh.rn = 1
+WHERE
+    s.type IN (1, 5, 6) 
+ORDER BY j.username, j.name, s.seqno;</code></pre>
+<hr>
+<p><strong>总结</strong></p>
+<p>定期对数据库备份进行检查与验证是保障数据安全的关键环节。本手册通过图形化界面和SQL命令两种方式，详细介绍了从确认备份策略到验证备份文件有效性的全过程。建议您将这些步骤纳入日常的数据库维护流程中，以确保在意外发生时，能够快速、可靠地恢复数据。</p>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dm-upgrade.html">达梦数据库版本升级实录 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

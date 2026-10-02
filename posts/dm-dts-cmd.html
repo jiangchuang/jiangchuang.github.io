@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基于 DTS 命令行的定时数据迁移 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2025-07-30 &nbsp;·&nbsp; 迁移与同步</div>
+    <h1>基于 DTS 命令行的定时数据迁移</h1>
+    <span class="cat">迁移与同步</span>
+  </div>
+  <div class="content">
+<p><strong>摘要:</strong></p>
+<p>本文档旨在指导用户如何在Linux环境下，利用达梦数据库的命令行工具<code>dts_cmd_run.sh</code>实现自动化数据迁移。我们将通过一个简单的“达梦到-达梦”同步场景，完整地展示从使用图形化工具生成配置文件，到部署、测试，再到最终配置<code>cron</code>定时任务的全过程。</p>
+<hr>
+<h4><strong>1. 核心流程概述</strong></h4>
+<ol><li><strong>准备配置文件</strong>：在任何有图形化界面的电脑上，使用DTS工具的向导模式，轻松生成一个<code>.xml</code>格式的迁移任务配置文件。</li><li><strong>部署与测试</strong>：将<code>.xml</code>文件上传到目标Linux服务器，并使用<code>dts_cmd_run.sh</code>命令手动执行一次，以验证配置的正确性和连通性。</li><li><strong>设置定时任务</strong>：利用Linux的<code>cron</code>服务，让这个迁移任务在无人值守的情况下，每天在指定时间自动运行。</li></ol>
+<hr>
+<h4><strong>2. 环境与配置示例</strong></h4>
+<div class="tbl-wrap"><table><thead><tr><th>角色</th><th>IP地址</th><th>端口</th><th>模式名 (Schema)</th><th>待迁移的表</th></tr></thead><tbody><tr><td><strong>源端</strong></td><td><code>10.0.0.1</code></td><td><code>5236</code></td><td><code>SRC_SCHEMA</code></td><td><code>TEST_TABLE</code></td></tr><tr><td><strong>目的端</strong></td><td><code>10.0.0.2</code></td><td><code>5236</code></td><td><code>DEST_SCHEMA</code></td><td><code>TEST_TABLE</code></td></tr></tbody></table></div>
+<hr>
+<h4><strong>3. 实施步骤</strong></h4>
+<h5><strong>步骤一：使用图形化DTS生成配置文件</strong></h5>
+<blockquote><p><strong>提示：</strong> 这一步建议在您本地的Windows或带有图形界面的Linux机器上完成，因为图形化向导可以极大地简化配置过程。</p></blockquote>
+<ol><li><strong>启动DTS工具</strong>：</li></ol>
+<ul><li class="sub">在达梦安装目录的 <code>tool</code> 文件夹下，执行 <code>dts.sh</code> (Linux) 或 <code>dts.exe</code> (Windows)。</li></ul>
+<ol><li><strong>新建工程</strong>:</li></ol>
+<ul><li class="sub">在左侧“迁移管理”区域右键，选择“<strong>新建工程</strong>”。</li><li class="sub">工程名填写“<strong>SimpleSync</strong>”，点击“确定”。</li></ul>
+<ol><li><strong>新建迁移任务</strong>:</li></ol>
+<ul><li class="sub">在刚创建的“SimpleSync”工程下的“迁移”项上右键，选择“<strong>新建迁移</strong>”。</li><li class="sub">迁移名称同样填写“<strong>SimpleSync</strong>”，点击“确定”。</li></ul>
+<ol><li><strong>配置迁移向导</strong>:</li></ol>
+<ul><li class="sub"><strong>迁移方式选择</strong>: 在向导第一步，选择 <code>DM -&gt; DM</code>，点击“下一步”（也可根据用户源端实际使用的数据库进行选择）。</li><li class="sub"><strong>源端配置</strong>:</li><li class="sub">输入源端数据库的IP <code>10.0.0.1</code>、端口 <code>5236</code>。</li><li class="sub">输入可以访问源端模式的用户名（如<code>SRC_USER</code>）及密码。</li><li class="sub">点击“下一步”。</li><li class="sub"><strong>目的端配置</strong>:</li><li class="sub">输入目的端数据库的IP <code>10.0.0.2</code>、端口 <code>5236</code>。</li><li class="sub">输入可以访问目的端模式的用户名（如<code>DEST_USER</code>）及密码。</li><li class="sub">点击“下一步”。</li><li class="sub"><strong>迁移选项</strong>: 保持默认设置，点击“下一步”。</li><li class="sub"><strong>选择迁移对象</strong>:</li><li class="sub">在模式列表中，<strong>源模式</strong>选择 <code>SRC_SCHEMA</code>，<strong>目的模式</strong>选择 <code>DEST_SCHEMA</code>。</li><li class="sub">在右侧的迁移对象类型中，确保“<strong>表(Table)</strong>”已被勾选。</li><li class="sub">点击“下一步”。</li><li class="sub"><strong>筛选具体表对象</strong>:</li><li class="sub">DTS会列出 <code>SRC_SCHEMA</code> 模式下的所有对象。使用查找功能或手动找到 <code>TEST_TABLE</code> 表，并<strong>勾选</strong>它。</li><li class="sub">（可选）如果需要修改迁移策略（如数据存在时是覆盖还是忽略），可以选中表后点击“<strong>转换</strong>”按钮进行设置。对于全量同步，通常默认即可。</li><li class="sub">点击“下一步”。</li></ul>
+<ol><li><strong>导出配置文件</strong>:</li></ol>
+<ul><li class="sub">在迁移向导的最后一步，<strong>不要点击“完成”或“立即执行”</strong>。</li><li class="sub">点击界面左下角的“<strong>源代码</strong>”按钮。</li><li class="sub">此时会弹出一个窗口，显示本次迁移任务的 <strong>XML 格式源代码</strong>。</li><li class="sub"><strong>全选（Ctrl+A）并复制（Ctrl+C）</strong>这些XML内容，将其粘贴到一个新建的文本文件中，并命名为 <code>sync_job.xml</code>。</li></ul>
+<p><strong>至此，我们已经成功获取了核心的配置文件，后续操作将在Linux服务器上进行。</strong></p>
+<hr>
+<h5><strong>步骤二：在Linux服务器上部署并手动测试</strong></h5>
+<p><strong>1. 创建工作目录并上传文件</strong></p>
+<blockquote><p><strong>最佳实践</strong>：我们将在 <code>/data</code> 目录下创建一个专门的文件夹来存放所有DTS任务相关的文件。<code>/data</code> 目录通常用于存放应用数据，非常适合此场景。</p></blockquote>
+<ul><li>以 <code>root</code> 用户或有 <code>sudo</code> 权限的用户，执行以下命令：</li></ul>
+<pre class="code"><code class="lang-bash">    # 创建DTS任务的主目录
+    sudo mkdir -p /data/dts_jobs
+    # 将此目录的所有权赋予dmdba用户，以便其可以读写
+    sudo chown -R dmdba:dinstall /data/dts_jobs</code></pre>
+<ul><li>以 <code>dmdba</code> 用户登录，并使用<code>scp</code>或<code>sftp</code>等工具，将之前准备好的 <code>sync_job.xml</code> 文件上传到 <code>/data/dts_jobs/</code> 目录中。</li></ul>
+<p><strong>2. 手动执行迁移测试</strong></p>
+<blockquote><p>我们的目标是展示<code>dts_cmd_run.sh</code>最直接、最简化的使用方式。下面的命令没有使用任何变量，所有路径和参数都清晰可见。</p></blockquote>
+<ul><li>以 <code>dmdba</code> 用户，在终端中执行以下命令：</li></ul>
+<pre class="code"><code class="lang-bash">    /home/dmdba/dmdbms/tool/dts_cmd_run.sh config \
+    file=/data/dts_jobs/sync_job.xml \
+    report=/data/dts_jobs \
+    log=/data/dts_jobs \
+    err_log=/data/dts_jobs</code></pre>
+<ul><li><strong>命令解读：</strong></li><li class="sub"><code>/home/dmdba/dmdbms/tool/dts_cmd_run.sh</code>: 这是DTS命令行工具的<strong>绝对路径</strong>。</li><li class="sub"><code>config</code>: 告诉程序我们要通过参数来配置任务。</li><li class="sub"><code>file=/data/dts_jobs/sync_job.xml</code>: <strong>指定配置文件</strong>。这是最重要的参数。</li><li class="sub"><code>report=/data/dts_jobs</code>: 指定<strong>报告</strong>（<code>.xlsx</code>格式）的输出目录。</li><li class="sub"><code>log=/data/dts_jobs</code>: 指定<strong>日志</strong>（<code>.txt</code>格式）的输出目录。</li><li class="sub"><code>err_log=/data/dts_jobs</code>: 指定<strong>错误日志</strong>的输出目录。</li></ul>
+<p><strong>3. 验证结果</strong></p>
+<ul><li><strong>观察终端输出</strong>：如果命令执行后，屏幕上显示 "run finish!"，则表示迁移任务已成功执行。</li><li><strong>检查生成的文件</strong>：执行 <code>ls -l /data/dts_jobs</code>，你会看到新生成的、带有时间戳的报告和日志文件，如 <code>transform_report_xxxx.xlsx</code>。</li><li><strong>核对数据库数据</strong>：登录到目的端数据库 (<code>10.0.0.2</code>)，执行SQL查询 <code>SELECT * FROM DEST_SCHEMA.TEST_TABLE;</code>，确认数据已按预期同步过来。</li></ul>
+<hr>
+<h5><strong>步骤三：配置Crontab实现定时调度</strong></h5>
+<p><strong>1. Crontab简介</strong></p>
+<p><code>crontab</code> 是Linux系统下的一个强大的定时任务工具。你可以用它来安排任何命令或脚本在指定的时间（例如每天、每周、每小时）自动运行。每个用户都可以拥有自己的 <code>crontab</code> 任务列表，任务会以该用户的身份执行。</p>
+<p><strong>2. 编辑定时任务</strong></p>
+<ul><li>以 <code>dmdba</code> 用户登录（当然您也可以使用其他操作系统用户），因为我们需要以这个用户的身份来运行DTS任务。</li><li>在终端输入以下命令来编辑当前用户的定时任务：</li></ul>
+<pre class="code"><code class="lang-bash">    crontab -e</code></pre>
+<p>（第一次使用时，系统可能会让你选择一个文本编辑器，如 <code>nano</code> 或 <code>vim</code>，选择你熟悉的即可。）</p>
+<p><strong>3. 添加定时任务</strong></p>
+<ul><li>在打开的编辑器中，移动到文件末尾，添加下面这行内容：</li></ul>
+<pre class="code"><code class="lang-crontab">    # 每天凌晨2点，执行达梦DTS数据同步任务
+    0 2 * * * /home/dmdba/dmdbms/tool/dts_cmd_run.sh config file=/data/dts_jobs/sync_job.xml report=/data/dts_jobs log=/data/dts_jobs err_log=/data/dts_jobs &gt; /dev/null 2&gt;&amp;1</code></pre>
+<ul><li><strong>这一行配置的含义：</strong></li><li class="sub"><strong><code>0 2 * * *</code></strong>: 这是<code>cron</code>的时间表达式，格式为 <code>分 时 日 月 周</code>。</li><li class="sub"><code>0</code>: 第0分钟。</li><li class="sub"><code>2</code>: 凌晨2点。</li><li class="sub"><code>*</code>: 每一天。</li><li class="sub"><code>*</code>: 每一个月。</li><li class="sub"><code>*</code>: 每周的每一天。</li><li class="sub"><strong>合起来就是：每天的凌晨2点0分执行任务。</strong></li><li class="sub"><code>/home/dmdba/dmdbms/tool/dts_cmd_run.sh ...</code>: 这就是我们<strong>步骤二</strong>中手动测试成功的那条完整命令。</li><li class="sub"><code>&gt; /dev/null 2&gt;&amp;1</code>: 这是一个常用技巧，意思是将命令执行过程中所有的屏幕输出（包括正常信息和错误信息）都丢弃掉，不保存。这样可以保持系统干净，避免 <code>cron</code> 发送不必要的通知邮件。我们需要的日志，DTS工具自己会生成到 <code>/data/dts_jobs</code> 目录中。</li></ul>
+<p><strong>4. 保存并验证</strong></p>
+<ul><li>保存并退出编辑器（在<code>vim</code>中是按<code>ESC</code>后输入<code>:wq</code>，在<code>nano</code>中是按<code>Ctrl+X</code>后按<code>Y</code>）。</li><li>系统会自动提示 "crontab: installing new crontab"。</li><li>你可以随时使用 <code>crontab -l</code> 命令来查看当前已配置好的定时任务列表，确认我们的任务已在其中。</li></ul>
+<p>至此，您的DTS数据迁移任务就已经配置完成，并会在每天凌晨2点准时自动执行，实现了真正的自动化。</p>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dm-single2cluster.html">单机转集群：数据守护部署实录 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>

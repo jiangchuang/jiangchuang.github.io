@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMHS 之 MySQL · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2022-12-14 &nbsp;·&nbsp; 迁移与同步</div>
+    <h1>DMHS 之 MySQL</h1>
+    <span class="cat">迁移与同步</span>
+  </div>
+  <div class="content">
+<p>[toc]</p>
+<h2>源端</h2>
+<h3>MySQL配置</h3>
+<pre class="code"><code class="lang-properties">[mysqld]
+server_id=16134
+user=mysql
+log-bin=/data/mysql_src/binlog
+basedir=/root/mysql57/
+datadir=/data/mysql_src/</code></pre>
+<h3>测试捕获器组件</h3>
+<blockquote><p>切换到<code>dmhs</code>的<code>bin</code>目录，执行<code>ldd libcpt_mysql.so</code>确保没有<code>not found</code>的库文件行输出</p></blockquote>
+<pre class="code"><code class="lang-bash">[root@localhost bin]# cd /opt/dmhs/bin
+[root@localhost bin]# ldd libcpt_mysql.so | grep 'not found'</code></pre>
+<h3>源端DMHS配置</h3>
+<blockquote><p>尽量使用<code>ip</code>而不是用<code>hostname</code>(测试版本有此限制，以后或许会修复)</p></blockquote>
+<pre class="code"><code class="lang-bash">[root@localhost bin]# vim dmhs_src.xml</code></pre>
+<pre class="code"><code class="lang-xml">&lt;?xml version="1.0" encoding="GB2312"?&gt;
+&lt;dmhs&gt;
+    &lt;base&gt;
+        &lt;lang&gt;en&lt;/lang&gt;
+        &lt;mgr_port&gt;5345&lt;/mgr_port&gt;
+        &lt;ckpt_interval&gt;45&lt;/ckpt_interval&gt;
+        &lt;siteid&gt;1&lt;/siteid&gt;
+        &lt;version&gt;2.0&lt;/version&gt;
+    &lt;/base&gt;
+    &lt;cpt&gt;
+        &lt;db_type&gt;mysql&lt;/db_type&gt;
+        &lt;db_server&gt;127.0.0.1&lt;/db_server&gt;
+        &lt;db_port&gt;3306&lt;/db_port&gt;
+        &lt;db_name&gt;test&lt;/db_name&gt;
+        &lt;db_user&gt;test&lt;/db_user&gt;
+        &lt;db_pwd&gt;jiangc365&lt;/db_pwd&gt;
+        &lt;ddl_mask&gt;op:obj&lt;/ddl_mask&gt;
+        &lt;arch&gt;
+            &lt;clear_interval&gt;600&lt;/clear_interval&gt;
+            &lt;clear_flag&gt;0&lt;/clear_flag&gt;
+            &lt;dir&gt;/data/mysql_src&lt;/dir&gt;
+        &lt;/arch&gt;
+        &lt;send&gt;
+            &lt;ip&gt;192.168.16.134&lt;/ip&gt;
+            &lt;mgr_port&gt;6345&lt;/mgr_port&gt;
+            &lt;data_port&gt;6346&lt;/data_port&gt;
+        &lt;/send&gt;
+    &lt;/cpt&gt;
+&lt;/dmhs&gt;</code></pre>
+<h2>目的端</h2>
+<h3>目的端DMHS配置</h3>
+<pre class="code"><code class="lang-xml">&lt;?xml version="1.0" encoding="GB2312"?&gt;
+&lt;dmhs&gt;
+    &lt;base&gt;
+        &lt;lang&gt;en&lt;/lang&gt;
+        &lt;mgr_port&gt;6345&lt;/mgr_port&gt;
+        &lt;ckpt_interval&gt;45&lt;/ckpt_interval&gt;
+        &lt;siteid&gt;2&lt;/siteid&gt;
+        &lt;version&gt;2.0&lt;/version&gt;
+    &lt;/base&gt;
+    &lt;exec&gt;
+        &lt;recv&gt;
+            &lt;data_port&gt;6346&lt;/data_port&gt;
+        &lt;/recv&gt;
+        &lt;db_type&gt;mysql&lt;/db_type&gt;
+        &lt;db_server&gt;localhost&lt;/db_server&gt;
+        &lt;db_port&gt;3307&lt;/db_port&gt;
+        &lt;db_name&gt;test&lt;/db_name&gt;
+        &lt;db_user&gt;root&lt;/db_user&gt;
+        &lt;db_pwd&gt;jiangc365@163.COM&lt;/db_pwd&gt;
+    &lt;/exec&gt;
+&lt;/dmhs&gt;</code></pre>
+<h3>UnixODBC的安装</h3>
+<blockquote><p>如果无法连接物联网，可以考虑使用操作系统的镜像文件进行提取安装</p></blockquote>
+<pre class="code"><code class="lang-bash">yum -y install unixODBC</code></pre>
+<h3>MySQL的ODBC安装</h3>
+<blockquote><p>建议使用<code>dmhs</code>搭建文档中推荐的<code>ODBC</code>版本</p></blockquote>
+<pre class="code"><code class="lang-bash">wget https://cdn.mysql.com/archives/mysql-connector-odbc-5.1/mysql-connector-odbc-5.1.13-1.el6.x86_64.rpm
+
+rpm -ivh mysql-connector-odbc-5.1.13-1.el6.x86_64.rpm</code></pre>
+<h3>ODBC连接配置</h3>
+<h4>确定配置文件路径</h4>
+<blockquote><p>使用<code>odbcinst -j</code>查看<code>odbc</code>配置文件路径：一般<code>odbcinst.ini</code>是驱动配置文件，<code>odbc.ini</code>是连接配置文件</p></blockquote>
+<pre class="code"><code>[root@localhost bin]# odbcinst -j
+
+unixODBC 2.3.1
+DRIVERS............: /etc/odbcinst.ini
+SYSTEM DATA SOURCES: /etc/odbc.ini
+FILE DATA SOURCES..: /etc/ODBCDataSources
+USER DATA SOURCES..: /root/.odbc.ini
+SQLULEN Size.......: 8
+SQLLEN Size........: 8
+SQLSETPOSIROW Size.: 8</code></pre>
+<h4>修改ODBC驱动配置文件</h4>
+<blockquote><p>如果是通过rpm包安装的，通常不需要手动配置如下文件</p></blockquote>
+<pre class="code"><code>[root@localhost bin]# cat /etc/odbcinst.ini
+
+[MySQL]
+Description=ODBC for MySQL
+Driver=/usr/lib/libmyodbc5.so
+Setup=/usr/lib/libodbcmyS.so
+Driver64=/usr/lib64/libmyodbc5.so
+Setup64=/usr/lib64/libodbcmyS.so
+FileUsage=1
+
+[MySQL ODBC 5.1 Driver]
+Driver=/usr/lib64/libmyodbc5.so
+UsageCount=1</code></pre>
+<h4>修改ODBC连接配置文件</h4>
+<blockquote><p><code>Driver</code>可以指定<code>odbcinst.ini</code>中括号中的节点名，也可以在下方直接指定<code>libmyodbc.so</code>文件绝对路径</p></blockquote>
+<pre class="code"><code>[root@localhost bin]# cat /etc/odbc.ini
+[MySQL]
+Driver=MySQL
+DATABASE=mysql
+Server=localhost
+UID=root
+PASSWORD=jiangc</code></pre>
+<h4>测试ODBC连接配置</h4>
+<blockquote><p><code>isql</code>命令后接的参数为<code>odbc.ini</code>配置文件中括号里面的名称</p></blockquote>
+<pre class="code"><code>[root@localhost bin]# isql mysql
++---------------------------------------+
+| Connected!                            |
+|                                       |
+| sql-statement                         |
+| help [tablename]                      |
+| quit                                  |
+|                                       |
++---------------------------------------+
+SQL&gt; </code></pre>
+<h2>启动同步</h2>
+<div class="mermaid">graph LR
+    A[目的端:运行dmhs_server] --&gt; B[目的端:启动执行器]
+    B --&gt; C[源端:运行dmhs_server]
+    C --&gt; D[源端:设置日志分析起点]
+    D --&gt; E[源端:初始化装载]
+    E --&gt; F[源端:启动捕获器]</div>
+<h3>目的端</h3>
+<h4>1、运行dmhs_server</h4>
+<ul><li>使用上文中的<a href="#源端DMHS配置" target="_blank" rel="noopener">dmhs_src.xml</a>配置文件启动源端</li></ul>
+<pre class="code"><code class="lang-bash">[root@localhost bin]# cd /opt/dmhs/bin
+[root@localhost bin]# ./dmhs_server dmhs_src.xml</code></pre>
+<h4>2、启动执行器</h4>
+<ul><li>使用控制台连接到目的端管理服务</li></ul>
+<pre class="code"><code>[root@localhost bin]# cd /opt/dmhs/bin
+[root@localhost bin]# ./dmhs_console
+
+DMHS&gt; connect 127.0.0.1:5345
+execute success</code></pre>
+<ul><li>启动执行器</li></ul>
+<pre class="code"><code>DMHS&gt; start exec
+execute success</code></pre>
+<h3>源端</h3>
+<h4>1、运行dmhs_server</h4>
+<ul><li>使用上文中的<a href="#目的端DMHS配置" target="_blank" rel="noopener">dmhs_dst.xml</a>配置文件启动源端</li></ul>
+<pre class="code"><code>[root@localhost bin]# cd /opt/dmhs/bin
+[root@localhost bin]# ./dmhs_server dmhs_dst.xml</code></pre>
+<h4>2、设置日志分析起点</h4>
+<ul><li>使用控制台连接到目的端管理服务</li></ul>
+<pre class="code"><code>[root@localhost bin]# cd /opt/dmhs/bin
+[root@localhost bin]# ./dmhs_console
+
+DMHS&gt; connect 127.0.0.1:6345
+execute success</code></pre>
+<ul><li>设置日志lsn起点</li></ul>
+<pre class="code"><code>DMHS&gt; set exec lsn
+execute success</code></pre>
+<h4>3、初始化装载</h4>
+<pre class="code"><code>DMHS&gt; copy 0 "SCH.NAME='test'" CREATE|INSERT|DICT</code></pre>
+<h4>4、启动捕获器</h4>
+<pre class="code"><code>DMHS&gt; start</code></pre>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dmdrs-dm-to-kafka.html">DMDRS 之 DM TO KAFKA →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
