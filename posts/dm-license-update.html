@@ -77,12 +77,12 @@
   </div>
   <div class="content">
 <figure class="video-block">
-  <div class="video-head">不想看文字？这里有 1 分 26 秒的视频演示</div>
+  <div class="video-head">不想看文字？这里有 2 分 02 秒的视频演示</div>
   <video controls preload="metadata" playsinline poster="../assets/video/dm-lic-update.jpg">
     <source src="../assets/video/dm-lic-update.mp4" type="video/mp4">
     你的浏览器不支持视频播放，<a href="../assets/video/dm-lic-update.mp4">点此下载视频</a>。
   </video>
-  <figcaption>在线更换授权文件全流程 —— 命令清晰、配音讲解，跟着做一遍就会了</figcaption>
+  <figcaption>在线更换授权文件全流程 —— 六步实操，命令清晰、配音讲解，跟着做一遍就会了</figcaption>
 </figure>
 
 <blockquote><p><strong>什么情况下用得上这篇</strong>：达梦的授权文件（<code>dm.key</code>）快到期了，或者已经到期——<br>到期后数据库可能直接停摆，服务起不来，日志里甩一行 <code>[FATAL] ... License violation detected</code>。<br>但生产库哪有停机窗口？这篇讲的就是<strong>业务不停、把新授权换上去</strong>的完整做法，全程通常不到一分钟。</p></blockquote>
@@ -117,12 +117,21 @@ mv dm.key dm.key_bak_$(date +%Y%m%d)</code></pre>
 <h4>第 3 步｜上传新文件</h4>
 <p>用 SFTP、WinSCP 之类的工具，把第 1 步准备好的 <code>dm.key</code> 传到服务器的 <code>bin</code> 目录里。</p>
 <h4>第 4 步｜改权限（这步不做，数据库读不到）</h4>
-<p>文件传上去默认归上传者所有，但数据库是以 <code>dmdba</code> 用户跑的，读不了就是白传：</p>
-<pre class="code"><code class="lang-bash"># 把所有者改成达梦的运行用户（通常是 dmdba:dinstall）
+<p>文件传上去默认归<strong>上传者</strong>所有，而数据库是以 <code>dmdba</code> 用户跑的，读不到就是白传。</p>
+<p><strong>这里有个容易被忽略的细节</strong>：上传文件的默认权限由服务器的 <strong><code>umask</code></strong> 决定。<br>大多数系统是 <code>022</code>，上传后是 <code>644</code>（其他人可读，<code>dmdba</code> 恰好能读到）；<br>但如果这台机器把掩码收紧过（比如 <code>077</code>），上传后就是 <code>600</code>——<strong>只有上传者能读，<code>dmdba</code> 读不到</strong>。</p>
+<p>所以别赌掩码，<strong>显式改一遍最稳妥</strong>：</p>
+<pre class="code"><code class="lang-bash"># 先看一眼当前掩码（可选，只是帮你知道为什么会出问题）
+umask
+
+# 把所有者改成达梦的运行用户（通常是 dmdba:dinstall）
 chown dmdba:dinstall dm.key
 
 # 给一个正常的读写权限
 chmod 644 dm.key</code></pre>
+<p><strong>改完不要靠猜，直接验一下</strong>：</p>
+<pre class="code"><code class="lang-bash"># 以 dmdba 的身份试读，能打印出文件内容才算真的到位
+su - dmdba -c "test -r dm.key &amp;&amp; echo 可读"</code></pre>
+<blockquote><p>看到 <code>可读</code> 才继续下一步。如果这里报权限不足，说明前面两步没生效，回去检查。</p></blockquote>
 <h4>第 5 步｜让新授权生效</h4>
 <p>这一步是整篇的关键。<strong>先看一眼数据库现在是什么状态</strong>，再决定用哪种方式：</p>
 <pre class="code"><code class="lang-bash"># 看看 dmserver 进程在不在
@@ -136,6 +145,9 @@ disql SYSDBA@localhost:5236</code></pre>
 <p>连上后在 <code>SQL&gt;</code> 提示符下执行：</p>
 <pre class="code"><code class="lang-sql">sp_load_lic_info;</code></pre>
 <p>这一条就是让数据库<strong>在线重新读取</strong> <code>bin</code> 目录下的新授权。执行完不用重启。</p>
+<blockquote><p><strong>换别的方式连库也行，效果完全一样</strong>——关键是执行到 <code>sp_load_lic_info</code> 这一条：</p>
+<div class="tbl-wrap"><table><thead><tr><th>方式</th><th>怎么用</th><th>适合</th></tr></thead><tbody><tr><td><code>disql</code> 交互式</td><td>上面这种，回车后按提示输密码</td><td>通用，推荐</td></tr><tr><td><strong>DM 管理工具</strong>（图形化）</td><td>连上实例 → 打开 SQL 查询窗口 → 执行同一条语句</td><td>不习惯命令行、或想顺手看一眼实例状态</td></tr><tr><td>操作系统认证</td><td><code>disql / as sysdba</code>（免密，需服务端已开启 OSAUTH）</td><td>已开启 OS 认证的库</td></tr><tr><td>JDBC / 其他客户端</td><td>任何能连 DM 的工具执行同一条语句</td><td>已有现成连接</td></tr></tbody></table></div>
+<p>只有一点要注意：<strong>别把口令直接写在命令行里</strong>（会留在 shell 历史和进程列表里），<br>用交互式输入，或者干脆用图形化工具。</p></blockquote>
 <blockquote><p>也支持把账号密码写进连接串，但要注意<strong>密码会留在命令历史里</strong>，而且格式对引号很敏感：</p>
 <pre class="code"><code class="lang-bash">disql SYSDBA/'"YOUR_PASSWORD"'@localhost:5236</code></pre></blockquote>
 <p><strong>进程不在 → 走「情况二」，反而更简单。</strong></p>
@@ -145,9 +157,14 @@ disql SYSDBA@localhost:5236</code></pre>
 # 服务名按实际填，输入 DmService 后按 Tab 补全
 DmServiceDMSERVER start</code></pre>
 <h4>第 6 步｜验证（别跳过）</h4>
-<p>换完一定要确认新授权真的生效了。用 <code>disql</code>、DM 管理工具、或任何 SQL 客户端执行：</p>
-<pre class="code"><code class="lang-sql">-- 查询授权详细信息
-SELECT 
+<p>换完一定要确认新授权真的生效了。在 <code>SQL&gt;</code> 提示符下（<code>disql</code> 或 DM 管理工具的查询窗口里）执行：</p>
+<pre class="code"><code class="lang-sql">-- 只看这两列就够了：序列号 + 到期日
+SELECT SERIES_NO AS "序列号", EXPIRED_DATE AS "到期日" FROM V$LICENSE;</code></pre>
+<blockquote><p>⚠️ 这是 <strong>SQL 语句</strong>，要在数据库的查询窗口里执行，<strong>不是</strong>在 bash 命令行里敲。<br>在 bash 下你会看到 <code>command not found</code>——很多人卡在这一步。</p></blockquote>
+<p><strong>怎么看结果</strong>：</p>
+<ul><li>重点看 <strong><code>到期日</code></strong> 这一列</li><li>换的是<strong>临时授权</strong> → 这里应该显示新授权的到期日</li><li>换的是<strong>正式授权</strong> → 这里通常是 <strong><code>NULL</code></strong>，代表永久授权</li></ul>
+<p>需要更多信息（授权客户、项目名称、集群类型、产品版本）时再查全字段：</p>
+<pre class="code"><code class="lang-sql">SELECT 
     SERIES_NO AS "序列号",
     EXPIRED_DATE AS "过期日期",
     AUTHORIZED_CUSTOMER AS "授权客户",
@@ -156,8 +173,6 @@ SELECT
     DECODE(SERVER_TYPE, 1, '正式版', 2, '测试版', 3, '试用版', '其他') AS "授权类型",
     DECODE(SERVER_SERIES, 'P', '单机版', 'S', '标准版', 'E', '企业版', 'A', '安全版', 'T', '可信版', 'X', '定制版', '其他') AS "产品版本"
 FROM V$LICENSE;</code></pre>
-<p><strong>怎么看结果</strong>：</p>
-<ul><li>重点看 <strong><code>过期日期</code></strong> 这一列</li><li>换的是<strong>临时授权</strong> → 这里应该显示新授权的到期日</li><li>换的是<strong>正式授权</strong> → 这里通常是 <strong><code>NULL</code></strong>，代表永久授权</li></ul>
 <hr>
 <h3>四、三个最容易翻车的地方</h3>
 <p><strong>1. 架构拿错了。</strong> 授权文件里的 CPU 架构必须和服务器一致。换完如果日志报"授权不匹配"，先查架构：</p>
