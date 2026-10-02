@@ -50,8 +50,11 @@ html{
   --quote-bg:#f2ede2;
   --radius:2px;
   --radius-lg:4px;
-  --font-title:"Songti SC","Source Han Serif CN","Noto Serif SC",SimSun,"STSong",serif;
-  --font-body:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Source Han Sans CN",sans-serif;
+  /* 标题：中文衬线。macOS → Songti SC；Windows/Linux → 思源宋体（Noto Serif SC），
+     最后才退到 SimSun。思源宋体是可变字体，字重 400–600 都能正常出字。 */
+  --font-title:"Songti SC","Noto Serif SC","Source Han Serif SC","Source Han Serif CN","Noto Serif CJK SC",STSong,SimSun,serif;
+  /* 正文：中文无衬线。与标题同源的思源黑体优先（Windows 上比微软雅黑更匀称） */
+  --font-body:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Noto Sans SC","Source Han Sans SC","Source Han Sans CN","Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Roboto,sans-serif;
   --hero-grad:linear-gradient(168deg,#211d18 0%,#3d352a 38%,#7d7362 72%,#a39a89 100%);
   --paper-tex:
     repeating-linear-gradient(0deg, rgba(120,108,88,.026) 0 1px, transparent 1px 4px),
@@ -100,7 +103,8 @@ body{
   background-color:var(--bg);
   background-image:var(--paper-tex);
   line-height:1.85;
-  -webkit-font-smoothing:antialiased;
+  /* 不要加 -webkit-font-smoothing:antialiased —— 在 Windows 上它会把中文字形
+     渲染得更细，思源宋体这种笔画粗细对比大的字体尤其明显，看着"发虚"。 */
   transition:background-color .25s ease,color .25s ease;
 }
 a{color:var(--accent);text-decoration:none}
@@ -143,42 +147,45 @@ a:hover{text-decoration:underline}
 }
 
 /* ================= 首页 Hero ================= */
-.hero{position:relative;padding:88px 0 76px;overflow:hidden;border-bottom:1px solid var(--line)}
+/* Hero 高度是首屏观感的关键：改完务必用 tools/measure.py 复测
+   firstScreenFill（目标 ≤ 62%，即首屏能露出第一篇文章）。 */
+.hero{position:relative;padding:40px 0 38px;overflow:hidden;border-bottom:1px solid var(--line)}
 .hero-inner{position:relative;z-index:3;text-align:center}
-.eyebrow{font-size:12.5px;letter-spacing:.4em;color:var(--accent);margin-bottom:20px;padding-left:.4em}
+.eyebrow{font-size:11.5px;letter-spacing:.4em;color:var(--accent);margin-bottom:13px;padding-left:.4em}
 .hero h1{
-  font-family:var(--font-title);font-size:clamp(64px,13vw,124px);font-weight:400;
-  line-height:1.12;letter-spacing:0;margin-bottom:20px;
+  font-family:var(--font-title);font-size:clamp(48px,7.4vw,84px);font-weight:500;
+  line-height:1.1;letter-spacing:0;margin-bottom:14px;
   background:var(--hero-grad);
   -webkit-background-clip:text;background-clip:text;
   -webkit-text-fill-color:transparent;color:transparent;
 }
 /* 副标题 / slogan（改文字见 gen_blog.py 的 SITE_SLOGAN） */
 .hero .slogan{
-  font-family:var(--font-title);font-size:17px;
-  letter-spacing:.42em;text-indent:.42em;
-  color:var(--accent);margin:0 0 22px;
+  font-family:var(--font-title);font-size:15.5px;font-weight:500;
+  letter-spacing:.4em;text-indent:.4em;
+  color:var(--accent);margin:0 0 14px;
 }
-.hero .lead{max-width:600px;margin:0 auto;color:var(--text-2);font-size:16px;line-height:1.95}
-.hero .seal-row{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:28px}
+.hero .lead{max-width:600px;margin:0 auto;color:var(--text-2);font-size:15.5px;line-height:1.75}
+.hero .seal-row{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:18px}
 .seal{
-  width:50px;height:50px;border-radius:calc(var(--radius) + 2px);background:var(--accent);color:var(--bg);
-  display:grid;place-items:center;font-family:var(--font-title);font-size:24px;line-height:1;
+  width:42px;height:42px;border-radius:calc(var(--radius) + 2px);background:var(--accent);color:var(--bg);
+  display:grid;place-items:center;font-family:var(--font-title);font-size:21px;line-height:1;font-weight:500;
   box-shadow:inset 0 0 0 2px rgba(255,255,255,.38),var(--btn-shadow);
   transform:rotate(-2.5deg);
 }
-.seal-note{font-family:var(--font-title);font-size:13px;color:var(--text-3);letter-spacing:.28em;writing-mode:vertical-rl;height:68px}
+/* 竖排小字：不要写死 height —— 4 个字的高度由字号+字距决定，写小了会溢出成一团 */
+.seal-note{font-family:var(--font-title);font-size:12px;line-height:1.15;color:var(--text-3);letter-spacing:.24em;writing-mode:vertical-rl}
 
 /* ================= 统计条 ================= */
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
-.stat{background:var(--bg);padding:24px 14px;text-align:center}
-.stat b{display:block;font-family:var(--font-title);font-size:27px;font-weight:400;line-height:1.2}
-.stat span{font-size:12px;color:var(--text-3);letter-spacing:.18em}
+.stat{background:var(--bg);padding:16px 14px;text-align:center}
+.stat b{display:block;font-family:var(--font-title);font-size:23px;font-weight:500;line-height:1.2}
+.stat span{font-size:12px;color:var(--text-2);letter-spacing:.16em}
 
 /* ================= 分类与文章列表 ================= */
 .sec{padding:56px 0 20px}
 .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:22px;padding-bottom:12px;border-bottom:2px solid var(--text)}
-.sec-head h2{font-family:var(--font-title);font-size:23px;font-weight:400;letter-spacing:.08em}
+.sec-head h2{font-family:var(--font-title);font-size:23px;font-weight:500;letter-spacing:.08em}
 .sec-head .cnt{font-size:12.5px;color:var(--text-3);font-family:ui-monospace,Consolas,monospace;margin-left:auto}
 .posts{list-style:none}
 .posts li{border-bottom:1px solid var(--line)}
@@ -188,16 +195,16 @@ a:hover{text-decoration:underline}
 }
 .posts a:hover{padding-left:16px;background:linear-gradient(90deg,var(--accent-soft),transparent);text-decoration:none}
 .posts .idx{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--accent);min-width:26px}
-.posts .t{font-size:16px;letter-spacing:.01em;flex:1}
+.posts .t{font-size:16.5px;font-weight:500;letter-spacing:.01em;flex:1}
 .posts a:hover .t{color:var(--accent)}
-.posts .d{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text-3);white-space:nowrap}
+.posts .d{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--text-2);white-space:nowrap}
 
 /* ================= 文章页 ================= */
 .article{padding:52px 0 30px}
 .art-head{margin-bottom:36px;padding-bottom:22px;border-bottom:1px solid var(--line)}
 .art-head .meta{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--text-3);letter-spacing:.1em;margin-bottom:14px}
 .art-head h1{
-  font-family:var(--font-title);font-size:clamp(26px,4.2vw,38px);font-weight:400;
+  font-family:var(--font-title);font-size:clamp(26px,4.2vw,38px);font-weight:500;
   line-height:1.35;letter-spacing:.03em;color:var(--text);
 }
 .art-head .cat{
@@ -206,9 +213,9 @@ a:hover{text-decoration:underline}
 }
 
 /* ================= 正文 ================= */
-.content{font-size:16px;line-height:1.95;color:var(--text-2)}
+.content{font-size:16.5px;line-height:1.9;color:var(--text-2)}
 .content h1,.content h2,.content h3,.content h4{
-  font-family:var(--font-title);font-weight:400;color:var(--text);
+  font-family:var(--font-title);font-weight:500;color:var(--text);
   letter-spacing:.04em;line-height:1.45;
 }
 .content h1{font-size:27px;margin:44px 0 18px}
@@ -315,8 +322,14 @@ html[data-theme="sar"] .mountains{display:none}
 @media (max-width:720px){
   .wrap,.nav-in{padding-left:18px;padding-right:18px}
   .nav-links{display:none}
-  .hero{padding:60px 0 56px}
-  .content{font-size:15.5px}
+  /* 窄屏首屏本来就矮，Hero 要比桌面更紧，别再让顶栏吃掉大半个屏幕 */
+  .hero{padding:28px 0 30px}
+  .hero .lead{font-size:15px;line-height:1.7}
+  .hero .seal-row{margin-top:14px}
+  /* 手机屏矮，统计条再紧一档，否则首屏全被它占掉 */
+  .stat{padding:12px 10px}
+  .stat b{font-size:20px}
+  .content{font-size:16px}
   .content table{font-size:13px}
   .posts a{flex-wrap:wrap;gap:8px}
   .posts .t{flex-basis:100%;order:3}
