@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦虚拟列初探 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2023-02-28 &nbsp;·&nbsp; 达梦杂谈</div>
+    <h1>达梦虚拟列初探</h1>
+    <span class="cat">达梦杂谈</span>
+  </div>
+  <div class="content">
+<p>-- 测试索引大小</p>
+<p>最佳实践：初始化大小写敏感，查询时动态设置</p>
+<p>型号、颜色、容量 联合主键的例子</p>
+<ol><li>创建不可变的md5函数</li></ol>
+<pre class="code"><code class="lang-sql">   CREATE FUNCTION fn_md5_var(NAME VARCHAR) RETURN VARCHAR DETERMINISTIC AS
+   BEGIN
+     RETURN to_char(md5(lower(NAME));
+   END;</code></pre>
+<ol><li>增加虚拟列</li></ol>
+<pre class="code"><code class="lang-sql">   alter table tb_user_info ADD md5username as(fn_md5_lower(username));</code></pre>
+<ol><li>在虚拟列上创建唯一索引</li></ol>
+<pre class="code"><code class="lang-sql">   -- 创建唯一索引前，请先清理重复数据(DM和dm已被识别为相同的用户名)
+   create unique index idx_tb_user_info_md5username on tb_user_info(md5username);</code></pre>
+<p>-- 如果太大，可以截取md5前8位即可</p>
+<p>select *,utl_raw.substr(md5name,1,8),utl_raw.substr(md5name,9,8) from fstest;</p>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="db-tools-review.html">数据库开发工具横评 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
