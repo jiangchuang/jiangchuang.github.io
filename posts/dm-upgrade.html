@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦数据库版本升级实录 · 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-迁移与同步">迁移同步</a></li>
+      <li><a href="../index.html#cat-日常运维">日常运维</a></li>
+      <li><a href="../index.html#cat-性能与调优">性能调优</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2025-09-04 &nbsp;·&nbsp; 日常运维</div>
+    <h1>达梦数据库版本升级实录</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+<h3><strong>达梦数据库（DM8）软件替换升级手册 (V6)</strong></h3>
+<p>本手册旨在指导管理员通过替换软件二进制文件的方式完成达梦数据库的升级。此方法不涉及数据字典的更改，而是直接更新数据库的可执行程序，操作高效、回滚便捷。</p>
+<h4><strong>核心升级思路</strong></h4>
+<p>此升级方法的核心是：在完整备份旧版本程序和数据的基础上，将新版本的数据库软件<strong>覆盖安装</strong>到原有的安装路径，然后将旧版本的服务启动脚本和授权文件<strong>复制</strong>回新目录，最后重启服务，使数据库运行在新的软件版本上。</p>
+<hr>
+<h3><strong>第一阶段：升级前准备与安全备份</strong></h3>
+<p><strong>步骤 1：确定并记录关键路径 (以 dmdba 用户执行)</strong><br>首先，必须明确当前达梦数据库的<strong>安装目录</strong>和<strong>实例目录</strong>。通过查看 <code>dmserver</code> 进程的启动命令可以准确获取。</p>
+<pre class="code"><code class="lang-bash">ps -ef | grep dmserver</code></pre>
+<p>您会看到类似如下的输出：<br><code>dmdba 1234 1 0 10:00 ? 00:00:30 /home/dmdba/dmdbms/bin/dmserver /home/dmdba/dmdbms/data/DAMENG/dm.ini ...</code></p>
+<p>根据此输出：</p>
+<ul><li><code>dmserver</code> 程序的路径 <code>/home/dmdba/dmdbms/bin/dmserver</code>，其上级目录 <code>/home/dmdba/dmdbms</code> 即为数据库的<strong>安装根目录</strong>。</li><li><code>dm.ini</code> 数据库主配置文件的上级目录 <code>/home/dmdba/dmdbms/data/DAMENG</code> 即为数据库<strong>实例目录</strong>，包含了所有数据、在线日志和大部分配置文件。</li></ul>
+<p><strong>【注意】</strong>：本文档将以 <code>/home/dmdba/dmdbms</code> 为<strong>安装目录</strong>示例，请您在实际操作中，务必替换为通过此命令找到的<strong>您自己的实际安装目录</strong>。</p>
+<p><strong>步骤 2：检查并记录当前数据库版本 (以 dmdba 用户执行)</strong><br>使用 <strong>disql 或达梦管理工具等其他客户端工具</strong>执行以下命令，查询并记录当前的版本标识码，用于升级后对比。</p>
+<pre class="code"><code class="lang-sql">select id_code();</code></pre>
+<p><strong>步骤 3：停止所有达梦相关服务</strong></p>
+<pre class="code"><code class="lang-bash"># 首先切换到 dmdba 用户
+su - dmdba</code></pre>
+<blockquote><p><strong>提示</strong>：如果已将 <code>[您的DM安装目录]/bin</code> 加入了环境变量 <code>PATH</code>，则无需 <code>cd</code> 到具体目录，可直接执行命令。</p></blockquote>
+<pre class="code"><code class="lang-bash"># 切换到bin目录 (如果未配置环境变量)
+cd /home/dmdba/dmdbms/bin
+
+# 1. 停止数据库服务
+# 注意：服务名后缀可能不同，输入 DmService 后按 Tab 键可自动补全
+./DmServiceDMSERVER stop
+
+# 2. 停止AP服务
+./DmAPService stop</code></pre>
+<p><strong>步骤 4：【保障】执行数据库物理文件备份 (以 dmdba 用户执行)</strong><br>在停止服务后、重命名目录前，执行一次数据库级别的完整脱机备份，这是最可靠的数据保障。</p>
+<pre class="code"><code class="lang-bash"># 切换到bin目录
+cd /home/dmdba/dmdbms/bin
+
+# 执行备份，backupset后指定一个dmdba用户有权限写入的绝对路径
+./dmrman CTLSTMT="BACKUP DATABASE '/home/dmdba/dmdbms/data/DAMENG/dm.ini' backupset '/home/dmdba/backup/full_bak_`date +%Y%m%d`'"</code></pre>
+<p><strong>步骤 5：【关键】备份旧版安装目录 (以 dmdba 用户执行)</strong><br>通过重命名的方式，将整个旧版安装目录进行物理备份。这是最快速、最有效的回滚手段。</p>
+<pre class="code"><code class="lang-bash"># 切换到 [您的DM安装目录] 的上一级目录
+cd /home/dmdba
+
+# 将原目录重命名，后缀加上日期以作区分
+mv dmdbms dmdbms_bak_`date +%Y%m%d`</code></pre>
+<p><strong>步骤 6：准备新版本安装介质 (以 root 用户执行)</strong><br>下载目标升级版本的ISO安装文件，上传到服务器，并进行挂载。</p>
+<pre class="code"><code class="lang-bash"># 切换到 root 用户
+su - root
+
+# 挂载ISO文件
+mount -o loop /path/to/dm8_xxx.iso /mnt</code></pre>
+<hr>
+<h3><strong>第二阶段：核心升级操作</strong></h3>
+<p><strong>步骤 7：以命令行模式安装新版本软件 (以 root 用户执行)</strong><br>使用 <code>-i</code> 参数以纯命令行（静默）模式进行安装，避免对图形化界面的依赖。</p>
+<pre class="code"><code class="lang-bash"># 运行安装程序
+cd /mnt
+./DMInstall.bin -i</code></pre>
+<p>在命令行交互安装过程中：</p>
+<ul><li><strong>关键：</strong> 当提示输入安装路径时，请务必输入<strong>原始的安装路径</strong>，即 <strong>步骤1</strong> 中确定的路径（例如 <code>/home/dmdba/dmdbms</code>）。</li><li><strong>选择：</strong> 安装类型选择<strong>“典型安装”</strong>或<strong>“仅安装”</strong>。</li></ul>
+<p><strong>步骤 8：【核心】恢复服务脚本与授权文件 (以 dmdba 用户执行)</strong><br>将旧的服务启动脚本和授权文件复制到新安装的目录中，以确保服务管理和授权与升级前一致。</p>
+<pre class="code"><code class="lang-bash"># 切换到 dmdba 用户
+su - dmdba
+
+# 1. 从备份目录复制服务脚本到新目录的bin下
+# 注意：DmServiceDMSERVER 是示例，请替换为您实际的服务脚本名
+cp /home/dmdba/dmdbms_bak_.../bin/DmServiceDMSERVER /home/dmdba/dmdbms/bin/
+
+# 2. 从备份目录复制授权文件到新目录的bin下
+cp /home/dmdba/dmdbms_bak_.../bin/dm.key /home/dmdba/dmdbms/bin/
+
+# 3. 确保服务脚本有执行权限
+chmod +x /home/dmdba/dmdbms/bin/DmServiceDMSERVER</code></pre>
+<p><strong>步骤 9：启动服务 (以 dmdba 用户执行)</strong></p>
+<pre class="code"><code class="lang-bash"># 切换到新安装目录的bin下 (如果未配置环境变量)
+cd /home/dmdba/dmdbms/bin
+
+# 1. 启动数据库服务
+./DmServiceDMSERVER start
+
+# 2. 检查并启动AP服务
+# 首先，检查AP服务状态
+./DmAPService status
+# 或者使用ps命令确认
+# ps -ef | grep dmap
+
+# 如果服务未运行，则启动它
+./DmAPService start</code></pre>
+<hr>
+<h3><strong>第三阶段：升级后验证</strong></h3>
+<p><strong>步骤 10：验证数据库新版本 (以 dmdba 用户执行)</strong><br>再次连接数据库，执行版本查询命令，与<strong>步骤2</strong>中记录的版本标识码进行对比，确认已更新。</p>
+<pre class="code"><code class="lang-sql">select id_code();</code></pre>
+<p><strong>步骤 11：检查实例状态 (以 dmdba 用户执行)</strong><br>确认数据库实例状态为 <code>OPEN</code>，并检查日志确保无异常。</p>
+<pre class="code"><code class="lang-sql">SELECT STATUS$ FROM V$INSTANCE;</code></pre>
+<p><strong>步骤 12：业务功能验证与新基线备份</strong><br>通知业务方对核心应用功能进行全面的回归测试。所有测试通过后，为升级后的数据库创建一次全新的完整备份，作为新的恢复基线。</p>
+<hr>
+<h3><strong>第四阶段：应急回滚方案</strong></h3>
+<p>此方法的回滚非常简单快捷。</p>
+<ol><li><strong>停止服务</strong>：停止所有正在运行的达梦服务。</li><li><strong>删除新目录</strong>：<code>rm -rf /home/dmdba/dmdbms</code></li><li><strong>恢复旧目录</strong>：将<strong>步骤5</strong>中备份的旧目录重命名回来：<code>mv /home/dmdba/dmdbms_bak_... /home/dmdba/dmdbms</code></li><li><strong>重启服务</strong>：使用恢复后的目录中的脚本启动服务即可。</li></ol>
+  </div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dm-dts-cmd.html">基于 DTS 命令行的定时数据迁移 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 25 篇</p>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  if (window.mermaid) {
+    try { mermaid.initialize({ startOnLoad: true, theme: 'neutral' }); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
