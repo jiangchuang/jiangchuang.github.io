@@ -142,7 +142,7 @@ section.card .note pre.transcript { white-space: pre; }
       <span class="badge b-ok">单机实例实测</span>
       <span class="badge b-src">DM8 V8 2026-08-03</span>
       <span class="badge b-warn">前提：实例未重启</span>
-      <span class="badge b-new">8 步全程可复制</span>
+      <span class="badge b-new">7 步全程可复制</span>
     </div>
     <div class="chips">
       <span class="chip">Linux</span>
@@ -474,19 +474,7 @@ LINEID  MIN_ID  MAX_ID
     </div>
   </section>
 
-  <section class="card">
-    <h2>口径与来源声明</h2>
-    <div class="h2sub">本页命令全部经过实测，区分「产品文档口径」与「现场实测口径」。</div>
-    <div class="note">
-      <ul>
-        <li><span class="src-tag b-src">实测环境</span><span class="src-field">单机实例 DM01，DM8 V8 build 03134284172-20260803，CentOS 7，数据目录 <code>/home/dmdba/dmdata/DAMENG</code>，端口 5236，默认授权（DEVELOP）。</span></li>
-        <li><span class="src-tag b-ok">现场实测口径</span><span class="src-field">第 4 步报错码为 <code>[-3433] tablespace is offline</code>；重启后实例起在 MOUNT 态且报 <code>[-510]</code>；句柄号、进程号、字节数均为当次实测值，换环境会变。</span></li>
-        <li><span class="src-tag b-warn">产品文档口径</span><span class="src-field">表空间恢复使用 <code>SP_TABLESPACE_PREPARE_RECOVER</code> / <code>SP_TABLESPACE_RECOVER</code> 两个系统过程，配合 <code>SP_FILE_SYS_CHECK</code> 做文件系统校验；参数为表空间名。</span></li>
-        <li><span class="src-tag b-new">差异提示</span><span class="src-field">部分早期材料记载的报错为 <code>[-3430] 表空间[xxx]中文件[xxx]已被删除</code>，本版本已改为 <code>[-3433]</code>，处理步骤不变。</span></li>
-      </ul>
-    </div>
     <p class="copy-hint">命令中的 <span class="ph">&lt;表空间名&gt;</span> / <span class="ph">&lt;数据文件名&gt;</span> 等为占位符，执行前替换成现场值。</p>
-  </section>
 
   <p style="text-align:center;margin:28px 0 0;font-size:13.5px">
     <a href="../index.html" style="color:#1d4ed8;text-decoration:none;font-weight:600">← 返回指南索引</a>
