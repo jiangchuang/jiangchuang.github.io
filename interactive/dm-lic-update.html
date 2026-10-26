@@ -123,7 +123,7 @@
 
 <header class="hd">
   <h1>达梦数据库在线更换授权（dm.key）· 交互版</h1>
-  <div class="sub">视频实录 + 五步速成 + 使用前须知 + 交付检查清单 ｜ 适用 <b>DM8</b> ｜ 在线更换、无需重启数据库 ｜ 命令含占位符，跨环境复用</div>
+  <div class="sub">视频实录 + 五步速成 + 使用前须知 ｜ 适用 <b>DM8</b> ｜ 在线更换、无需重启数据库 ｜ 命令含占位符，跨环境复用</div>
   <div class="badges">
     <span class="badge b-new">交互：点击左侧步骤卡片 → 右侧展开可复制命令</span>
     <span class="badge b-src">资料依据：DM8 安装手册 §3 ／ DM8 系统管理员手册 §7 ／ DM8 附录 V$LICENSE</span>
@@ -452,50 +452,6 @@ SELECT CPU_TYPE, OS_TYPE, SERVER_SERIES, SERVER_TYPE FROM V$LICENSE;</code></pre
     </div>
   </div>
 
-</section>
-
-<!-- ==================== 交付检查清单 ==================== -->
-<section class="card">
-  <h2>交付检查清单</h2>
-  <div class="h2sub">逐项核对、逐项打勾，全部满足后再向业务方报备——每一条都能在系统里查到明确证据，不凭印象确认。</div>
-
-  <h3>动手之前</h3>
-  <div class="note">
-    <ul>
-      <li>☐ 旧 dm.key 已备份，文件名带日期，原文件所在目录已记录</li>
-      <li>☐ 新授权包的 CPU 架构与产品版本类型已与本机核对一致</li>
-      <li>☐ 已记录当前 <span class="chip">EXPIRED_DATE</span> 与剩余天数，作为变更前后对比基线</li>
-      <li>☐ 已列清本次要更换的全部实例节点（集群环境逐个列出，监视器节点除外）</li>
-    </ul>
-  </div>
-
-  <h3>操作之中</h3>
-  <div class="note">
-    <ul>
-      <li>☐ 新 dm.key 属主为数据库运行用户，权限已显式设置（Linux 为 <span class="chip">644</span>，Windows 按文件属性设置读取权限）</li>
-      <li>☐ 重载授权 <span class="chip">SP_LOAD_LIC_INFO</span> 执行成功，返回无报错信息</li>
-      <li>☐ 未出现「授权不匹配」类错误；若出现，已定位原因并处理完毕</li>
-    </ul>
-  </div>
-
-  <h3>操作之后</h3>
-  <div class="note">
-    <ul>
-      <li>☐ <span class="chip">V$LICENSE</span> 的 <span class="chip">SERIES_NO</span> 与新授权包一致</li>
-      <li>☐ <span class="chip">EXPIRED_DATE</span> 已更新为新到期日（正式授权为空属正常）</li>
-      <li>☐ 集群环境每个实例都已单独完成更换，并各自验证过授权信息</li>
-      <li>☐ 客户端连接正常、业务应用无异常：登录、关键事务、告警均正常</li>
-    </ul>
-  </div>
-
-  <h3>收尾</h3>
-  <div class="note">
-    <ul>
-      <li>☐ 备份文件的保留位置与保留期限已记录</li>
-      <li>☐ 新到期日已纳入日常巡检项或运维台账，到期前有提醒机制</li>
-      <li>☐ 变更时间、操作人、授权文件来源已登记到运维变更记录</li>
-    </ul>
-  </div>
 </section>
 
 <footer class="ft">达梦数据库在线更换授权（dm.key）· 交互版 ｜ 适用 DM8 ｜ 2026-10-26 ｜ 命令中的占位符 &lt;…&gt; 请按本机环境替换后执行</footer>
