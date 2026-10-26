@@ -151,7 +151,7 @@
     <div class="steps">
       <div class="step" data-k="s1" data-name="步骤 1 · 定位监视器进程与配置" tabindex="0" role="button" aria-label="1 定位监视器进程与配置">
         <span class="no">1</span><span class="t">定位监视器进程与配置</span>
-        <div class="d">ps 揪出 dmmonitor，记下程序路径与 path= 配置</div>
+        <div class="d">先确认它在哪台机器，再记下程序路径与 path= 配置</div>
         <div class="go">查看命令 →</div>
       </div>
       <div class="step" data-k="s2" data-name="步骤 2 · 连上监视器" tabindex="0" role="button" aria-label="2 连上监视器">
@@ -208,20 +208,44 @@
 
         <!-- ===== 定位监视器进程与配置 ===== -->
         <div class="detail" data-k="s1">
-          <p class="goal"><b>目标：</b>找到监视器程序本体和它加载的配置文件——后面连接、启停都靠它们。</p>
+          <p class="goal"><b>目标：</b>先弄清监视器跑在<b>哪一台</b>机器上，再记下它的程序路径与加载的配置文件——后面连接、启停都靠它们。</p>
+          <div class="note warn">
+            <b style="color:#b45309">第一步先定位服务器：<span class="chip">ps</span> 只看得见<b>本机</b>进程</b><br>
+            监视器是<b>跑在某台机器上的独立进程</b>，不是主备两台各有一份。你 ssh 到主库执行 <span class="chip">ps -ef | grep dmmonitor</span>，
+            查的是<b>主库这台</b>；监视器实际跑在备库时这里当然是空的——不是没装、也不是没起，是<b>你找错了机器</b>。
+          </div>
           <div class="cmdbox">
             <button class="cp" type="button">复制</button>
-            <pre><code><span class="cm"># 在主库或备库任意一个节点执行（监视器连哪个节点都一样）</span>
-ps -ef | grep dmmonitor
+            <pre><code><span class="cm"># 0) 先确认"我现在在哪台机器上"（多节点环境最容易漏的一步）</span>
+hostname; hostname -I
 
-<span class="cm"># 会看到类似一行，记下两段（程序路径 + path= 后面的配置路径）：</span>
-<span class="cm"># dmdba 1642 1 0 00:43 ? 00:00:02 /home/dmdba/dmdbms/bin/dmmonitor \</span>
-<span class="cm">#   path=/dmdata/dmmon/DAMENG/dmmonitor.ini</span>
-<span class="cm">#   ↑ 程序本体（软件目录 bin/ 下）   ↑ 它加载的配置</span></code></pre>
+<span class="cm"># 1) 查本机有没有监视器进程（[d] 写法能避开 grep 自己那一行）</span>
+ps -ef | grep -i '[d]mmonitor'
+
+<span class="cm"># 2) 本机没有？看有没有注册成系统服务（确认监视器基本都是服务常驻）</span>
+systemctl list-units --type=service | grep -i DmMonitor
+<span class="cm"># 命中示例：DmMonitorServiceDBMM.service  loaded active running</span>
+
+<span class="cm"># 3) 服务方式起的，命令与参数从服务定义里看</span>
+systemctl cat DmMonitorServiceDBMM | grep ExecStart
+
+<span class="cm"># 4) 辅助佐证：谁在写监视器日志，监视器就在哪台</span>
+ls -lt --time-style=+'%m-%d %H:%M' /dmdata/dmmon/DAMENG/log/ | head -3</code></pre>
+          </div>
+          <p class="goal" style="margin-top:14px"><b>确认在这台之后：</b>再记下<b>程序路径</b>与 <span class="chip">path=</span> 后面的<b>配置路径</b>。</p>
+          <div class="cmdbox">
+            <button class="cp" type="button">复制</button>
+            <pre><code><span class="cm"># 进程行里同时给出这两段：</span>
+<span class="cm"># dmdba 1624 1 0 18:13 ? 00:00:07 /home/dmdba/dmdbms/bin/dmmonitor \</span>
+<span class="cm">#   path=/dmdata/dmmon/DAMENG/dmmonitor_auto.ini</span>
+<span class="cm">#   ↑ 程序本体（软件目录 bin/ 下）        ↑ 它加载的配置</span></code></pre>
           </div>          <ul>
             <li><b>目录规律</b>：达梦所有可执行文件都在<b>软件目录的 bin/ 子目录</b>下——dmserver、dmmonitor、disql、dmrman 无一例外。bin/ 前面那段就是这台机器的软件目录。</li>
-            <li>确认软件目录：<span class="chip">echo $DM_HOME</span>；数据与配置目录看 <span class="chip">ps -ef | grep dmserver</span> 输出里 dm.ini 所在路径。<b>两者通常是分开的</b>（软件在 /home/dmdba/dmdbms，数据/配置在 /data/dmdata 这类路径）。</li>
-            <li class="warnline"><b>监视器是 <span class="chip">dmmonitor</span>（两个 m），不是 <span class="chip">dmonitor</span></b>。少写一个 m 时，<span class="chip">ps -ef | grep dmonitor</span> 只会匹配到 grep 自己那一行——看起来像"监视器根本没跑"，实际进程一直好好在跑。这一步搜错，后面全跟着错。</li>
+            <li>确认软件目录：<span class="chip">echo $DM_HOME</span>；数据与配置目录看 <span class="chip">ps -ef | grep dmserver</span> 输出里 dm.ini 所在路径。<b>两者通常是分开的</b>（本演示：软件在 <span class="chip">/home/dmdba/dmdbms</span>，数据与配置在 <span class="chip">/dmdata</span>）。</li>
+            <li class="warnline"><b>陷阱一：有程序、有配置 ≠ 有进程</b>。集群部署时主备两台通常都装全了软件，<span class="chip">bin/dmmonitor</span> 两台都在；配置文件也可能两台各留一份。<b>只有 <span class="chip">ps</span> 里的进程行（或服务状态 <span class="chip">active running</span>）才算"监视器跑在这台"</b>。<br>
+            实测（本演示环境）：主库 135 上 <span class="chip">/home/dmdba/dmdbms/bin/dmmonitor</span> 文件存在、<span class="chip">dmmonitor_manual.ini</span> 也在，但 <span class="chip">ps</span> 里只有 <span class="chip">dmwatcher</span> 和 <span class="chip">dmserver</span>，<b>没有监视器</b>；真正的确认监视器在备库 136，是系统服务 <span class="chip">DmMonitorServiceDBMM</span> 拉起来的。照"有配置就是这台"去判断，100% 判反。</li>
+            <li class="warnline"><b>陷阱二：<span class="chip">dmmonitor</span>（两个 m）不是 <span class="chip">dmonitor</span></b>。少写一个 m 时，<span class="chip">ps -ef | grep dmonitor</span> 只会匹配到 grep 自己那一行——看起来像"监视器根本没跑"，实际进程一直好好在跑。这一步搜错，后面全跟着错。</li>
+            <li><b>两台都找不到怎么办</b>：别急着认定"集群没监视器"。① 监视器可能装在第三台机器上（生产上推荐独立部署）——查部署台账或逐台 <span class="chip">ps</span>；② 也可能当前压根没起，那就<b>自己起一个普通监视器</b>（下一步），效果一样。只要配置里 <span class="chip">[GRP1]</span> 段的 <span class="chip">MON_DW_IP</span> 指向集群两个守护进程地址，在任意一台装了达梦的机器上起监视器都能管整个组——这才是"从哪个节点连都一样"的正确含义（说的是<b>连守护进程</b>，不是 <span class="chip">ps</span> 查进程）。</li>
             <li>程序路径与配置路径各现场不同（<span class="chip">/home/dmdba/dmdbms/bin/…</span>、<span class="chip">/opt/dmdbms/bin/…</span>、<span class="chip">/dmdata/…</span> 都常见），一律以你自己 <span class="chip">ps</span> 输出里那一段为准，别照搬示例。</li>
           </ul>
         </div>
@@ -471,6 +495,7 @@ show
     <tr><td>守护组名 / OGUID</td><td><span class="chip">GRP1</span> / <span class="chip">102314271</span> ——组名取自监视器配置文件的 <span class="chip">[GRP1]</span> 段名，不是自定义名称</td></tr>
     <tr><td>软件目录（DM_HOME）</td><td><span class="chip">/home/dmdba/dmdbms</span>（可执行文件在 <span class="chip">bin/</span> 下）</td></tr>
     <tr><td>数据与配置目录</td><td><span class="chip">/dmdata</span>（实例 dm.ini 在 <span class="chip">/dmdata/DAMENG</span>，监视器配置在 <span class="chip">/dmdata/dmmon/DAMENG</span>）</td></tr>
+    <tr><td>监视器所在节点</td><td><b>备库 136</b> —— 系统服务 <span class="chip">DmMonitorServiceDBMM</span> 常驻拉起，加载 <span class="chip">dmmonitor_auto.ini</span>。<b>主库 135 上没有监视器进程</b>：只装了程序、留了一份 <span class="chip">dmmonitor_manual.ini</span>，别按"有配置文件"就判定它在 135</td></tr>
     <tr><td>监视器配置</td><td><span class="chip">dmmonitor_auto.ini</span>（<span class="chip">MON_DW_CONFIRM = 1</span>，确认监视器，由 <span class="chip">DmMonitorServiceDBMM</span> 常驻）与同目录 <span class="chip">dmmonitor_manual.ini</span>（<span class="chip">= 0</span>，普通监视器，可与前者共存）</td></tr>
   </table>
   <div class="note">
@@ -571,6 +596,14 @@ sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_norma
     <button class="q" type="button">Q6：tip 提示 not in CONFIRM mode 严重吗？<span class="src-tag src-official">文档</span><span class="arr">▼</span></button>
     <div class="a">
       <p>取决于你依不依赖自动切换。文档口径：该提示表示此监视器不在 CONFIRM 模式，主库故障时<b>无法完成自动接管</b>。只做计划内维护不必紧张；生产上依赖自动切换的集群，务必按手册把监视器配成确认模式。</p>
+    </div>
+  </div>
+  <div class="faq-item">
+    <button class="q" type="button">Q7：主库上 ps 看不到 dmmonitor，是集群没起监视器吗？<span class="src-tag src-field">现场</span><span class="arr">▼</span></button>
+    <div class="a">
+      <p>多半是<b>找错机器了</b>。<span class="chip">ps</span> 只列本机进程，而监视器只跑在启动它的那一台（本演示是备库 136，由系统服务 <span class="chip">DmMonitorServiceDBMM</span> 常驻）。
+      判断顺序：① <span class="chip">hostname</span> 确认当前在哪台 → ② <span class="chip">ps -ef | grep -i '[d]mmonitor'</span> → ③ <span class="chip">systemctl list-units --type=service | grep -i DmMonitor</span> → ④ 看谁在写 <span class="chip">MON_LOG_PATH</span> 下的日志（<span class="chip">ls -lt</span> 时间在涨的那台）。
+      <b>别被"有程序、有配置"骗了</b>：主库 135 上 <span class="chip">bin/dmmonitor</span> 与 <span class="chip">dmmonitor_manual.ini</span> 都在，但确实没有监视器进程。两台都没有也不必慌——自己起一个普通监视器即可（步骤 2）。</p>
     </div>
   </div>
 </section>

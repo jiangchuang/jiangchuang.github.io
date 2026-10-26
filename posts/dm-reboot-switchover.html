@@ -91,11 +91,11 @@
 <h2>一、先认清演示环境</h2>
 <p>这一节只是为了让你看懂后面的输出示例。<strong>你的环境路径和实例名大概率不同，照着换成自己的即可。</strong></p>
 <div class="tbl-wrap"><table><thead><tr><th>角色</th><th>实例名</th><th>IP</th><th>守护状态</th></tr></thead><tbody><tr><td><strong>主库</strong></td><td>DB139</td><td>192.168.16.139</td><td>PRIMARY</td></tr><tr><td><strong>备库</strong></td><td>DB138</td><td>192.168.16.138</td><td>STANDBY</td></tr></tbody></table></div>
-<ul><li>守护组名：<code>GRP1</code></li><li><strong>软件安装目录（DM_HOME）</strong>：<code>/data/dmdata</code></li><li>监视器程序：<code>/data/dmdata/bin/dmonitor</code></li><li>监视器配置：<code>/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></li></ul>
+<ul><li>守护组名：<code>GRP1</code></li><li><strong>软件安装目录（DM_HOME）</strong>：<code>/data/dmdata</code></li><li>监视器程序：<code>/data/dmdata/bin/dmmonitor</code></li><li>监视器配置：<code>/data/dmdata/dmmon/DAMENG/dmmonitor_auto.ini</code></li></ul>
 <p>后面每处需要替换成你自己环境的，我都会标出来。</p>
 <h3>先记住达梦的这条目录约定</h3>
-<blockquote><p><strong>达梦所有可执行文件，都在「软件安装目录」的 <code>bin/</code> 子目录下。</strong><br><code>dmserver</code>、<code>dmonitor</code>（监视器）、<code>disql</code>、<code>dmap</code>、<code>dmrman</code>…… 一个都没有例外。</p></blockquote>
-<p>安装目录的<strong>目录名惯例就叫 <code>dmdbms</code></strong> —— Linux 上默认装到 <code>/opt/dmdbms</code>，也常见 <code>/home/dmdba/dmdbms</code>。上面演示环境因为单独做了目录规划，装在了 <code>/data/dmdata</code>，所以监视器是 <code>/data/dmdata/bin/dmonitor</code>。</p>
+<blockquote><p><strong>达梦所有可执行文件，都在「软件安装目录」的 <code>bin/</code> 子目录下。</strong><br><code>dmserver</code>、<code>dmmonitor</code>（监视器）、<code>disql</code>、<code>dmap</code>、<code>dmrman</code>…… 一个都没有例外。</p></blockquote>
+<p>安装目录的<strong>目录名惯例就叫 <code>dmdbms</code></strong> —— Linux 上默认装到 <code>/opt/dmdbms</code>，也常见 <code>/home/dmdba/dmdbms</code>。上面演示环境因为单独做了目录规划，装在了 <code>/data/dmdata</code>，所以监视器是 <code>/data/dmdata/bin/dmmonitor</code>。</p>
 <p><strong>记住这个规律就够了：<code>bin/</code> 前面那一段，就是这台机器上的安装目录</strong>，换成你自己的即可。</p>
 <h3>生产环境建议：软件和数据放开两个目录</h3>
 <p>业界通行做法是<strong>把软件目录和数据目录彻底分开</strong>，例如：</p>
@@ -112,22 +112,36 @@ echo $DM_HOME
 ps -ef | grep dmserver</code></pre>
 <hr>
 <h2>二、重启前：先确认集群是健康的</h2>
-<h3>第 1 步：登录任意一个节点</h3>
-<p>主库、备库都行 —— <strong>监视器是独立进程，从哪个节点连进去都一样</strong>。</p>
+<h3>第 1 步：先确定监视器跑在哪台服务器上</h3>
+<p><strong><code>ps</code> 只能看见<em>本机</em>进程</strong> —— 监视器是一个独立进程，只存在于<b>启动它的那台机器</b>上。你在主库上查不到它是正常的：它可能跑在备库，也可能跑在独立部署的第三台机器上。</p>
+<pre class="code"><code class="lang-bash"># 0) 先确认"我现在在哪台机器上"（多节点环境最容易漏的一步）
+hostname; hostname -I
+
+# 1) 查本机有没有监视器进程（[d] 写法能避开 grep 自己那一行）
+ps -ef | grep -i '[d]mmonitor'
+
+# 2) 本机没有？看有没有注册成系统服务（确认监视器基本都是服务常驻）
+systemctl list-units --type=service | grep -i DmMonitor
+
+# 3) 辅助佐证：谁在写监视器日志，监视器就在哪台
+ls -lt /dmdata/dmmon/DAMENG/log/ | head -3</code></pre>
+<blockquote><p><strong>别被"有程序、有配置"骗了。</strong> 集群部署时主备两台通常都装全了软件，<code>bin/dmmonitor</code> 两台都有；配置文件也可能各留一份。<strong>只有 <code>ps</code> 里的进程行（或服务状态 <code>active running</code>）才能证明"监视器跑在这台"</strong>。<br>
+实测：主库 135 上 <code>/home/dmdba/dmdbms/bin/dmmonitor</code> 文件存在、<code>dmmonitor_manual.ini</code> 也在，但 <code>ps</code> 里只有 <code>dmwatcher</code> 和 <code>dmserver</code> —— 真正的确认监视器跑在备库 136，由系统服务 <code>DmMonitorServiceDBMM</code> 拉起。</p>
+<p>两台都找不到也不必执着：只要手上有一份配置，在任意一台装了达梦的机器上起一个普通监视器即可（见第 3 步）。配置里 <code>[GRP1]</code> 段的 <code>MON_DW_IP</code> 指向集群所有守护进程地址，所以<b>从哪台机器起监视器都能管整个组</b> —— 这才是"从哪个节点连都一样"的正确含义（说的是连守护进程，不是 <code>ps</code> 查进程）。</p></blockquote>
 <h3>第 2 步：找到监视器进程和它的配置路径</h3>
 <p>监视器通常不在 <code>PATH</code> 里，先把它揪出来：</p>
-<pre class="code"><code class="lang-bash">ps -ef | grep dmonitor</code></pre>
+<pre class="code"><code class="lang-bash">ps -ef | grep dmmonitor</code></pre>
 <p>会看到类似这样一行，<strong>记下它</strong>：</p>
-<pre class="code"><code>dmdba  1015  1  0 Dec17 ?  00:00:06 /data/dmdata/bin/dmonitor path=/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></pre>
+<pre class="code"><code>dmdba  1015  1  0 Dec17 ?  00:00:06 /data/dmdata/bin/dmmonitor path=/data/dmdata/dmmon/DAMENG/dmmonitor_auto.ini</code></pre>
 <p>这一行信息量很大，拆开看：</p>
-<div class="tbl-wrap"><table><thead><tr><th>片段</th><th>含义</th></tr></thead><tbody><tr><td><code>dmdba</code></td><td>运行监视器的系统用户</td></tr><tr><td><code>/data/dmdata/bin/dmonitor</code></td><td>监视器程序本体 —— <strong>在软件安装目录的 <code>bin/</code> 下</strong>（<code>$DM_HOME/bin/dmonitor</code>）</td></tr><tr><td><code>path=/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></td><td>它加载的配置文件（可以放在数据目录，和软件分开）</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table><thead><tr><th>片段</th><th>含义</th></tr></thead><tbody><tr><td><code>dmdba</code></td><td>运行监视器的系统用户</td></tr><tr><td><code>/data/dmdata/bin/dmmonitor</code></td><td>监视器程序本体 —— <strong>在软件安装目录的 <code>bin/</code> 下</strong>（<code>$DM_HOME/bin/dmmonitor</code>）</td></tr><tr><td><code>path=/data/dmdata/dmmon/DAMENG/dmmonitor_auto.ini</code></td><td>它加载的配置文件（可以放在数据目录，和软件分开）</td></tr></tbody></table></div>
 <h3>第 3 步：连上监视器</h3>
 <p>把上面那行里的 <strong><code>path=</code> 去掉</strong>，剩下的整串就是启动命令：</p>
-<pre class="code"><code class="lang-bash">/data/dmdata/bin/dmonitor path=/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></pre>
+<pre class="code"><code class="lang-bash">/data/dmdata/bin/dmmonitor path=/data/dmdata/dmmon/DAMENG/dmmonitor_auto.ini</code></pre>
 <blockquote><p>💡 <strong>路径太长懒得手打？用 Tab 补全。</strong> 演示里就是这么做的：</p>
-<pre class="code"><code>[dmdba@db139 ~]$ /data/dmdata/bin/dmonitor /data/dmdata/dmmon/DAMENG/dmonitor_
-dmonitor_auto.ini    dmonitor_manual.ini</code></pre>
-<p>敲到 <code>dmonitor_</code> 连按两下 Tab，它会列出该目录下的候选。这里有两个：<br><strong><code>dmonitor_auto.ini</code> 是自动模式配置，<code>dmonitor_manual.ini</code> 是手动模式配置</strong> —— 演示用的是 <code>auto</code>。</p></blockquote>
+<pre class="code"><code>[dmdba@db139 ~]$ /data/dmdata/bin/dmmonitor /data/dmdata/dmmon/DAMENG/dmmonitor_
+dmmonitor_auto.ini    dmmonitor_manual.ini</code></pre>
+<p>敲到 <code>dmmonitor_</code> 连按两下 Tab，它会列出该目录下的候选。这里有两个：<br><strong><code>dmmonitor_auto.ini</code> 是自动模式配置，<code>dmmonitor_manual.ini</code> 是手动模式配置</strong> —— 演示用的是 <code>auto</code>。</p></blockquote>
 <p>回车后进入监视器自己的交互界面，提示符会变成：</p>
 <pre class="code"><code>[monitor]</code></pre>
 <blockquote><p>⚠️ <strong>注意</strong>：后面所有命令都是在 <code>[monitor]</code> 提示符下敲的，<strong>不是操作系统命令</strong>，别敲到 shell 里去。</p></blockquote>
@@ -156,8 +170,8 @@ WTIME 2024-12-18 00:56:24  RTSTATUS 0  INST_OK  NAME DB139  STATUS OPEN  RISTAT 
 <h3>第 6 步：停止整个守护组</h3>
 <pre class="code"><code>stop group</code></pre>
 <p>监视器会<strong>按顺序</strong>执行：</p>
-<pre class="code"><code>Stop dmonitor process of instance DB139[PRIMARY, OPEN, ISTAT_SAME_TRUE]
-Stop dmonitor process of instance DB138[STANDBY, OPEN, ISTAT_SAME_TRUE]
+<pre class="code"><code>Stop dmmonitor process of instance DB139[PRIMARY, OPEN, ISTAT_SAME_TRUE]
+Stop dmmonitor process of instance DB138[STANDBY, OPEN, ISTAT_SAME_TRUE]
 Notify instance[dmdba] shutdown
 Instance DB139 shutdown success, please wait
 Instance DB138 shutdown success, please wait</code></pre>
@@ -204,13 +218,13 @@ YES</code></pre>
 <h2>六、命令速查</h2>
 <p><strong>操作系统层面</strong></p>
 <pre class="code"><code class="lang-bash"># 找到监视器进程与配置路径
-ps -ef | grep dmonitor
+ps -ef | grep dmmonitor
 
 # 确认本机软件安装目录（可执行文件在它的 bin/ 下）
 echo $DM_HOME
 
-# 连上监视器（$DM_HOME/bin/dmonitor，路径换成你自己环境的）
-/data/dmdata/bin/dmonitor /data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</code></pre>
+# 连上监视器（$DM_HOME/bin/dmmonitor，路径换成你自己环境的）
+/data/dmdata/bin/dmmonitor /data/dmdata/dmmon/DAMENG/dmmonitor_auto.ini</code></pre>
 <p><strong>监视器交互界面内（<code>[monitor]</code> 提示符下）</strong></p>
 <div class="tbl-wrap"><table><thead><tr><th>命令</th><th>作用</th><th>是否需要先登录</th></tr></thead><tbody><tr><td><code>show</code></td><td>查看各实例状态（STATUS / RSTAT / FLSN / CLSN）</td><td>不需要</td></tr><tr><td><code>tip</code></td><td>查看监视器与实例的详细诊断信息</td><td>不需要</td></tr><tr><td><code>login</code></td><td>登录监视器（管理操作的前置）</td><td>—</td></tr><tr><td><code>stop group</code></td><td>停止整个守护组（先主后备）</td><td><strong>需要</strong></td></tr><tr><td><code>start group</code></td><td>启动整个守护组（先主后备）</td><td><strong>需要</strong></td></tr><tr><td><code>switchover</code></td><td>计划内主备切换</td><td><strong>需要</strong></td></tr></tbody></table></div>
 <hr>
