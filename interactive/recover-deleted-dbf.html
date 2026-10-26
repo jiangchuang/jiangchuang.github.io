@@ -142,13 +142,21 @@ section.card .note pre.transcript { white-space: pre; }
       <span class="badge b-ok">单机实例实测</span>
       <span class="badge b-src">DM8 V8 2026-08-03</span>
       <span class="badge b-warn">前提：实例未重启</span>
-      <span class="badge b-new">7 步全程可复制</span>
+      <span class="badge b-new">8 步全程可复制</span>
     </div>
     <div class="chips">
       <span class="chip">Linux</span>
       <span class="chip">/proc 句柄</span>
       <span class="chip">SP_TABLESPACE_RECOVER</span>
       <span class="chip">误删 DBF</span>
+    </div>
+    <div class="note warn" style="margin-top:16px">
+      <b>先分清事故类型：这篇不是「误删表」。</b>本篇处理的是 <b>OS 层把数据文件 <code>.DBF</code> 用 <code>rm</code> 删掉</b>，
+      靠的是<b>进程还持有文件句柄</b> —— 命门是<b>实例千万不能重启</b>，重启后句柄失效、文件彻底找不回。<br>
+      如果你执行的是 <code>DROP TABLE</code>（SQL 层删表、数据文件还在），请走
+      <a href="dm-backup-recover.html" style="color:#b45309"><b>《达梦利用备份恢复误删表 · 交互版》</b></a>
+      或 <a href="recover-dropped-table.html" style="color:#b45309"><b>《误删表（DROP TABLE）后的恢复 · 回收站闪回》</b></a>。
+      <b>两类事故的前提完全相反，走错页面会耽误抢救时机。</b>
     </div>
   </header>
 
@@ -474,7 +482,7 @@ LINEID  MIN_ID  MAX_ID
     </div>
   </section>
 
-    <p class="copy-hint">命令中的 <span class="ph">&lt;表空间名&gt;</span> / <span class="ph">&lt;数据文件名&gt;</span> 等为占位符，执行前替换成现场值。</p>
+  
 
   <p style="text-align:center;margin:28px 0 0;font-size:13.5px">
     <a href="../index.html" style="color:#1d4ed8;text-decoration:none;font-weight:600">← 返回指南索引</a>

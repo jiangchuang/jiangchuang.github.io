@@ -3,11 +3,11 @@
  "n": 30,
  "items": [
   {
-   "t": "达梦误删表 DROP TABLE 后的恢复（交互版）",
+   "t": "达梦误删表回收站闪回（交互版·需回收站已开）",
    "c": "日常运维",
    "d": "2026-10-26",
    "u": "interactive/recover-dropped-table.html",
-   "x": "交互式操作指南：视频实录 + 九步卡片 + 命令一键复制。覆盖回收站参数 RECYCLEBIN 检查（出厂默认 0，DROP 后无法闪回）、静态参数须 scope=2 改配置并重启、DBA_RECYCLEBIN 定位被删对象与 BIN$ 名、FLASHBACK TABLE TO BEFORE DROP 闪回、闪回后索引名与约束名变 BIN$ 前缀需 ALTER 改名复原、同名表冲突用 RENAME TO 绕开、PURGE 与 TRUNCATE 之后不可恢复、实例重启不影响闪回、dexp/dimp 逻辑备份兜底。单机库 DM01 实测。"
+   "x": "交互式操作指南：视频实录 + 九步卡片 + 命令一键复制。讲回收站闪回这条「快路」：RECYCLEBIN 检查（出厂默认 0，未开则闪回不可用）、静态参数须 scope=2 改配置并重启、DBA_RECYCLEBIN 定位被删对象与 BIN$ 名、FLASHBACK TABLE TO BEFORE DROP 闪回、闪回后索引名与约束名变 BIN$ 前缀需 ALTER 改名复原、同名表冲突用 RENAME TO 绕开、PURGE 与 TRUNCATE 之后不可恢复、实例重启不影响闪回。有备份+归档时的标准做法见《利用备份恢复误删表》。单机库 DM01 实测。"
   },
   {
    "t": "从 MySQL 到达梦：对比学习",
@@ -199,18 +199,18 @@
    "x": "交互式操作指南：视频实录 + 五步速成 + 使用前须知 + 详解 + FAQ。覆盖授权到期现象（运行中可能退出、重启一定起不来）、dm.key 放置路径与权限、SP_LOAD_LIC_INFO() 在线加载、V$LICENSE 查询 SERIES_NO 与 EXPIRED_DATE 校验、无需重启数据库。适用 DM8。"
   },
   {
-   "t": "达梦利用备份恢复误删数据 dmrman（交互版）",
+   "t": "达梦利用备份恢复误删表 dmrman 时间点恢复（交互版）",
    "c": "日常运维",
    "d": "2026-10-26",
    "u": "interactive/dm-backup-recover.html",
-   "x": "交互式操作指南：视频实录 + 分步卡片 + 命令一键复制。覆盖归档模式检查、dmrman 全量备份 BACKUP DATABASE、误删后的 RESTORE 与 RECOVER、时间点恢复、恢复后一致性校验。适用于借助既有备份把误删数据找回来的场景。"
+   "x": "交互式操作指南：视频实录 + 九步卡片 + 命令一键复制。主线是「有全备 + 连续归档」下的时间点恢复：确认误删对象并记录误删前时间点、核查 ARCH_MODE 与 dmarch.ini、在线 BACKUP DATABASE FULL、备份后增量只能靠归档、误删后必须 ALTER DATABASE ARCHIVELOG CURRENT 切归档（不切则 dmrman 读不到未闭卷文件）、dminit 建恢复库并 RESTORE、dmrman RECOVER ... WITH ARCHIVEDIR ... UNTIL TIME 恢复到误删前一刻、UPDATE DB_MAGIC 后才能启动、dexp 从恢复库导出并用 dimp 回写生产库。实测备份后新增 50 行全部恢复，共 250 行。单机库 DM01 实测。"
   },
   {
-   "t": "达梦数据文件 .DBF 误删后的恢复（交互版）",
+   "t": "达梦数据文件 .DBF 误删后的恢复（交互版·句柄法）",
    "c": "日常运维",
    "d": "2026-10-26",
    "u": "interactive/recover-deleted-dbf.html",
-   "x": "交互式操作指南：视频实录 + 七步卡片 + 命令一键复制。覆盖数据文件被删除后未做检查时的应急处理、cp 恢复、表空间与数据文件状态核查、DTS 迁移备选方案、单机库实测记录。适用于没有可用备份、只剩物理文件残留的现场。"
+   "x": "交互式操作指南：视频实录 + 分步卡片 + 命令一键复制。处理的是 OS 层 rm 掉表空间数据文件这类事故：靠进程仍持有的 /proc 文件句柄把 .DBF 捞回、SP_TABLESPACE_RECOVER 恢复表空间上线。命门是实例不能重启，重启后句柄失效。与 DROP TABLE 是完全不同的两类事故。单机库 DM01 实测。"
   }
  ]
 }

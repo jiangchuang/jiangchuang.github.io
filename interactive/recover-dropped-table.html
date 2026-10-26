@@ -140,6 +140,12 @@
       <span class="chip">DBA_RECYCLEBIN</span>
       <span class="chip">dexp / dimp</span>
     </div>
+    <div class="note warn" style="margin-top:16px">
+      <b>定位说明：这是「快路」，不是标准做法。</b>本篇讲的是<b>回收站闪回</b>，前提是 <code>RECYCLEBIN = 1</code>，
+      而达梦<b>出厂默认是 0</b> —— 也就是说这条路径成不成立，在你 DROP 之前就已经定了。<br>
+      <b>有全库备份 + 连续归档时，标准做法是备份恢复</b>（恢复到误删前时间点，再 dexp/dimp 导回）：
+      见 <a href="dm-backup-recover.html" style="color:#b45309"><b>《达梦利用备份恢复误删表 · 交互版》</b></a>。
+    </div>
   </header>
 
   <section class="card">
