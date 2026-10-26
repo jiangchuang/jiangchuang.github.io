@@ -123,7 +123,7 @@
 
 <header class="hd">
   <h1>达梦主备集群：重启与主备切换 · 交互版</h1>
-  <div class="sub">视频实录 + 八步速成 + 原理解读 ｜ 适用 <b>DM8 数据守护</b>（主备集群）｜ 全程监视器内操作，计划内维护可保数据不丢 ｜ 命令含占位符，跨环境复用</div>
+  <div class="sub">视频实录 + 八步速成 + 使用前须知 ｜ 适用 <b>DM8 数据守护</b>（主备集群）｜ 全程监视器内操作，计划内切换不丢数据 ｜ 命令含占位符，跨环境复用</div>
   <div class="badges">
     <span class="badge b-new">交互：点击左侧步骤卡片 → 右侧展开可复制命令</span>
     <span class="badge b-src">资料依据：《DM8 数据守护与读写分离集群手册》｜ 2026-10 真实环境实测</span>
@@ -221,6 +221,7 @@ ps -ef | grep dmonitor
           </div>          <ul>
             <li><b>目录规律</b>：达梦所有可执行文件都在<b>安装目录的 bin/ 子目录</b>下——dmserver、dmonitor、disql、dmrman 无一例外。bin/ 前面那段就是这台机器的安装目录。</li>
             <li>确认安装目录：<span class="chip">echo $DM_HOME</span>；数据目录看 <span class="chip">ps -ef | grep dmserver</span> 输出里 dm.ini 所在路径。</li>
+            <li class="warnline"><b>程序名以你环境的实际输出为准</b>：标准安装下监视器可执行文件名为 <span class="chip">dmmonitor</span>；本页命令按演示环境的实际输出书写（<span class="chip">dmonitor</span>）。两者不一致时照抄你自己 <span class="chip">ps</span> 里看到的那一段，不要照搬演示环境。</li>
           </ul>
         </div>
 
@@ -235,6 +236,9 @@ ps -ef | grep dmonitor
 <span class="cm"># 配置文件长可用 Tab 补全；回车后提示符变为：</span>
 [monitor]</code></pre>
           </div>          <ul>
+            <li><b>这条命令启动的是非确认监视器（普通监视器）</b>——本页后续全部操作都在它上面完成。判断依据看配置文件里的 <span class="chip">MON_DW_CONFIRM</span>：<b>0 或未配置＝普通监视器</b>，<b>1＝确认监视器</b>。两个监视器的启动命令一模一样，差别只在配置文件这个参数。</li>
+            <li><b>为什么这里够用</b>：普通监视器不承担自动接管职责，但状态查看与人工管理命令（<span class="chip">stop group</span> / <span class="chip">startup group</span> / <span class="chip">switchover</span>）都能执行——计划内重启与切换用它完全足够。一个集群只允许一个确认监视器，普通监视器可以有多个，与确认监视器并存不冲突。</li>
+            <li><b>什么时候必须用确认监视器</b>：需要「主库故障后由监视器自动选出备库接管」时。此时要另配一份 <span class="chip">MON_DW_CONFIRM = 1</span> 的配置并常驻运行；只做计划内维护则不必。</li>
             <li><b>常见配置有两个</b>：<span class="chip">dmonitor_auto.ini</span>（自动模式）与 <span class="chip">dmonitor_manual.ini</span>（手动模式），连哪个取决于现场用的是哪份配置（演示环境用 auto）。</li>
             <li class="warnline">show / login / stop group 这些是<b>监视器内部命令</b>，必须敲在 [monitor] 提示符下——敲进 Linux shell 只会 command not found。</li>
           </ul>
@@ -301,6 +305,9 @@ startup group GRP1
 <span class="cm"># STARTUP  OK  GRP1_RT_02  OPEN  PRIMARY  VALID</span>
 <span class="cm"># STARTUP  OK  GRP1_RT_01  OPEN  STANDBY</span></code></pre>
           </div>          <ul>
+            <li><b>GRP1 这个组名从哪来</b>：不是随手起的，它就是监视器配置文件里的组段名——打开 <span class="chip">dmonitor_auto.ini</span> 能看到一行 <span class="chip">[GRP1]</span>，下面列着本组的 <span class="chip">MON_DW_IP</span>（各守护进程的 IP:PORT）。组名改了，命令里的 <span class="chip">GRP1</span> 也必须跟着改。</li>
+            <li><b>实时主备/读写分离可以省略组名</b>：这类集群一个监视器只允许配一组，直接敲 <span class="chip">startup group</span> 与 <span class="chip">startup group GRP1</span> 等价；只有 MPP 主备（多组并存）必须在命令里指定组名。</li>
+            <li><b>实例名与组名同源</b>：输出里的 <span class="chip">GRP1_RT_01</span> 也以组名为前缀；后续切主备写 <span class="chip">switchover GRP1.GRP1_RT_01</span>，格式即「组名.实例名」。</li>
             <li class="warnline"><b>命令不对称</b>：停是 <span class="chip">stop group</span>，起是 <span class="chip">startup group</span>——写成 start group 会被监视器直接拒绝（「输入命令非法」）。实测踩过的坑。</li>
             <li>只有不走监视器、改用操作系统服务分别启停 dmwatcher/dmserver 时，才需要自己把关启动顺序。</li>
           </ul>
@@ -346,16 +353,71 @@ show
   </div>
 </section>
 
+<!-- ==================== 使用前须知 ==================== -->
+<section class="card">
+  <h2>使用前须知</h2>
+  <div class="h2sub">动手之前先对号入座：这件事什么时候该做、谁来做、会中断多久、哪些坑要绕开</div>
+
+  <h3>一、什么时候要做这件事</h3>
+  <div class="note">
+    <ul>
+      <li><b>计划内维护</b>：版本升级、硬件更换或扩容、机房搬迁、需重启才生效的参数调整——走本页这套流程。</li>
+      <li><b>主库故障后的恢复</b>：处置路径不同，用的是 <span class="chip">takeover</span> 而不是 <span class="chip">switchover</span>，且可能丢数据，不要套用本页的计划内切换步骤。</li>
+      <li>判断依据是变更单或故障单的明确要求，不是「感觉该重启了」——停机窗口没批下来就不要动。</li>
+    </ul>
+  </div>
+
+  <h3>二、谁来做、需要什么条件</h3>
+  <div class="note">
+    <ul>
+      <li><b>操作系统账号</b>：达梦运行用户（通常为 <span class="chip">dmdba</span>），要能读到监视器配置文件。</li>
+      <li><b>数据库账号</b>：具备管理权限的账号（如 <span class="chip">SYSDBA</span>），<span class="chip">login</span> 时按提示输入。</li>
+      <li><b>停机窗口</b>：<span class="chip">stop group</span> 会让业务真正中断，这是硬约束，不适合「顺手做一下」。</li>
+      <li><b>监视器状态</b>：确认监视器（如有）保持运行，不要为了操作去停它。</li>
+    </ul>
+  </div>
+
+  <h3>三、影响范围</h3>
+  <table class="kv">
+    <tr><th style="width:230px">操作</th><th>业务影响</th><th>数据影响</th></tr>
+    <tr><td class="mono">show / login</td><td>无</td><td>无</td></tr>
+    <tr><td class="mono">stop group → startup group</td><td>全程中断，直到实例重新 OPEN</td><td>不丢数据</td></tr>
+    <tr><td class="mono">switchover（计划内）</td><td>秒级到分钟级连接闪断</td><td>不丢数据，主备角色互换</td></tr>
+    <tr><td class="mono">takeover（主库故障）</td><td>中断持续到新主可用</td><td>可能丢数据</td></tr>
+  </table>
+
+  <h3>四、常见的坑</h3>
+  <div class="note warn">
+    <ul>
+      <li><b>start group 不合法</b>：启动只能写 <span class="chip">startup group</span>，写成 <span class="chip">start group</span> 会被监视器直接拒绝。</li>
+      <li><b>实例重启后要重新 login</b>：会提示未登录或服务器公钥变化，重新登录一次再继续。</li>
+      <li><b>监视器命令敲进操作系统 shell</b>：<span class="chip">show</span> / <span class="chip">login</span> / <span class="chip">stop group</span> 都必须在 <span class="chip">[monitor]</span> 提示符下执行。</li>
+      <li><b>FLSN/CLSN 没追平就停库</b>：停机窗口内两侧应基本一致，不一致先等备库追平，否则会拉长不可用时间。</li>
+      <li><b>把 switchover 当 takeover 用</b>：前者计划内、不丢数据；后者故障场景、可能丢数据，混用会导致误判。</li>
+    </ul>
+  </div>
+
+  <h3>五、如何自证已完成</h3>
+  <div class="note">
+    <ul>
+      <li><span class="chip">show</span> 输出两行实例 <b>STATUS 均为 OPEN</b>，守护进程状态正常。</li>
+      <li><b>RSTAT 符合预期</b>：只重启未切换则角色不变；做过切换则主备已互换。</li>
+      <li><b>FLSN/CLSN 两侧趋于一致</b>，说明备库已追平、日志同步正常。</li>
+      <li>应用侧连接正常、关键业务与监控告警无异常后，才算交付完成。</li>
+    </ul>
+  </div>
+</section>
+
 <!-- ==================== 详解 ==================== -->
 <section class="card">
   <h2>详解：监视器怎么用 · 状态怎么看 · 模式有什么讲究</h2>
-  <div class="h2sub">给想弄清楚原理的人 ｜ 文档结论与现场实测分开标注，不混着说</div>
+  <div class="h2sub">想弄清原理再看这一节：监视器怎么连、show 的字段怎么判读、switchover 与 takeover 怎么选、监视器模式有什么影响</div>
 <h3>一、先认清演示环境（照着换成自己的）</h3>
   <table class="kv">
     <tr><th style="width:200px">角色</th><th>值</th></tr>
     <tr><td>主库</td><td>实例 DB139 ＠ 192.168.16.139 · <span class="chip">PRIMARY</span></td></tr>
     <tr><td>备库</td><td>实例 DB138 ＠ 192.168.16.138 · <span class="chip">STANDBY</span></td></tr>
-    <tr><td>守护组名</td><td><span class="chip">GRP1</span></td></tr>
+    <tr><td>守护组名</td><td><span class="chip">GRP1</span> ——取自监视器配置文件的 <span class="chip">[GRP1]</span> 段名，不是自定义名称</td></tr>
     <tr><td>安装目录（DM_HOME）</td><td><span class="chip">/data/dmdata</span>（可执行文件在 <span class="chip">/data/dmdata/bin/</span>）</td></tr>
     <tr><td>监视器配置</td><td><span class="chip">/data/dmdata/dmmon/DAMENG/dmonitor_auto.ini</span></td></tr>
   </table>
@@ -410,7 +472,7 @@ sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_norma
 <!-- ==================== FAQ ==================== -->
 <section class="card">
   <h2>常见问题（FAQ）</h2>
-  <div class="h2sub"></div>
+  <div class="h2sub">遇到卡壳先在这里找答案 —— 每条都标了依据：依据手册的标「文档」，来自现场经验的标「现场」</div>
   <div class="faq-item open">
     <button class="q" type="button">Q1：show / login 敲进去报 command not found？<span class="src-tag src-field">现场</span><span class="arr">▼</span></button>
     <div class="a">
@@ -454,46 +516,7 @@ sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_norma
   </div>
 </section>
 
-<!-- ==================== 视频文字稿 ==================== -->
-<section class="card">
-  <h2>视频文字稿</h2>
-  <div class="h2sub">与视频解说一致的文字版，方便检索与复制</div>
-  <div class="transcript">
-<p><span class="t">开场：</span>本视频演示达梦主备集群的重启与主备切换完整操作，全程在监视器里完成。建议先完整看一遍，再跟着下面的八个步骤操作。</p>
-    <p><span class="t">第一步，定位监视器。</span>在任意节点用 ps 命令找到 dmonitor 进程，记下它的程序路径和 path 指向的配置文件——配置一般在数据目录下，和软件目录分开。</p>
-    <p><span class="t">第二步，连上监视器。</span>用刚才那串命令启动监视器，提示符变成 monitor，说明进入了监视器交互界面。注意：后面的命令都敲在这里，不是敲在操作系统 shell 里。</p>
-    <p><span class="t">第三步，看集群状态。</span>执行 show，重点看四个字段：STATUS 是不是 OPEN，RSTAT 的主备角色对不对，FLSN 和 CLSN 两侧是否一致——这是主备日志同步进度，停机窗口内应当基本一致。</p>
-    <p><span class="t">第四步，登录监视器。</span>执行 login，输入管理员账号口令。停止、启动、切换这些管理命令，都必须先登录才能执行。</p>
-    <p><span class="t">第五步，停守护组。</span>执行 stop group。监视器会自动按先主后备的顺序，把两个实例依次停掉，不需要手工干预。这一步业务会真正中断，务必确认已在停机窗口内。</p>
-    <p><span class="t">第六步，起守护组。</span>注意命令是 startup group，不是 start group——写成 start 会报命令非法。监视器会逐个拉起守护进程和实例，备库自动跟主库走。</p>
-    <p><span class="t">第七步，主备切换。</span>如果要做计划内的角色互换，执行 switchover，输入 YES 二次确认。它和主库故障时用的 takeover 不同：switchover 是计划内切换，不丢数据。</p>
-    <p><span class="t">第八步，终验。</span>再执行一次 show：两个实例都是 OPEN，主备角色已经互换，FLSN 和 CLSN 重新趋于一致。到这里，重启加切换就全部完成了。</p>
-    <p><span class="t">结尾提醒：</span>路径都要换成自己环境的——先 echo DM_HOME 确认安装目录，别照抄演示环境的路径。详细原理和常见问题，请看页面下方「详解」与「FAQ」部分。</p>
-  </div>
-</section>
-
-<!-- ==================== 口径声明 ==================== -->
-<section class="card">
-  <h2>口径与来源声明</h2>
-  <div class="h2sub">严谨性说明：文档结论与现场实测分开标注</div>
-<div class="note">
-    <b>资料依据</b>：
-    <ul>
-      <li>《DM8 数据守护与读写分离集群手册》——监视器（dmmonitor）章节：login 前置、stop group / startup group / switchover 用法、确认监视器与普通监视器、MON_DW_CONFIRM、DW_MODE；</li>
-      <li>2026-10 真实环境操作实录（本文视频，2 分 23 秒）：监视器定位与连接、show 字段判读、start group 报非法等均为实测现象；</li>
-      <li>软件/数据目录分离为业界通行实践，达梦安装目录无唯一标准（/opt/dmdbms、/home/dmdba/dmdbms、/u01/dmdbms、/data/dmdata 均常见）。</li>
-    </ul>
-  </div>
-  <div class="note warn">
-    <b style="color:#b45309">现场口径标注</b>：命令不对称（start group 非法）、重启后需重新 login 的提示、监视器命令敲进 shell 报错、停机窗口内 FLSN/CLSN 判读经验等，来自售后现场经验与本次实测；标注「现场」的内容请以你所在版本的手册与实查为准。
-    <br><b>复核说明</b>：本页制作时达梦知识库检索服务暂不可达，文档口径条目未做本次复检，依据上述手册与既有实测文章整理。
-  </div>
-  <div class="note">
-    <b>适用范围</b>：DM8 数据守护（主备集群）；读写分离集群同源适用。命令中的占位符（安装目录、守护组名、实例名、配置文件路径）按实际环境替换。本页为中性操作指南，不含任何特定环境敏感信息。
-  </div>
-</section>
-
-<footer class="ft">达梦主备集群：重启与主备切换 · 交互版 ｜ 2026-10-22 ｜ 可打印</footer>
+<footer class="ft">达梦主备集群：重启与主备切换 · 交互版 ｜ 适用 DM8 数据守护（主备 / 读写分离） ｜ 2026-10-26 ｜ 命令中的占位符 &lt;…&gt; 请按本机环境替换后执行</footer>
 
 </div>
 
