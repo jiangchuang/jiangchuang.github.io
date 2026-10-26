@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦误删表（DROP TABLE）后的恢复 · 交互版</title>
+<style>
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 20px 60px;
+    background: #f3f4f6; color: #1f2937;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  header.hd { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 26px 30px; margin-bottom: 22px; }
+  header.hd h1 { margin: 0 0 6px; font-size: 23px; color: #111827; }
+  header.hd .sub { color: #4b5563; font-size: 14px; margin-bottom: 14px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-block; font-size: 12px; padding: 3px 11px; border-radius: 999px; border: 1px solid }
+  .b-ok { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+  .b-src { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+  .b-warn { background: #fffbeb; color: #b45309; border-color: #fde68b; }
+  .b-new { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+  .copy-hint { margin-top: 14px; background: #fffbeb; border: 1px solid #fde68b; border-left: 4px solid #f59e0b; border-radius: 0 10px 10px 0; padding: 11px 16px; font-size: 13.5px; color: #92400e; line-height: 1.6; }
+  .copy-hint b { color: #b45309; }
+
+  section.card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 24px 28px 20px; margin-bottom: 26px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+  section.card h2 { margin: 0 0 4px; font-size: 19px; color: #111827; }
+  section.card .h2sub { color: #6b7280; font-size: 13px; margin-bottom: 14px; }
+  section.card h3 { margin: 20px 0 6px; font-size: 15.5px; color: #111827; }
+
+  /* ---------- 视频区 ---------- */
+  .video-box { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #0f172a; }
+  .video-box video { display: block; width: 100%; max-height: 520px; background: #000; }
+  .video-note { font-size: 12.5px; color: #6b7280; margin-top: 10px; }
+
+  /* ---------- 五步速成舞台 ---------- */
+  .stage { display: grid; grid-template-columns: minmax(0, 5fr) minmax(360px, 7fr); gap: 20px; align-items: start; }
+  .steps { display: flex; flex-direction: column; gap: 12px; }
+  .step { background: #ffffff; border: 1px solid #e5e7eb; border-left: 5px solid #2563eb; border-radius: 0 12px 12px 0; padding: 14px 16px 12px; cursor: pointer; outline: none; transition: box-shadow .16s ease, border-color .16s ease; }
+  .step:hover, .step:focus-visible { box-shadow: 0 0 0 3px rgba(37,99,235,.14); }
+  .step.on { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37,99,235,.18); }
+  .step .no { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 700; font-size: 13px; margin-right: 9px; flex: none; }
+  .step .t { font-weight: 700; font-size: 15px; color: #111827; }
+  .step .d { font-size: 12.5px; color: #4b5563; margin-top: 5px; padding-left: 35px; }
+  .step .go { font-size: 11.5px; color: #1d4ed8; margin-top: 6px; padding-left: 35px; font-weight: 600; }
+
+  .panel { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.04); position: sticky; top: 16px; overflow: hidden; }
+  .panel-hd { display: flex; align-items: center; gap: 10px; padding: 14px 18px 12px; border-bottom: 1px solid #f1f3f6; background: #fbfcfe; }
+  .panel-hd .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; background: #2563eb; }
+  .panel-hd .tt { font-size: 15.5px; font-weight: 700; color: #111827; }
+  .panel-hd .pin { margin-left: auto; font-size: 11.5px; color: #b45309; border: 1px solid #fde68b; background: #fffbeb; border-radius: 999px; padding: 2px 10px; display: none; }
+  .panel.pinned .panel-hd .pin { display: inline-block; }
+  .panel-bd { padding: 14px 18px 18px; }
+  .detail { display: none; }
+  .detail.in { display: block; animation: fadeSlide .22s ease both; }
+  @keyframes fadeSlide { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .detail .goal { font-size: 13px; color: #374151; margin: 0 0 10px; }
+  .cmdbox { position: relative; margin: 0 0 10px; }
+  .cmdbox pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px 18px; font-size: 12.5px; line-height: 1.65; overflow-x: auto; font-family: Consolas, "Courier New", monospace; margin: 0; }
+  .cmdbox pre .cm { color: #94a3b8; }
+  .cmdbox pre .ph { color: #fbbf24; font-weight: 700; }
+  .cmdbox .cp { position: absolute; top: 8px; right: 8px; font-size: 11.5px; color: #cbd5e1; background: rgba(30,41,59,.85); border: 1px solid #475569; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+  .cmdbox .cp:hover { color: #fff; border-color: #94a3b8; }
+  .detail .warnline { color: #b45309; font-weight: 600; font-size: 12.5px; }
+  .detail ul { margin: 4px 0 0; padding-left: 20px; font-size: 13px; color: #374151; }
+  .detail li { margin: 5px 0; }
+  .detail li b { color: #111827; }
+  #panel-default { padding: 30px 20px; text-align: center; color: #6b7280; font-size: 13.5px; }
+  #panel-default .big { font-size: 40px; margin-bottom: 8px; }
+  #panel-default kbd { font-family: Consolas, monospace; font-size: 11.5px; background: #f3f4f6; border: 1px solid #e5e7eb; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: #374151; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .chip { font-family: Consolas, "Courier New", monospace; font-size: 11.5px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+  .chip b { color: #1d4ed8; font-weight: 700; }
+
+  table.kv { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  table.kv th, table.kv td { border: 1px solid #e5e7eb; padding: 6px 12px; text-align: left; vertical-align: top; }
+  table.kv th { background: #f3f4f6; color: #374151; font-weight: 600; }
+  table.kv td.mono { font-family: Consolas, "Courier New", monospace; font-size: 12.5px; }
+  table.kv tr:nth-child(even) td { background: #fafbfc; }
+
+  .note { background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 0 8px 8px 0; padding: 12px 18px; margin-top: 14px; font-size: 13.5px; }
+  .note b { color: #1e40af; }
+  .note.warn { border-left-color: #d97706; }
+  .note.warn b { color: #b45309; }
+  .note ol, .note ul { margin: 6px 0 2px; padding-left: 22px; }
+  .note li { margin: 5px 0; }
+
+  .faq-item { border: 1px solid #e5e7eb; border-radius: 10px; margin-top: 10px; overflow: hidden; }
+  .faq-item .q { width: 100%; text-align: left; background: #f8fafc; border: none; padding: 12px 16px; font-size: 14px; font-weight: 700; color: #111827; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; }
+  .faq-item .q .arr { margin-left: auto; color: #64748b; transition: transform .16s ease; flex: none; }
+  .faq-item.open .q .arr { transform: rotate(180deg); }
+  .faq-item .a { display: none; padding: 4px 16px 14px; font-size: 13.5px; color: #374151; }
+  .faq-item.open .a { display: block; }
+  .faq-item .a p { margin: 8px 0; }
+  .src-tag { font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 7px; white-space: nowrap; flex: none; }
+  .src-official { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+  .src-field { background: #fffbeb; color: #b45309; border: 1px solid #fde68b; }
+
+  .transcript { font-size: 13.5px; color: #374151; }
+  .transcript p { margin: 8px 0; }
+  .transcript .t { font-weight: 700; color: #111827; }
+
+  footer.ft { color: #6b7280; font-size: 12.5px; text-align: center; margin-top: 10px; }
+
+  @media (max-width: 980px) {
+    .stage { grid-template-columns: 1fr; }
+    .panel { position: static; }
+  }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .panel { position: static; }
+    section.card, header.hd { border: none; box-shadow: none; }
+    .detail { display: block !important; animation: none; page-break-inside: avoid; }
+    #panel-default { display: none; }
+    .faq-item .a { display: block !important; }
+    .cmdbox .cp { display: none; }
+  }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hd">
+    <h1>达梦误删表（DROP TABLE）后的恢复 · 交互版</h1>
+    <p class="sub">一条 <code>DROP TABLE</code> 敲下去，表和里面几百行数据一起消失。能不能救回来，<b>取决于误删那一刻回收站是开还是关</b> —— 而达梦出厂默认是<b>关</b>。这篇把「开着的救法」和「关着的兜底」两条路都跑给你看。</p>
+    <div class="badges">
+      <span class="badge b-ok">单机实例实测</span>
+      <span class="badge b-src">DM8 V8 2026-08-03</span>
+      <span class="badge b-warn">前提：RECYCLEBIN=1</span>
+      <span class="badge b-new">9 步全程可复制</span>
+    </div>
+    <div class="chips">
+      <span class="chip">DROP TABLE</span>
+      <span class="chip">FLASHBACK</span>
+      <span class="chip">DBA_RECYCLEBIN</span>
+      <span class="chip">dexp / dimp</span>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>操作视频演示</h2>
+    <div class="h2sub">同一套命令、同一份输出，画面与下方步骤卡一一对应。</div>
+    <div class="video-box">
+      <video controls playsinline preload="metadata" src="recover-dropped-table.mp4"></video>
+    </div>
+    <p class="video-note">视频为命令行实录渲染；所有输出取自单机测试库（192.168.31.14 / DM01:5236）真实执行结果。</p>
+  </section>
+
+  <section class="card">
+    <h2>先看结论：两条路，一条几秒钟，一条几十分钟</h2>
+    <div class="h2sub">DROP 之后的抢救顺序是固定的，不要跳步。</div>
+    <table class="kv">
+      <tr>
+        <th style="width:110px">误删时的状态</th>
+        <th style="width:210px">能用的手段</th>
+        <th style="width:120px">耗时量级</th>
+        <th>代价与边界</th>
+      </tr>
+      <tr>
+        <td><b>回收站已开</b><br><span style="color:#6b7280">RECYCLEBIN=1</span></td>
+        <td class="mono">FLASHBACK TABLE<br>... TO BEFORE DROP</td>
+        <td>秒级</td>
+        <td>数据完整回来，但<b>索引名与约束名会变成 <code>BIN$</code> 前缀</b>，必须改名复原（第 5 步）</td>
+      </tr>
+      <tr>
+        <td><b>回收站没开</b><br><span style="color:#6b7280">出厂默认 RECYCLEBIN=0</span></td>
+        <td class="mono">dexp / dimp<br>逻辑备份恢复</td>
+        <td>分钟级</td>
+        <td>只能回到<b>最后一次导出的那一刻</b>，导出之后的增量数据没法补</td>
+      </tr>
+      <tr>
+        <td><b>已经被 PURGE<br>或执行了 TRUNCATE</b></td>
+        <td class="mono">物理备份 + 归档<br>时间点恢复</td>
+        <td>小时级</td>
+        <td>要求<b>事先</b>开了归档并留着全量+增量备份；没开归档就只能认了</td>
+      </tr>
+    </table>
+    <div class="note warn">
+      <b>一句话记住</b>：DROP 表能不能闪回，<b>在你 DROP 之前就已经决定了</b>。回收站是静态参数，误删之后才去开，救不回刚才那张表 —— 新参数只对<b>之后</b> DROP 的表生效。
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>九步速成：把误删的表救回来</h2>
+    <div class="h2sub">点左侧任一步骤，右侧给出该步的命令、实测输出与判断依据。</div>
+
+    <div class="stage">
+      <div class="steps">
+
+        <div class="step" data-k="1" data-title="第 1 步 · 先看回收站开关" tabindex="0">
+          <div class="t"><span class="no">1</span>先确认回收站开没开</div>
+          <div class="d">这一条决定后面 7 步有没有意义</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="2" data-title="第 2 步 · 在回收站里找到它" tabindex="0">
+          <div class="t"><span class="no">2</span>在回收站里找到被删的表</div>
+          <div class="d">一张带主键索引的表，会留下 3 个对象</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="3" data-title="第 3 步 · 闪回" tabindex="0">
+          <div class="t"><span class="no">3</span>执行 FLASHBACK 把表带回来</div>
+          <div class="d">一条语句，十几毫秒</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="4" data-title="第 4 步 · 校验数据" tabindex="0">
+          <div class="t"><span class="no">4</span>校验：行数 / 主键区间 / 汇总值</div>
+          <div class="d">不看日志看数据，三项都要对</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="5" data-title="第 5 步 · 复原名称空间" tabindex="0">
+          <div class="t"><span class="no">5</span>把 BIN$ 索引名与约束名改回来</div>
+          <div class="d">最容易漏的一步，漏了业务会陆续报错</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="6" data-title="第 6 步 · 同名表冲突" tabindex="0">
+          <div class="t"><span class="no">6</span>已经重建了同名表怎么办</div>
+          <div class="d">别删新表，用 RENAME TO 落到旁边</div>
+          <div class="go">点击查看要点 →</div>
+        </div>
+
+        <div class="step" data-k="7" data-title="第 7 步 · 救不回来的三种情况" tabindex="0">
+          <div class="t"><span class="no">7</span>三种彻底救不回来的情况</div>
+          <div class="d">PURGE / TRUNCATE / 回收站没开</div>
+          <div class="go">点击查看实测 →</div>
+        </div>
+
+        <div class="step" data-k="8" data-title="第 8 步 · 兜底：dimp 恢复" tabindex="0">
+          <div class="t"><span class="no">8</span>兜底：从逻辑备份恢复</div>
+          <div class="d">回收站没开时唯一实用的路</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="9" data-title="第 9 步 · 平时怎么防" tabindex="0">
+          <div class="t"><span class="no">9</span>平时怎么做，才不用抢救</div>
+          <div class="d">把回收站和导出都提前配好</div>
+          <div class="go">点击查看要点 →</div>
+        </div>
+
+      </div>
+
+      <div class="panel" id="panel">
+        <div class="panel-hd">
+          <span class="dot"></span>
+          <span class="tt" id="panel-title">步骤明细</span>
+          <span class="pin">已固定</span>
+        </div>
+        <div class="panel-bd">
+          <div id="panel-default">
+            <p class="goal">左侧点一步，这里显示该步的完整命令与实测输出。点同一块可取消固定，按 Esc 也可取消。</p>
+            <div class="note">
+              <b>一句话原理</b>：<code>FLASHBACK TABLE ... TO BEFORE DROP</code> 不是"回滚 SQL"，而是把 DROP 时移进回收站（<code>SYS.RECYCLEBIN$</code>）的那份原始对象<b>重新挂回</b>用户命名空间。所以它救的是<b>整张表</b>，不能只挑几行；也不需要归档、不需要备份。
+            </div>
+          </div>
+
+          <div class="detail" data-k="1">
+            <p class="goal">先查参数。这一步只要 3 秒，但决定了你是走闪回还是直接跳到第 8 步找备份。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 回收站开关：0=关（出厂默认），1=开</span>
+SELECT PARA_NAME, PARA_VALUE
+  FROM V$DM_INI
+ WHERE PARA_NAME = 'RECYCLEBIN';</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>（新建实例的出厂状态）
+              <pre class="transcript">LINEID  PARA_NAME   PARA_VALUE
+1       RECYCLEBIN  0</pre>
+              返回 <b>0</b> 就意味着：<b>这张表已经彻底没了</b>，直接跳到第 8 步走备份恢复；返回 <b>1</b> 才继续第 2 步。
+            </div>
+            <div class="note warn">
+              <b>为什么不能现开现用</b>：<code>RECYCLEBIN</code> 是<b>静态参数</b>，<code>SP_SET_PARA_VALUE(1,...)</code> 会直接报错：
+              <pre class="transcript">CALL SP_SET_PARA_VALUE(1,'RECYCLEBIN',1);
+[-839]:Try to alter static ini parameter.</pre>
+              必须用 <code>scope=2</code> 写进配置文件、再<b>重启实例</b>才生效（见第 9 步）。而重启生效之后，<b>之前 DROP 的表也不会回来</b>。
+            </div>
+          </div>
+
+          <div class="detail" data-k="2">
+            <p class="goal">在回收站视图里按原表名查。注意看 <code>OBJECT_NAME</code> 与 <code>ORIGINAL_NAME</code> 的区别：前者是它现在在系统里的真名（<code>BIN$</code> 开头），后者只是"原来叫什么"。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 普通用户看自己的回收站</span>
+SELECT OBJECT_NAME, ORIGINAL_NAME, OPERATION, TYPE, DROPTIME
+  FROM USER_RECYCLEBIN
+ WHERE ORIGINAL_NAME = '<span class="ph">&lt;原表名&gt;</span>';
+
+<span class="cm">-- DBA 看全库（多一列 OWNER）</span>
+SELECT OWNER, OBJECT_NAME, ORIGINAL_NAME, OPERATION, TYPE, DROPTIME
+  FROM DBA_RECYCLEBIN;</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>（DROP 一张带主键和普通索引的 ORDERS）
+              <pre class="transcript">OWNER      OBJECT_NAME      ORIGINAL_NAME    OPERATION  TYPE   DROPTIME
+TEST_DROP  BIN$1029$0       ORDERS           DROP       TABLE  2026-10-26:21:30:29
+TEST_DROP  BIN$134218804$0  CONS134218804    DROP       INDEX  2026-10-26:21:30:29
+TEST_DROP  BIN$33555493$0   IDX_ORDERS_CUST  DROP       INDEX  2026-10-26:21:30:29</pre>
+              <b>一张表会留下三行</b>：表本身、主键背后的索引、自建索引。别看到三行就以为删了三张表。
+            </div>
+          </div>
+
+          <div class="detail" data-k="3">
+            <p class="goal">用<b>原表名</b>闪回，不要用 <code>BIN$</code> 那个名字。语句执行完，回收站里对应的行会同时消失。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>FLASHBACK TABLE <span class="ph">&lt;模式名&gt;</span>.<span class="ph">&lt;原表名&gt;</span> TO BEFORE DROP;</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>
+              <pre class="transcript">SQL&gt; FLASHBACK TABLE TEST_DROP.ORDERS TO BEFORE DROP;
+executed successfully
+used time: 14.307(ms)</pre>
+              14 毫秒，不需要停业务、不需要备份文件、不需要归档。
+            </div>
+            <div class="note warn">
+              <b>如果这里报 [-9805]</b>：<code>Recycle bin is disabled.</code> —— 说明回收站本来就没开，这条路不存在，回到第 1 步的判断，转第 8 步。
+            </div>
+          </div>
+
+          <div class="detail" data-k="4">
+            <p class="goal">闪回"成功"只代表对象挂回来了，不代表数据完整。三项一起看：行数、主键区间、业务汇总值。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>SELECT COUNT(*) AS CNT, MIN(ID) AS MIN_ID, MAX(ID) AS MAX_ID, SUM(AMT) AS AMT
+  FROM <span class="ph">&lt;模式名&gt;</span>.<span class="ph">&lt;表名&gt;</span>;
+
+<span class="cm">-- 闪回后回收站里对应的行应该已经没了</span>
+SELECT COUNT(*) FROM DBA_RECYCLEBIN WHERE ORIGINAL_NAME = '<span class="ph">&lt;表名&gt;</span>';</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>（DROP 前 200 行 / SUM=201000）
+              <pre class="transcript">CNT_RESTORED  MIN_ID  MAX_ID  AMT_RESTORED
+200           1       200     201000
+
+RECYCLEBIN_LEFT
+0</pre>
+              行数、区间、汇总三项与 DROP 前完全一致，回收站对应条目已清空。
+            </div>
+          </div>
+
+          <div class="detail" data-k="5">
+            <p class="goal"><b>这一步几乎没人写在文档里，但它是真实事故里最容易翻车的地方。</b>闪回之后，表和数据的名字回来了，<b>索引名和约束名却还带着 <code>BIN$</code> 前缀</b>。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 先看现在是些什么名字</span>
+SELECT INDEX_NAME, INDEX_TYPE, STATUS FROM DBA_INDEXES
+ WHERE TABLE_OWNER = '<span class="ph">&lt;模式名&gt;</span>' ORDER BY INDEX_NAME;
+SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE FROM DBA_CONSTRAINTS
+ WHERE OWNER = '<span class="ph">&lt;模式名&gt;</span>';</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>（闪回之后，业务原来叫 IDX_ORDERS_CUST 和主键约束）
+              <pre class="transcript">INDEX_NAME       INDEX_TYPE  STATUS
+BIN$33555496$0   NORMAL      VALID
+INDEX33555494    CLUSTER     VALID
+INDEX33555495    NORMAL      VALID
+
+CONSTRAINT_NAME    CONSTRAINT_TYPE
+BIN$134218805$0    P</pre>
+              数据是对的、索引也是 VALID，但<b>名字全变了</b>。业务代码里按名引用索引的地方会开始报错：<code>DROP INDEX IDX_ORDERS_CUST</code>、<code>ALTER INDEX ... REBUILD</code>、SQL hint 里写死索引名、按名比对的巡检脚本。
+            </div>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 改回业务原名（注意 BIN$ 名要加双引号）</span>
+ALTER INDEX <span class="ph">&lt;模式名&gt;</span>."BIN$33555496$0" RENAME TO <span class="ph">&lt;原索引名&gt;</span>;
+ALTER TABLE <span class="ph">&lt;模式名&gt;</span>.<span class="ph">&lt;表名&gt;</span> RENAME CONSTRAINT "BIN$134218805$0" TO <span class="ph">&lt;原约束名&gt;</span>;</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>（改名后）
+              <pre class="transcript">INDEX_NAME       INDEX_TYPE  STATUS
+IDX_ORDERS_CUST  NORMAL      VALID
+INDEX33555494    CLUSTER     VALID
+INDEX33555495    NORMAL      VALID
+
+CONSTRAINT_NAME  CONSTRAINT_TYPE
+PK_ORDERS        P</pre>
+              两条语句都成功。<b>改名前一定先查一遍实际名字</b>，<code>BIN$</code> 后面的对象号每次 DROP 都会变，直接抄别人的编号一定失败。
+            </div>
+          </div>
+
+          <div class="detail" data-k="6">
+            <p class="goal">真实事故里很常见：DROP 完发现错了，情急之下先重建了一张同名空表，然后才想起来闪回。这时直接闪回会被同名对象挡住。</p>
+            <div class="note">
+              <b>实测：直接闪回</b>
+              <pre class="transcript">FLASHBACK TABLE TEST_DROP.ORDERS TO BEFORE DROP;
+[-7041]:Database object [ORDERS] already exists.</pre>
+            </div>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 别删新建的那张表（那是二次事故），把回收到的那份落到旁边</span>
+FLASHBACK TABLE <span class="ph">&lt;模式名&gt;</span>.<span class="ph">&lt;表名&gt;</span> TO BEFORE DROP
+  RENAME TO <span class="ph">&lt;新名_restored&gt;</span>;</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>
+              <pre class="transcript">FLASHBACK TABLE TEST_DROP.ORDERS TO BEFORE DROP RENAME TO ORDERS_RESTORED;
+executed successfully
+
+RESTORED_ROWS
+200
+NEW_TABLE_ROWS_STILL
+1</pre>
+              老数据 200 行落到 <code>ORDERS_RESTORED</code>，后来新建的那张表 <b>1 行没动</b>。接下来慢慢比对、把数据搬回去，谁都不用再冒一次险。
+            </div>
+          </div>
+
+          <div class="detail" data-k="7">
+            <p class="goal">下面三种情况，<b>闪回这条路是真的走不通</b>，别再耗时间试，直接转第 8 步或找物理备份。每条都有实测报错。</p>
+            <table class="kv">
+              <tr>
+                <th style="width:190px">情况</th>
+                <th style="width:270px">实测报错</th>
+                <th>说明</th>
+              </tr>
+              <tr>
+                <td>回收站没开（出厂默认）</td>
+                <td class="mono">[-9805] Recycle bin is disabled.</td>
+                <td>DROP 时对象根本没进回收站，回收站里 0 行</td>
+              </tr>
+              <tr>
+                <td><code>DROP TABLE ... PURGE</code></td>
+                <td class="mono">[-9807] Object is not in Recycle Bin.</td>
+                <td>DROP 时主动跳过回收站，等于一步到位永久删除</td>
+              </tr>
+              <tr>
+                <td><code>TRUNCATE TABLE</code></td>
+                <td class="mono">[-9807] Object is not in Recycle Bin.</td>
+                <td>表结构还在、数据清零，<b>不进回收站</b>，闪回救不了数据</td>
+              </tr>
+            </table>
+            <div class="note">
+              <b>反过来的好消息：实例重启不影响闪回。</b>实测把一个 500 行的表 DROP 掉，直接 <code>systemctl restart</code>，重启后回收站里那 2 行还在（DROPTIME 没变），闪回照样成功、500 行一行不少：
+              <pre class="transcript">重启后 DBA_RECYCLEBIN：
+TEST_DROP  T_REBOOT      2026-10-26:21:28:27
+TEST_DROP  CONS134218801 2026-10-26:21:28:27
+
+重启后闪回 → executed successfully
+CNT_RESTORED  MIN_ID  MAX_ID
+500           1       500</pre>
+              <b>这和数据文件误删正好相反</b>（那条路重启就彻底断掉）。所以 DROP 表之后<b>不用慌到不敢重启</b>，但也别去 PURGE 回收站。
+            </div>
+            <div class="note warn">
+              <b>两个清理回收站的坑（实测）</b>
+              <ol>
+                <li><code>PURGE TABLE &lt;原表名&gt;</code> 会报 <code>[-2106] Invalid table or view name [BIN$xxx]</code>，<b>什么也没清掉</b>。想彻底删就用 <code>DROP TABLE ... PURGE</code>。</li>
+                <li><code>PURGE RECYCLEBIN</code> <b>只清当前用户自己的回收站</b>。SYSDBA 执行时报"成功"，但另一个用户的表还在（实测前后都是 2 行）。要清别人的，得用那个用户连上去执行。</li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="detail" data-k="8">
+            <p class="goal">回收站没开、或者已经被 PURGE，就只能回到最后一次逻辑备份。这条路要求你<b>之前导过</b>；本篇实测用事先导出的单表 dmp 把整张表重灌回来。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm"># 日常就要有这一步：单表或整模式导出（FILE 用全路径）</span>
+dexp SYSDBA/<span class="ph">&lt;密码&gt;</span>@localhost:5236 \
+  FILE=/home/dmdba/bak/orders_backup.dmp \
+  LOG=/home/dmdba/bak/dexp_orders.log \
+  TABLES=<span class="ph">&lt;模式名&gt;</span>.<span class="ph">&lt;表名&gt;</span>
+
+<span class="cm"># 误删之后：把表导回来</span>
+dimp SYSDBA/<span class="ph">&lt;密码&gt;</span>@localhost:5236 \
+  FILE=/home/dmdba/bak/orders_backup.dmp \
+  LOG=/home/dmdba/bak/dimp_orders.log \
+  TABLES=<span class="ph">&lt;模式名&gt;</span>.<span class="ph">&lt;表名&gt;</span> IGNORE=Y</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>（导出 → DROP 掉 → dimp 灌回）
+              <pre class="transcript">dexp: table ORDERS_RESTORED export terminate, total export 200 rows, size 3.785 KB
+
+dimp: [1/2]create table ORDERS_RESTORED
+dimp: import table ORDERS_RESTORED , has coped with 200 rows, size 3.785 KB
+dimp: [2/2]import successfully...
+
+CNT_AFTER_DIMP  MIN_ID  MAX_ID  SUM_AMT
+200             1       200     201000</pre>
+              行数、主键区间、汇总值与 DROP 前完全一致。
+            </div>
+            <div class="note warn">
+              <b>dexp 的两个坑（实测踩到）</b>
+              <ol>
+                <li><code>FILE=</code> 必须写<b>全路径</b>。如果写成 <code>FILE=xxx.dmp DIRECTORY=/某个目录</code>，命令会静默退出、不产出文件、连日志都不写 —— 看起来"跑了"其实什么都没做。</li>
+                <li><code>TABLES=</code> 要写 <code>模式名.表名</code>，只写表名可能导不到东西。</li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="detail" data-k="9">
+            <p class="goal">这篇指南最大的价值不在抢救，而在于<b>提前把抢救的前提配好</b>。三件事，配置一次，长期受益。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 1) 打开回收站（静态参数：scope=2 写配置文件，重启生效）</span>
+CALL SP_SET_PARA_VALUE(2,'RECYCLEBIN',1);
+<span class="cm">-- 重启实例后确认</span>
+SELECT PARA_NAME, PARA_VALUE FROM V$DM_INI WHERE PARA_NAME='RECYCLEBIN';
+
+<span class="cm">-- 2) 看回收站占用与保留策略（按需调，别让它无限涨）</span>
+SELECT PARA_NAME, PARA_VALUE FROM V$DM_INI
+ WHERE PARA_NAME IN ('RECYCLEBIN','RECYCLEBIN_RETENTION','RECYCLE');
+
+<span class="cm">-- 3) 定期盘点回收站，确认没有"以为删了其实还占着空间"的对象</span>
+SELECT OWNER, ORIGINAL_NAME, DROPTIME FROM DBA_RECYCLEBIN ORDER BY DROPTIME;</code></pre>
+            </div>
+            <div class="note">
+              <b>实测参数（本版默认值）</b>
+              <pre class="transcript">PARA_NAME             PARA_VALUE
+RECYCLE                300
+RECYCLE_POOLS          6
+ENABLE_FLASHBACK       0
+UNDO_RETENTION         90.000000
+RECYCLEBIN             0
+RECYCLEBIN_RETENTION   0</pre>
+              <code>RECYCLEBIN=0</code> 是这篇指南存在的原因。<code>ENABLE_FLASHBACK=0</code> 是另一个开关（管的是"闪回查询/闪回版本"，能看历史行、不能救 DROP 表），别和回收站混为一谈。
+            </div>
+            <div class="note warn">
+              <b>还要配的两件事</b>：
+              <ol>
+                <li><b>逻辑备份</b>：至少对核心业务表做每日 <code>dexp</code>，保留 7 天以上。这是回收站之外的唯一低成本兜底。</li>
+                <li><b>归档 + 全量备份</b>：<code>TRUNCATE</code> 和 <code>PURGE</code> 之后唯一的路就是时间点恢复，前提是归档开着。没开归档的库，这两类事故等于直接判死刑。</li>
+              </ol>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>常见问题</h2>
+    <div class="h2sub">都是这轮实测里真碰到的疑问。</div>
+
+    <div class="faq-item">
+      <button class="q">我 DROP 完立刻 FLASHBACK，报 [-9805] Recycle bin is disabled，是不是没救了？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>是这条路没救了，不是这个库没救。<code>[-9805]</code> 的含义是"回收站是关闭的"，也就是说 DROP 的那一刻对象就没进回收站，系统里连残骸都没有。任何版本的闪回语法都变不出来。</p>
+        <p>正确动作：立刻停止在库上做任何 DDL，转向（1）找最近一次 <code>dexp</code> 备份做 <code>dimp</code> 恢复；（2）如果有归档+全备，做时间点恢复；（3）从业务侧（上游系统、日志、报表库）重建数据。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">现在把 RECYCLEBIN 改成 1，刚才删的表能回来吗？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>不能。回收站是<b>静态参数</b>，<code>scope=1</code> 直接报 <code>[-839] Try to alter static ini parameter</code>，必须 <code>scope=2</code> 写配置文件再重启实例。而重启生效之后，参数只对<b>之后</b>发生的 DROP 生效 —— 之前 DROP 的对象从来没有被记录过，无从恢复。</p>
+        <p>所以这个参数的正确态度是：<b>现在就开，为了下一次</b>。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">闪回能只挑一部分行回来，或者回到 DROP 之前的某个时间点吗？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>都不能。<code>FLASHBACK TABLE ... TO BEFORE DROP</code> 恢复的是<b>整个对象</b>，状态就是 DROP 那一刻的状态，没有部分恢复、也没有时间点参数。</p>
+        <p>如果你要的是"看某一行在半小时前是什么值"，那是<b>闪回查询</b>（<code>FLASHBACK QUERY</code> / <code>VERSIONS</code>），由 <code>ENABLE_FLASHBACK</code> 和 <code>UNDO_RETENTION</code> 控制，和回收站是两套机制，本篇不涉及。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">回收站开着，会不会把表空间撑爆？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>会占空间。DROP 进回收站的对象<b>仍然占用它原来的表空间</b>，只是名字变成 <code>BIN$</code> 开头的、用户看不见。所以"我删了表，空间怎么没降"是正常现象。</p>
+        <p>本版相关参数：<code>RECYCLEBIN_RETENTION</code>（保留策略）、<code>RECYCLE</code>=300、<code>RECYCLE_POOLS</code>=6。实践上建议定期 <code>SELECT ... FROM DBA_RECYCLEBIN ORDER BY DROPTIME</code> 盘点，确认没有长期滞留的对象，再按需 <code>DROP TABLE ... PURGE</code> 或按用户 <code>PURGE RECYCLEBIN</code>。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">这套命令在 DPC 集群 / 主备环境上能直接照抄吗？<span class="arr">▾</span></button>
+      <div class="a">
+        <p><b>不能直接照抄。</b>本篇所有输出取自<b>单机实例</b>（DM01，192.168.31.14:5236）。集群环境下回收站参数、视图可见范围、以及 FLASHBACK 语句该在哪一类节点上执行，都需要单独实测确认。</p>
+        <p>按以往经验，DPC 里实例级参数的查询要落到 MP 上做（BP 节点查部分 <code>DPC_*</code> 视图会报 <code>[-3818]</code>）。这块等实测完再单独出一篇，不要在集群上按单机的直觉操作。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">DROP USER 把整个用户删了，表还能闪回吗？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>本篇没有实测 <code>DROP USER ... CASCADE</code> 的闪回，<b>不要假设它和 DROP TABLE 一样</b>。回收站记录的是"对象被 DROP"，用户被级联删除时对象是否入回收站、闪回后权限与默认表空间能否一并恢复，都需要单独验证。</p>
+        <p>保守做法：整用户被删 = 按"整库级事故"处理，走向备份 / 时间点恢复，别单独试闪回。</p>
+      </div>
+    </div>
+  </section>
+
+  <p style="text-align:center;padding:6px 0 0">
+    <a href="../index.html" style="color:#2563eb;text-decoration:none;font-size:13.5px">← 返回指南索引</a>
+  </p>
+
+  <footer style="text-align:center;color:#94a3b8;font-size:12.5px;padding:28px 0 40px">
+    达梦误删表恢复 · 交互版 ｜ 单机实例实测 ｜ 2026-10-26
+  </footer>
+
+</div>
+<script>
+
+(function () {
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+  var details = Array.prototype.slice.call(document.querySelectorAll('.detail'));
+  var dflt = document.getElementById('panel-default');
+  var panel = document.getElementById('panel');
+  var title = document.getElementById('panel-title');
+  
+  var pinned = null;
+
+  function show(k) {
+    var cur = null;
+    dflt.style.display = 'none';
+    details.forEach(function (d) { d.classList.toggle('in', d.dataset.k === k); });
+    steps.forEach(function (g) {
+      var on = (g.dataset.k === k);
+      g.classList.toggle('on', on);
+      if (on) { cur = g; }
+    });
+    title.textContent = (cur && cur.dataset.title) || '步骤明细';
+  }
+  function reset() {
+    dflt.style.display = '';
+    details.forEach(function (d) { d.classList.remove('in'); });
+    steps.forEach(function (g) { g.classList.remove('on'); });
+    title.textContent = '步骤明细';
+    panel.classList.remove('pinned');
+  }
+  steps.forEach(function (g) {
+    var k = g.dataset.k;
+    g.addEventListener('click', function () {
+      if (pinned === k) { pinned = null; panel.classList.remove('pinned'); reset(); }
+      else { pinned = k; panel.classList.add('pinned'); show(k); }
+    });
+    g.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); g.click(); }
+    });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && pinned) { pinned = null; panel.classList.remove('pinned'); reset(); }
+  });
+
+  /* 一键复制 */
+  Array.prototype.forEach.call(document.querySelectorAll('.cmdbox .cp'), function (btn) {
+    btn.addEventListener('click', function () {
+      var box = btn.closest('.cmdbox');
+      var code = box.querySelector('code');
+      var text = code ? code.innerText : '';
+      function ok() { btn.textContent = '已复制 ✓'; setTimeout(function () { btn.textContent = '复制'; }, 1600); }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) { btn.textContent = '复制失败'; }
+        document.body.removeChild(ta);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok, fallback);
+      } else { fallback(); }
+    });
+  });
+
+  /* FAQ 折叠 */
+  Array.prototype.forEach.call(document.querySelectorAll('.faq-item .q'), function (q) {
+    q.addEventListener('click', function () {
+      q.parentElement.classList.toggle('open');
+    });
+  });
+})();
+
+</script>
+</body>
+</html>
