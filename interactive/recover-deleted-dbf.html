@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦数据文件误删后的恢复 · 交互版</title>
+<style>
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 20px 60px;
+    background: #f3f4f6; color: #1f2937;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  header.hd { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 26px 30px; margin-bottom: 22px; }
+  header.hd h1 { margin: 0 0 6px; font-size: 23px; color: #111827; }
+  header.hd .sub { color: #4b5563; font-size: 14px; margin-bottom: 14px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-block; font-size: 12px; padding: 3px 11px; border-radius: 999px; border: 1px solid }
+  .b-ok { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+  .b-src { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+  .b-warn { background: #fffbeb; color: #b45309; border-color: #fde68b; }
+  .b-new { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+  .copy-hint { margin-top: 14px; background: #fffbeb; border: 1px solid #fde68b; border-left: 4px solid #f59e0b; border-radius: 0 10px 10px 0; padding: 11px 16px; font-size: 13.5px; color: #92400e; line-height: 1.6; }
+  .copy-hint b { color: #b45309; }
+
+  section.card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 24px 28px 20px; margin-bottom: 26px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+  section.card h2 { margin: 0 0 4px; font-size: 19px; color: #111827; }
+  section.card .h2sub { color: #6b7280; font-size: 13px; margin-bottom: 14px; }
+  section.card h3 { margin: 20px 0 6px; font-size: 15.5px; color: #111827; }
+
+  /* ---------- 视频区 ---------- */
+  .video-box { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #0f172a; }
+  .video-box video { display: block; width: 100%; max-height: 520px; background: #000; }
+  .video-note { font-size: 12.5px; color: #6b7280; margin-top: 10px; }
+
+  /* ---------- 五步速成舞台 ---------- */
+  .stage { display: grid; grid-template-columns: minmax(0, 5fr) minmax(360px, 7fr); gap: 20px; align-items: start; }
+  .steps { display: flex; flex-direction: column; gap: 12px; }
+  .step { background: #ffffff; border: 1px solid #e5e7eb; border-left: 5px solid #2563eb; border-radius: 0 12px 12px 0; padding: 14px 16px 12px; cursor: pointer; outline: none; transition: box-shadow .16s ease, border-color .16s ease; }
+  .step:hover, .step:focus-visible { box-shadow: 0 0 0 3px rgba(37,99,235,.14); }
+  .step.on { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37,99,235,.18); }
+  .step .no { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 700; font-size: 13px; margin-right: 9px; flex: none; }
+  .step .t { font-weight: 700; font-size: 15px; color: #111827; }
+  .step .d { font-size: 12.5px; color: #4b5563; margin-top: 5px; padding-left: 35px; }
+  .step .go { font-size: 11.5px; color: #1d4ed8; margin-top: 6px; padding-left: 35px; font-weight: 600; }
+
+  .panel { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.04); position: sticky; top: 16px; overflow: hidden; }
+  .panel-hd { display: flex; align-items: center; gap: 10px; padding: 14px 18px 12px; border-bottom: 1px solid #f1f3f6; background: #fbfcfe; }
+  .panel-hd .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; background: #2563eb; }
+  .panel-hd .tt { font-size: 15.5px; font-weight: 700; color: #111827; }
+  .panel-hd .pin { margin-left: auto; font-size: 11.5px; color: #b45309; border: 1px solid #fde68b; background: #fffbeb; border-radius: 999px; padding: 2px 10px; display: none; }
+  .panel.pinned .panel-hd .pin { display: inline-block; }
+  .panel-bd { padding: 14px 18px 18px; }
+  .detail { display: none; }
+  .detail.in { display: block; animation: fadeSlide .22s ease both; }
+  @keyframes fadeSlide { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .detail .goal { font-size: 13px; color: #374151; margin: 0 0 10px; }
+  .cmdbox { position: relative; margin: 0 0 10px; }
+  .cmdbox pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px 18px; font-size: 12.5px; line-height: 1.65; overflow-x: auto; font-family: Consolas, "Courier New", monospace; margin: 0; }
+  .cmdbox pre .cm { color: #94a3b8; }
+  .cmdbox pre .ph { color: #fbbf24; font-weight: 700; }
+  .cmdbox .cp { position: absolute; top: 8px; right: 8px; font-size: 11.5px; color: #cbd5e1; background: rgba(30,41,59,.85); border: 1px solid #475569; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+  .cmdbox .cp:hover { color: #fff; border-color: #94a3b8; }
+  .detail .warnline { color: #b45309; font-weight: 600; font-size: 12.5px; }
+  .detail ul { margin: 4px 0 0; padding-left: 20px; font-size: 13px; color: #374151; }
+  .detail li { margin: 5px 0; }
+  .detail li b { color: #111827; }
+  #panel-default { padding: 30px 20px; text-align: center; color: #6b7280; font-size: 13.5px; }
+  #panel-default .big { font-size: 40px; margin-bottom: 8px; }
+  #panel-default kbd { font-family: Consolas, monospace; font-size: 11.5px; background: #f3f4f6; border: 1px solid #e5e7eb; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: #374151; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .chip { font-family: Consolas, "Courier New", monospace; font-size: 11.5px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+  .chip b { color: #1d4ed8; font-weight: 700; }
+
+  table.kv { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  table.kv th, table.kv td { border: 1px solid #e5e7eb; padding: 6px 12px; text-align: left; vertical-align: top; }
+  table.kv th { background: #f3f4f6; color: #374151; font-weight: 600; }
+  table.kv td.mono { font-family: Consolas, "Courier New", monospace; font-size: 12.5px; }
+  table.kv tr:nth-child(even) td { background: #fafbfc; }
+
+  .note { background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 0 8px 8px 0; padding: 12px 18px; margin-top: 14px; font-size: 13.5px; }
+  .note b { color: #1e40af; }
+  .note.warn { border-left-color: #d97706; }
+  .note.warn b { color: #b45309; }
+  .note ol, .note ul { margin: 6px 0 2px; padding-left: 22px; }
+  .note li { margin: 5px 0; }
+
+  .faq-item { border: 1px solid #e5e7eb; border-radius: 10px; margin-top: 10px; overflow: hidden; }
+  .faq-item .q { width: 100%; text-align: left; background: #f8fafc; border: none; padding: 12px 16px; font-size: 14px; font-weight: 700; color: #111827; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; }
+  .faq-item .q .arr { margin-left: auto; color: #64748b; transition: transform .16s ease; flex: none; }
+  .faq-item.open .q .arr { transform: rotate(180deg); }
+  .faq-item .a { display: none; padding: 4px 16px 14px; font-size: 13.5px; color: #374151; }
+  .faq-item.open .a { display: block; }
+  .faq-item .a p { margin: 8px 0; }
+  .src-tag { font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 7px; white-space: nowrap; flex: none; }
+  .src-official { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+  .src-field { background: #fffbeb; color: #b45309; border: 1px solid #fde68b; }
+
+  .transcript { font-size: 13.5px; color: #374151; }
+  .transcript p { margin: 8px 0; }
+  .transcript .t { font-weight: 700; color: #111827; }
+
+  footer.ft { color: #6b7280; font-size: 12.5px; text-align: center; margin-top: 10px; }
+
+  @media (max-width: 980px) {
+    .stage { grid-template-columns: 1fr; }
+    .panel { position: static; }
+  }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .panel { position: static; }
+    section.card, header.hd { border: none; box-shadow: none; }
+    .detail { display: block !important; animation: none; page-break-inside: avoid; }
+    #panel-default { display: none; }
+    .faq-item .a { display: block !important; }
+    .cmdbox .cp { display: none; }
+  }
+
+/* ---------- 补充：详情区小标题与转录块 ---------- */
+.detail .note pre.transcript {
+  background: #0f172a; color: #e2e8f0; border-radius: 8px;
+  padding: 12px 16px; margin: 8px 0 0; font-size: 12px; line-height: 1.6;
+  overflow-x: auto; font-family: Consolas, "Courier New", monospace;
+  white-space: pre;
+}
+.detail .note { white-space: normal; }
+section.card .note pre.transcript { white-space: pre; }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hd">
+    <h1>达梦数据文件误删后的恢复 · 交互版</h1>
+    <p class="sub">表空间的数据文件被 <code>rm</code> 掉之后，在<b>实例没有重启</b>的前提下，用进程还在持有的文件句柄把文件原样捞回来，再把表空间恢复上线。</p>
+    <div class="badges">
+      <span class="badge b-ok">单机实例实测</span>
+      <span class="badge b-src">DM8 V8 2026-08-03</span>
+      <span class="badge b-warn">前提：实例未重启</span>
+      <span class="badge b-new">8 步全程可复制</span>
+    </div>
+    <div class="chips">
+      <span class="chip">Linux</span>
+      <span class="chip">/proc 句柄</span>
+      <span class="chip">SP_TABLESPACE_RECOVER</span>
+      <span class="chip">误删 DBF</span>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>操作视频演示</h2>
+    <div class="h2sub">同一套命令、同一份输出，画面与下方步骤卡一一对应。</div>
+    <div class="video-box">
+      <video controls playsinline preload="metadata" src="recover-deleted-dbf.mp4"></video>
+    </div>
+    <p class="video-note">视频为命令行实录渲染；所有输出取自单机测试库真实执行结果。</p>
+  </section>
+
+  <section class="card">
+    <h2>七步速成：把误删的数据文件救回来</h2>
+    <div class="h2sub">点左侧任一步骤，右侧给出该步的命令、实测输出与判断依据。</div>
+
+    <div class="stage">
+      <div class="steps">
+
+        <div class="step" data-k="1" data-title="第 1 步 · 确认实例与数据文件" tabindex="0">
+          <div class="t"><span class="no">1</span>确认实例状态与数据文件路径</div>
+          <div class="d">实例必须是 OPEN；记下被删文件的绝对路径，后面每一步都靠它</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="2" data-title="第 2 步 · 确认句柄还在" tabindex="0">
+          <div class="t"><span class="no">2</span>确认 dmserver 还持有这个文件</div>
+          <div class="d">这是整条路的命门：进程没关过文件，才有得救</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="3" data-title="第 3 步 · 停止一切重启动作" tabindex="0">
+          <div class="t"><span class="no">3</span>误删已发生：立刻停手，不要重启</div>
+          <div class="d">重启 = 句柄消失 = 这条路彻底断掉</div>
+          <div class="go">点击查看要点 →</div>
+        </div>
+
+        <div class="step" data-k="4" data-title="第 4 步 · 确认现象" tabindex="0">
+          <div class="t"><span class="no">4</span>确认现象：校验前能查，校验后脱机</div>
+          <div class="d">别被「还能查」骗了，那只是缓存和句柄还在</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="5" data-title="第 5 步 · 表空间置恢复态" tabindex="0">
+          <div class="t"><span class="no">5</span>把表空间置为恢复态</div>
+          <div class="d">让数据库准备接受这个表空间的文件回来</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="6" data-title="第 6 步 · 用句柄救回文件" tabindex="0">
+          <div class="t"><span class="no">6</span>用 /proc 句柄把文件复制回原路径</div>
+          <div class="d">核心一步：从 /proc/&lt;PID&gt;/fd/&lt;FD&gt; 把 (deleted) 的 inode 拷出来</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+        <div class="step" data-k="7" data-title="第 7 步 · 恢复并校验" tabindex="0">
+          <div class="t"><span class="no">7</span>执行恢复，校验数据一行不少</div>
+          <div class="d">恢复后必须验证行数与主键区间，不看日志看数据</div>
+          <div class="go">点击查看命令 →</div>
+        </div>
+
+      </div>
+
+      <div class="panel" id="panel">
+        <div class="panel-hd">
+          <span class="dot"></span>
+          <span class="tt" id="panel-title">步骤明细</span>
+          <span class="pin">已固定</span>
+        </div>
+        <div class="panel-bd">
+          <div id="panel-default">
+            <p class="goal">左侧点一步，这里显示该步的完整命令与实测输出。点同一块可取消固定，按 Esc 也可取消。</p>
+            <div class="note">
+              <b>一句话原理</b>：Linux 上 <code>rm</code> 只是删掉目录项，只要进程还开着这个文件，内核就还留着它的 inode —— 于是能顺着 <code>/proc/&lt;PID&gt;/fd</code> 把它原样拷回来。
+            </div>
+          </div>
+
+          <div class="detail" data-k="1">
+            <p class="goal">先确认实例是 OPEN，再把目标表空间的数据文件路径记下来（后面 6 步都用这个绝对路径）。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 实例状态：必须是 OPEN</span>
+SELECT INSTANCE_NAME, STATUS$, MODE$ FROM V$INSTANCE;
+
+<span class="cm">-- 目标表空间的数据文件绝对路径</span>
+SELECT FILE_ID, TABLESPACE_NAME, FILE_NAME
+  FROM DBA_DATA_FILES
+ WHERE TABLESPACE_NAME = '<span class="ph">&lt;表空间名&gt;</span>';</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>
+              <pre class="transcript">LINEID  INSTANCE_NAME  STATUS$  MODE$
+1       DM01           OPEN     NORMAL
+
+LINEID  FILE_ID  TABLESPACE_NAME  FILE_NAME
+1       0        TEST_RM          /home/dmdba/dmdata/DAMENG/TEST_RM01.DBF</pre>
+            </div>
+          </div>
+
+          <div class="detail" data-k="2">
+            <p class="goal">看 dmserver 进程有没有打开这个数据文件。有 fd 指向它，才谈得上救；如果这里什么都没有，直接跳到「边界」章节走备份恢复。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm"># 取 dmserver 进程号</span>
+PID=$(pgrep -x dmserver)
+echo $PID
+
+<span class="cm"># 看它打开了哪些 fd，过滤出目标数据文件</span>
+ls -l /proc/$PID/fd | grep '<span class="ph">&lt;数据文件名&gt;</span>'</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>（误删<b>之前</b>，符号链接指向真实文件）
+              <pre class="transcript">$ ls -l /proc/2693/fd | grep TEST_RM
+lrwx------ 1 dmdba dinstall 64 Oct 26 21:10 44 -&gt; /home/dmdba/dmdata/DAMENG/TEST_RM01.DBF</pre>
+              记住这个 <b>44</b>，第 6 步要用。
+            </div>
+          </div>
+
+          <div class="detail" data-k="3">
+            <p class="goal">文件已经没了，此刻最重要的不是查原因，而是<b>别让句柄消失</b>。</p>
+            <div class="note warn">
+              <b>三条禁令</b>
+              <ol>
+                <li><b>不要重启实例</b>（<code>systemctl restart</code> / <code>shutdown</code> / 重启机器都不行）。重启后进程退出，inode 随之释放，句柄法永久失效。</li>
+                <li><b>不要停业务后再慢慢弄</b>——如果在停业务过程中顺手重启了数据库，同样前功尽弃。</li>
+                <li><b>不要往该目录里新建同名文件占位</b>。文件和句柄是两回事，空文件顶替不了原 inode（见「边界」实测）。</li>
+              </ol>
+            </div>
+            <p class="goal" style="margin-top:14px">正确动作只有三件：立刻拍照当前 fd 列表 → 通知业务方 → 按第 5、6、7 步执行。</p>
+          </div>
+
+          <div class="detail" data-k="4">
+            <p class="goal">误删之后数据库往往<b>看起来正常</b>，这是最容易误判的地方。手动触发一次文件系统校验，真相立刻出来。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 校验前：还能查（缓存 + 句柄还在，别当没事）</span>
+SELECT COUNT(*) FROM <span class="ph">&lt;用户&gt;</span>.<span class="ph">&lt;表&gt;</span>;
+
+<span class="cm">-- 触发数据文件存在性校验</span>
+CALL SP_FILE_SYS_CHECK();
+
+<span class="cm">-- 校验后再查：表空间已脱机</span>
+SELECT COUNT(*) FROM <span class="ph">&lt;用户&gt;</span>.<span class="ph">&lt;表&gt;</span>;</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>
+              <pre class="transcript">LINEID  CNT_BEFORE_CHECK
+1       1000
+used time: 0.932(ms). Execute id is 64701.
+
+SQL&gt; CALL SP_FILE_SYS_CHECK();
+DMSQL executed successfully
+used time: 2.330(ms). Execute id is 64702.
+
+SQL&gt; SELECT COUNT(*) AS CNT_AFTER_CHECK FROM TEST_RM.T2;
+[-3433]:tablespace is offline.
+used time: 0.348(ms). Execute id is 0.</pre>
+              <b>注意报错码</b>：本版本（V8 2026-08-03）报的是 <code>[-3433] tablespace is offline</code>；老版本材料里常见的是 <code>[-3430] 文件已被删除</code>。看到哪个都别慌，处理路径相同。
+            </div>
+          </div>
+
+          <div class="detail" data-k="5">
+            <p class="goal">告诉数据库：这个表空间我马上要把文件补回去，先进入恢复准备状态。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>CALL SP_TABLESPACE_PREPARE_RECOVER('<span class="ph">&lt;表空间名&gt;</span>');</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>
+              <pre class="transcript">SQL&gt; CALL SP_TABLESPACE_PREPARE_RECOVER('TEST_RM');
+DMSQL executed successfully
+used time: 0.529(ms). Execute id is 64801.</pre>
+            </div>
+          </div>
+
+          <div class="detail" data-k="6">
+            <p class="goal">从第 2 步记下的 fd 号，把 <code>(deleted)</code> 的 inode 拷回原路径。这一步决定生死。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm"># 再取一次进程号（别复用旧变量，防止实例被动重启过）</span>
+PID=$(pgrep -x dmserver)
+
+<span class="cm"># 找出那个标着 (deleted) 的 fd 号</span>
+FD=$(ls -l /proc/$PID/fd | grep '<span class="ph">&lt;数据文件名&gt;</span>.*(deleted)' | awk '{print $9}')
+ls -l /proc/$PID/fd/$FD
+
+<span class="cm"># 原样拷回原路径</span>
+cp /proc/$PID/fd/$FD <span class="ph">&lt;数据文件绝对路径&gt;</span>
+echo "cp 退出码=$?"
+
+<span class="cm"># 属主必须与实例进程一致</span>
+chown dmdba:dinstall <span class="ph">&lt;数据文件绝对路径&gt;</span>
+ls -l <span class="ph">&lt;数据文件绝对路径&gt;</span></code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>
+              <pre class="transcript">$ ls -l /proc/2693/fd/44
+lrwx------ 1 dmdba dinstall 64 Oct 26 21:10 /proc/2693/fd/44 -&gt; /home/dmdba/dmdata/DAMENG/TEST_RM01.DBF (deleted)
+
+$ cp /proc/2693/fd/44 /home/dmdba/dmdata/DAMENG/TEST_RM01.DBF
+cp 退出码=0
+
+$ ls -l /home/dmdba/dmdata/DAMENG/TEST_RM01.DBF
+-rw-r--r-- 1 dmdba dinstall 134217728 Oct 26 21:11 /home/dmdba/dmdata/DAMENG/TEST_RM01.DBF</pre>
+              <b>校验点</b>：拷回来的字节数必须与原文件一致（本例 134,217,728 = 128MB）。<b>属主/属组不对，实例照样打不开。</b>
+            </div>
+          </div>
+
+          <div class="detail" data-k="7">
+            <p class="goal">文件回来了，还得让数据库认；最后必须用数据本身证明没丢行。</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code><span class="cm">-- 执行恢复</span>
+CALL SP_TABLESPACE_RECOVER('<span class="ph">&lt;表空间名&gt;</span>');
+CALL SP_FILE_SYS_CHECK();
+
+<span class="cm">-- 数据完整性：行数 + 主键区间</span>
+SELECT COUNT(*) AS CNT_RECOVERED FROM <span class="ph">&lt;用户&gt;</span>.<span class="ph">&lt;表&gt;</span>;
+SELECT MIN(ID) AS MIN_ID, MAX(ID) AS MAX_ID FROM <span class="ph">&lt;用户&gt;</span>.<span class="ph">&lt;表&gt;</span>;
+SELECT TABLESPACE_NAME, STATUS FROM DBA_TABLESPACES
+ WHERE TABLESPACE_NAME = '<span class="ph">&lt;表空间名&gt;</span>';</code></pre>
+            </div>
+            <div class="note">
+              <b>实测输出</b>
+              <pre class="transcript">SQL&gt; CALL SP_TABLESPACE_RECOVER('TEST_RM');
+DMSQL executed successfully
+used time: 8.769(ms). Execute id is 64901.
+
+SQL&gt; CALL SP_FILE_SYS_CHECK();
+DMSQL executed successfully
+used time: 44.185(ms). Execute id is 64902.
+
+LINEID  CNT_RECOVERED
+1       1000
+
+LINEID  MIN_ID  MAX_ID
+1       1       1000</pre>
+              <b>判据</b>：行数回到 1000、主键区间 1–1000 连续，才算真的救回来。只看「执行成功」不算完。
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>详解：前提、原理与边界</h2>
+    <div class="h2sub">什么时候这条路走得通，什么时候必须改用备份恢复。</div>
+
+    <h3>一、四个前提，缺一不可</h3>
+    <div class="note">
+      <ol>
+        <li><b>实例没有重启过</b>。进程活着，inode 才活着。这是最硬的一条。</li>
+        <li><b>dmserver 仍然持有该文件的句柄</b>。如果文件在创建后从未被打开过，或者已被数据库关闭，<code>/proc/&lt;PID&gt;/fd</code> 里就找不到它。</li>
+        <li><b>是「删掉」而不是「覆盖」</b>。<code>rm</code>、<code>mv</code> 到其它分区、被清理脚本删掉都算删；如果用 <code>dd</code> 把原文件内容覆盖成 0，inode 还在但数据已经没了，句柄捞回来也是空壳。</li>
+        <li><b>有该主机的 OS 权限</b>。要能读 <code>/proc/&lt;PID&gt;/fd</code> 并能往数据目录写文件，通常就是 <code>dmdba</code> 或 root。</li>
+      </ol>
+    </div>
+
+    <h3>二、为什么「删了还能查」</h3>
+    <p>误删之后立刻 <code>SELECT</code> 往往照样出结果，容易让人以为没事。原因有两层：一是数据页已经在内存缓存里；二是进程还握着文件句柄，底层读并没有断。</p>
+    <p>只有触发 <code>SP_FILE_SYS_CHECK()</code>（或某些操作主动做文件存在性校验）之后，数据库才会确认「这个路径上没文件了」，把表空间置为脱机。所以<b>「还能查」不等于「没坏」</b>。</p>
+
+    <h3>三、边界：重启之后就救不了了</h3>
+    <div class="note warn">
+      <b>实测结论（同一台单机库，第二轮验证）</b>
+      <ol>
+        <li>再次 <code>rm</code> 数据文件后，<code>/proc/&lt;PID&gt;/fd</code> 仍能看到 <code>(deleted)</code> 句柄；</li>
+        <li>执行 <code>systemctl restart</code> 重启实例，进程号从 2693 变为 2482，<b>句柄命中数直接变成 0</b>；</li>
+        <li>实例重启后<b>起在 MOUNT 态</b>，任何业务查询都报 <code>[-510] System in mount status</code>——不是单个表空间脱机，而是整个库打不开；</li>
+        <li>此时在数据目录里放一个同尺寸的空文件，<code>SP_TABLESPACE_PREPARE_RECOVER</code> / <code>SP_TABLESPACE_RECOVER</code> 都直接报 <code>[-510]</code>，无法通过。</li>
+      </ol>
+      也就是说：<b>一旦重启，唯一出路是备份 + 归档恢复，或者从别处重建这个表空间。</b>
+    </div>
+
+    <h3>四、这条路和「备份恢复」怎么分工</h3>
+    <div class="note">
+      <ul>
+        <li><b>文件级误删（本文）</b>：DBF 被删、实例未重启 → 句柄法，分钟级、零备份依赖。</li>
+        <li><b>逻辑误删（表 / 行 / 误 UPDATE）</b>：数据文件都在，只是数据被删错 → 走备份 + 归档恢复到指定时间点，再把对象导回生产库，见同站《利用备份恢复误删数据》。</li>
+        <li><b>两者都不成立（重启 + 无备份）</b>：只能重建表空间并从其它数据源补齐，先接受损失再谈恢复。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>常见问题</h2>
+
+    <div class="faq-item">
+      <button class="q">已经重启过实例了，还能用句柄法吗？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>不能。重启后 dmserver 进程退出，内核释放 inode，<code>/proc/&lt;PID&gt;/fd</code> 里的 <code>(deleted)</code> 条目随之消失（实测命中数 0）。此时实例通常起在 MOUNT 态，请直接转备份恢复流程。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">用 <code>mv</code> 把文件挪走，和 <code>rm</code> 效果一样吗？<span class="arr">▾</span></button>
+      <div class="a">
+        <p><b>看目标位置是否同一个文件系统。</b>同分区内 <code>mv</code> 只是改名，文件根本没被删，句柄不会变成 <code>(deleted)</code>，把文件挪回原位即可；跨分区 <code>mv</code> 等于「复制 + 删除」，原 inode 被释放，才能用本文的句柄法。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">拷回来的文件大小对不上，怎么办？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>先别做 <code>SP_TABLESPACE_RECOVER</code>。对比原文件应有的字节数（本例 128MB=134,217,728），确认 <code>cp</code> 是在文件仍被打开期间执行的。若进程已经退出或文件已被关闭，拷到的内容可能不完整，此时不要强行恢复，转备份恢复更安全。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">生产上应该先停业务再操作吗？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>停业务的目的是避免误写扩大影响，但<b>停业务过程中千万不要重启数据库</b>。第 5–7 步都是在线执行的表空间级操作，影响面限于该表空间；是否停业务按现场风险决定，重启则绝对禁止。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q">为什么恢复完还要再跑一次 <code>SP_FILE_SYS_CHECK()</code>？<span class="arr">▾</span></button>
+      <div class="a">
+        <p>让数据库重新校验文件是否存在、是否可用。只跑 <code>SP_TABLESPACE_RECOVER</code> 而不校验，可能拿到「恢复成功」但表空间仍不可用的假象；最后一定要用行数与主键区间证明数据完整。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>口径与来源声明</h2>
+    <div class="h2sub">本页命令全部经过实测，区分「产品文档口径」与「现场实测口径」。</div>
+    <div class="note">
+      <ul>
+        <li><span class="src-tag b-src">实测环境</span><span class="src-field">单机实例 DM01，DM8 V8 build 03134284172-20260803，CentOS 7，数据目录 <code>/home/dmdba/dmdata/DAMENG</code>，端口 5236，默认授权（DEVELOP）。</span></li>
+        <li><span class="src-tag b-ok">现场实测口径</span><span class="src-field">第 4 步报错码为 <code>[-3433] tablespace is offline</code>；重启后实例起在 MOUNT 态且报 <code>[-510]</code>；句柄号、进程号、字节数均为当次实测值，换环境会变。</span></li>
+        <li><span class="src-tag b-warn">产品文档口径</span><span class="src-field">表空间恢复使用 <code>SP_TABLESPACE_PREPARE_RECOVER</code> / <code>SP_TABLESPACE_RECOVER</code> 两个系统过程，配合 <code>SP_FILE_SYS_CHECK</code> 做文件系统校验；参数为表空间名。</span></li>
+        <li><span class="src-tag b-new">差异提示</span><span class="src-field">部分早期材料记载的报错为 <code>[-3430] 表空间[xxx]中文件[xxx]已被删除</code>，本版本已改为 <code>[-3433]</code>，处理步骤不变。</span></li>
+      </ul>
+    </div>
+    <p class="copy-hint">命令中的 <span class="ph">&lt;表空间名&gt;</span> / <span class="ph">&lt;数据文件名&gt;</span> 等为占位符，执行前替换成现场值。</p>
+  </section>
+
+  <p style="text-align:center;margin:28px 0 0;font-size:13.5px">
+    <a href="../index.html" style="color:#1d4ed8;text-decoration:none;font-weight:600">← 返回指南索引</a>
+  </p>
+
+</div>
+<script>
+(function () {
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+  var details = Array.prototype.slice.call(document.querySelectorAll('.detail'));
+  var dflt = document.getElementById('panel-default');
+  var panel = document.getElementById('panel');
+  var title = document.getElementById('panel-title');
+  var pinned = null;
+
+  function show(k) {
+    dflt.style.display = 'none';
+    var cur = null;
+    details.forEach(function (d) { d.classList.toggle('in', String(d.dataset.k) === String(k)); });
+    steps.forEach(function (g) {
+      var on = String(g.dataset.k) === String(k);
+      g.classList.toggle('on', on);
+      if (on) { cur = g; }
+    });
+    title.textContent = (cur && cur.dataset.title) ? cur.dataset.title : '步骤明细';
+  }
+  function reset() {
+    dflt.style.display = '';
+    details.forEach(function (d) { d.classList.remove('in'); });
+    steps.forEach(function (g) { g.classList.remove('on'); });
+    title.textContent = '步骤明细';
+    panel.classList.remove('pinned');
+  }
+  steps.forEach(function (g) {
+    var k = g.dataset.k;
+    g.addEventListener('click', function () {
+      if (pinned === k) { pinned = null; panel.classList.remove('pinned'); reset(); }
+      else { pinned = k; panel.classList.add('pinned'); show(k); }
+    });
+    g.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); g.click(); }
+    });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && pinned) { pinned = null; panel.classList.remove('pinned'); reset(); }
+  });
+
+  /* 一键复制 */
+  Array.prototype.forEach.call(document.querySelectorAll('.cmdbox .cp'), function (btn) {
+    btn.addEventListener('click', function () {
+      var box = btn.closest('.cmdbox');
+      var code = box.querySelector('code');
+      var text = code ? code.innerText : '';
+      function ok() { btn.textContent = '已复制 ✓'; setTimeout(function () { btn.textContent = '复制'; }, 1600); }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); ok(); } catch (err) { btn.textContent = '复制失败'; }
+        document.body.removeChild(ta);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok, fallback);
+      } else { fallback(); }
+    });
+  });
+
+  /* FAQ 折叠 */
+  Array.prototype.forEach.call(document.querySelectorAll('.faq-item .q'), function (q) {
+    q.addEventListener('click', function () {
+      q.parentElement.classList.toggle('open');
+    });
+  });
+})();
+
+</script>
+</body>
+</html>
