@@ -145,7 +145,7 @@
 <!-- ==================== 速成舞台 ==================== -->
 <section class="card">
   <h2>八步速成：先把活干完</h2>
-  <div class="h2sub">点击任一步骤卡片，右侧展开该步的详细命令（均可一键复制）；<b>&lt;尖括号&gt;</b> 内为占位符，按你的环境替换。演示环境：主库 GRP1_RT_02 ＠192.168.16.135（PRIMARY）/ 备库 GRP1_RT_01 ＠192.168.16.136（STANDBY）/ 守护组 GRP1 / 软件目录 /home/dmdba/dmdbms / 配置目录 /data/dmdata/dmmon。</div>
+  <div class="h2sub">点击任一步骤卡片，右侧展开该步的详细命令（均可一键复制）；<b>&lt;尖括号&gt;</b> 内为占位符，按你的环境替换。演示环境：主库 <b>DB1</b> ＠192.168.16.135（PRIMARY）/ 备库 <b>DB2</b> ＠192.168.16.136（STANDBY）/ 守护组 GRP1（OGUID 102314271）/ SQL 端口 5666 / 软件目录 /home/dmdba/dmdbms / 数据目录 /dmdata/DAMENG / 监视器配置 /dmdata/dmmon/DAMENG。</div>
 
   <div class="stage">
     <div class="steps">
@@ -161,7 +161,7 @@
       </div>
       <div class="step" data-k="s3" data-name="步骤 3 · show：确认集群健康" tabindex="0" role="button" aria-label="3 show 确认集群健康">
         <span class="no">3</span><span class="t">show 确认集群健康</span>
-        <div class="d">盯 STATUS / RSTAT / FLSN / CLSN 四个字段</div>
+        <div class="d">盯 ISTATUS / IMODE / FLSN / CLSN 四个字段</div>
         <div class="go">查看命令 →</div>
       </div>
       <div class="step" data-k="s4" data-name="步骤 4 · login：登录监视器" tabindex="0" role="button" aria-label="4 login 登录监视器">
@@ -216,7 +216,7 @@ ps -ef | grep dmmonitor
 
 <span class="cm"># 会看到类似一行，记下两段（程序路径 + path= 后面的配置路径）：</span>
 <span class="cm"># dmdba 1642 1 0 00:43 ? 00:00:02 /home/dmdba/dmdbms/bin/dmmonitor \</span>
-<span class="cm">#   path=/data/dmdata/dmmon/dmmonitor.ini</span>
+<span class="cm">#   path=/dmdata/dmmon/DAMENG/dmmonitor.ini</span>
 <span class="cm">#   ↑ 程序本体（软件目录 bin/ 下）   ↑ 它加载的配置</span></code></pre>
           </div>          <ul>
             <li><b>目录规律</b>：达梦所有可执行文件都在<b>软件目录的 bin/ 子目录</b>下——dmserver、dmmonitor、disql、dmrman 无一例外。bin/ 前面那段就是这台机器的软件目录。</li>
@@ -232,13 +232,14 @@ ps -ef | grep dmmonitor
           <div class="cmdbox">
             <button class="cp" type="button">复制</button>
             <pre><code><span class="cm"># 先进到配置文件所在目录</span>
-cd /data/dmdata/dmmon
+cd /dmdata/dmmon/DAMENG
 
 <span class="cm"># 复制一份配置，只把 MON_DW_CONFIRM 改成 0 —— 这就是普通监视器，能与确认监视器共存</span>
 sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_normal.ini
+<span class="cm"># 本演示环境已有现成的 dmmonitor_manual.ini（= 0），效果相同，直接用即可</span>
 
 <span class="cm"># 用这份普通监视器配置启动（程序路径换成步骤 1 记下的那段）</span>
-/home/dmdba/dmdbms/bin/dmmonitor path=/data/dmdata/dmmon/dmmonitor_normal.ini
+/home/dmdba/dmdbms/bin/dmmonitor path=/dmdata/dmmon/DAMENG/dmmonitor_normal.ini
 
 <span class="cm"># 回车后提示符变为：</span>
 [monitor]
@@ -266,10 +267,10 @@ show
 <span class="cm"># WTIME  WSTATUS  INST_OK  INAME  ISTATUS  IMODE  RSTAT  N_OPEN  FLSN  CLSN</span>
 <span class="cm"># 下面只摘关键列，对照着看你自己的输出：</span>
 <span class="cm"># INAME        ISTATUS  IMODE    RSTAT  N_OPEN  FLSN   CLSN</span>
-<span class="cm"># GRP1_RT_02   OPEN     PRIMARY  VALID  6       59862  59862</span>
-<span class="cm"># GRP1_RT_01   OPEN     STANDBY  VALID  6       59862  59862</span></code></pre>
+<span class="cm"># DB1          OPEN     PRIMARY  VALID  8       51662  51662</span>
+<span class="cm"># DB2          OPEN     STANDBY  NULL   8       51662  51662   ← 备库侧 RSTAT 可能为 NULL</span></code></pre>
           </div>          <ul>
-            <li><b>四个判读点</b>：① <span class="chip">ISTATUS</span> 与 <span class="chip">IMODE</span> 都是 OPEN；② <span class="chip">IMODE</span> 一主一备（PRIMARY / STANDBY）——<b>主备角色看 IMODE，不是 RSTAT</b>；③ <span class="chip">RSTAT</span> 为 VALID（表示 REDO 有效）；④ 两侧 <span class="chip">FLSN / CLSN</span> 一致。</li>
+            <li><b>四个判读点</b>：① <span class="chip">ISTATUS</span> 与 <span class="chip">IMODE</span> 都是 OPEN；② <span class="chip">IMODE</span> 一主一备（PRIMARY / STANDBY）——<b>主备角色看 IMODE，不是 RSTAT</b>；③ <span class="chip">RSTAT</span> 只作参考：主库侧通常 <span class="chip">VALID</span>，备库侧实测<b>可能为 NULL</b>（switchover 切回后持续 NULL，实例仍正常 OPEN），它表示 REDO 有效性，<b>不是健康红线</b>；④ 两侧 <span class="chip">FLSN / CLSN</span> 一致。</li>
             <li><b>FLSN/CLSN 是主备日志同步进度</b>。<b>业务已停的停机窗口内两侧应基本一致</b>；业务在跑时有少量差值属正常（备库重演有毫秒级延迟），差值<b>持续扩大</b>才是异常。</li>
             <li><b>组信息在实例表块之后</b>：往下还有一段 <span class="chip">GROUP / OGUID / MON_CONFIRM / MODE / MPP_FLAG</span>——核对组名、OGUID，以及「当前这个监视器是不是确认模式」，看这一段最快（本页用普通监视器，这里应是 <span class="chip">FALSE</span>）。</li>
             <li>更细诊断用 <span class="chip">tip</span>：逐实例报告运行是否正常、能否被其他实例加入，末尾给一句「所有组中的活动实例运行正常」。</li>
@@ -283,10 +284,12 @@ show
             <button class="cp" type="button">复制</button>
             <pre><code><span class="cm"># [monitor] 提示符下执行</span>
 login
-<span class="cm"># 按提示输入数据库管理员账号（如 SYSDBA）与口令</span></code></pre>
+<span class="cm"># 会连着问两行：先「用户名:」再「密码:」（口令不回显）</span>
+<span class="cm"># 成功后输出：登录监视器成功!</span></code></pre>
           </div>          <ul>
             <li>show / tip 这类<b>查看命令不需要登录</b>；stop group / switchover 这类管理操作必须登录，未登录会被拒绝并提示 <span class="chip">未登录监视器或服务器公钥发生变化，请重新登录!</span></li>
             <li class="warnline"><b>switchover 的登录校验在二次确认之后</b>：敲完 YES 才检查登录状态——没登录的话等于白答一次确认，切换根本不会执行。所以顺序一定是「先 login，再 switchover」。</li>
+            <li class="warnline"><b>停组之后 login 一定失败，别以为是口令错</b>：实例全停时敲 login 会得到 <span class="chip">当前没有活动实例或守护进程状态不匹配(不是STARTUP/OPEN/RECOVERY状态)，登录信息校验失败</span>——此时直接执行 <span class="chip">startup group</span> 就行，它<b>不校验登录</b>；等实例起来再 login 做切换。</li>
           </ul>
         </div>
 
@@ -301,17 +304,22 @@ stop group
 <span class="cm"># 组名可省略；显式写等价</span>
 stop group GRP1
 
-<span class="cm"># 监视器按实例逐个推进（停止顺序由它保证），逐条打印进度：</span>
-<span class="cm"># STOP实例GRP1_RT_02[PRIMARY, OPEN]的守护进程</span>
-<span class="cm"># 守护进程(GRP1_RT_02)状态切换 [OPEN-->SHUTDOWN]</span>
-<span class="cm"># STOP实例GRP1_RT_01[STANDBY, OPEN]的守护进程</span>
-<span class="cm"># 守护进程(GRP1_RT_01)状态切换 [OPEN-->SHUTDOWN]</span>
-<span class="cm"># 通知实例(GRP1_RT_02)SHUTDOWN成功，请等待实例完全退出</span>
-<span class="cm"># 通知实例(GRP1_RT_01)SHUTDOWN成功，请等待实例完全退出</span>
+<span class="cm"># 监视器按实例逐个推进（先主后备），逐条打印进度（实测输出）：</span>
+<span class="cm"># STOP实例DB1[PRIMARY, OPEN, ISTAT_SAME:TRUE]的守护进程</span>
+<span class="cm"># STOP实例DB1[PRIMARY, OPEN, ISTAT_SAME:TRUE]的守护进程成功</span>
+<span class="cm"># STOP实例DB2[STANDBY, OPEN, ISTAT_SAME:TRUE]的守护进程成功</span>
+<span class="cm"># 通知实例(DB1)SHUTDOWN</span>
+<span class="cm"># 通知实例(DB1)SHUTDOWN成功，请等待实例完全退出</span>
+<span class="cm"># 通知实例(DB2)SHUTDOWN成功，请等待实例完全退出</span>
+<span class="cm"># 通知组(GRP1)的守护进程执行清理操作</span>
 <span class="cm"># 退出组(GRP1)中所有活动实例成功</span></code></pre>
           </div>          <ul>
             <li class="warnline"><b>这一步会真正停库，业务中断</b>。务必先确认已进入停机窗口、应用侧已断开连接。</li>
             <li>停的次序（先主后备）由监视器自动保证，<b>不需要手工干预</b>。</li>
+            <li><b>没有二次确认</b>：实测敲完 <span class="chip">stop group GRP1</span> 回车就直接执行，不会再问 Y/N——手别抖，敲之前确认窗口已开。</li>
+            <li><b>耗时</b>：两节点实测约 <b>20 秒</b>（20:20:42 开始，20:21:02 输出「退出组(GRP1)中所有活动实例成功」）。</li>
+            <li><b>怎么确认真的停了</b>：别只看监视器输出，回到操作系统查 <span class="chip">ps -ef | grep dmserver</span> 应无实例进程、<span class="chip">ss -lnt | grep 5666</span> 无监听，两个 <span class="chip">DmServiceDMSERVER*</span> 单元变成 <span class="chip">inactive (dead)</span>。</li>
+            <li><b>守护进程（dmwatcher）不会随之消失</b>：实测停组后 watcher 进程仍在、对应 systemd 单元仍是 active——这正是下面 <span class="chip">startup group</span> 能成功的前提。</li>
           </ul>
         </div>
 
@@ -326,15 +334,20 @@ startup group GRP1
 <span class="cm"># 一个监视器只配一组时，组名可省略，等价：</span>
 startup group
 
-<span class="cm"># 监视器逐条推进，每个实例启动成功打印一行（真实列序）：</span>
-<span class="cm"># STARTUP  OK  GRP1_RT_02  OPEN  PRIMARY  VALID  6  59862</span>
-<span class="cm"># STARTUP  OK  GRP1_RT_01  OPEN  STANDBY  VALID  6  59862</span></code></pre>
+<span class="cm"># 实测输出是逐条日志，不是 show 那种表格：</span>
+<span class="cm"># STARTUP实例DB1[PRIMARY, SHUTDOWN, ISTAT_SAME:TRUE]的守护进程</span>
+<span class="cm"># 守护进程(DB1)状态切换 [SHUTDOWN-->STARTUP]</span>
+<span class="cm"># 实例DB1的守护进程配置有自动拉起，请等待守护进程将其自动拉起</span>
+<span class="cm"># STARTUP实例DB2[STANDBY, SHUTDOWN, ISTAT_SAME:TRUE]的守护进程</span>
+<span class="cm"># 启动组(GRP1)中的所有实例成功</span>
+<span class="cm"># 实测约 20~25 秒后恢复：DB1 OPEN/PRIMARY、DB2 OPEN/STANDBY</span></code></pre>
           </div>          <ul>
             <li><b>GRP1 这个组名从哪来</b>：不是随手起的，它就是监视器配置文件里的组段名——打开配置文件能看到一行 <span class="chip">[GRP1]</span>，下面列着本组的 <span class="chip">MON_DW_IP</span>（各守护进程的 IP:PORT）。组名改了，命令里的 <span class="chip">GRP1</span> 也必须跟着改。</li>
             <li><b>同段里还有 OGUID</b>：<span class="chip">MON_INST_OGUID</span> 必须与各节点 <span class="chip">dmwatcher.ini</span> 里的 <span class="chip">INST_OGUID</span> 完全一致，否则监视器连不上守护进程。</li>
             <li><b>组名可以省略</b>：监视器自己的命令帮助写的就是 <span class="chip">startup group [group_name]</span>——方括号即可选。实时主备/读写分离一个监视器只配一组，省略与写上等价；多组并存（如 MPP 主备）时必须指定。</li>
             <li class="warnline"><b>这条命令是让 dmwatcher 去拉起实例，不是监视器自己起进程</b>。若 dmwatcher 没在跑，会报 <span class="chip">监视器还未收到组(GRP1)的守护进程消息</span>，并以「启动组(GRP1)中的所有实例失败」告终——这时先把两节点的守护进程服务起起来，再回来敲 startup group。</li>
-            <li><b>实例已经在跑会怎样</b>：监视器逐个报告 <span class="chip">实例GRP1_RT_02[PRIMARY, OPEN, ISTAT_SAME:TRUE]已经处于运行状态</span>，末尾补一句「不符合启动组(GRP1)中的所有实例条件」——不会重启实例，也不会报错退出。</li>
+            <li><b>不要看到「ERROR」就以为失败</b>：启动过渡期 <span class="chip">show</span> 会短暂显示 <span class="chip">WSTATUS=STARTUP</span>、<span class="chip">ISTATUS=SHUTDOWN</span>、<span class="chip">INST_OK=ERROR</span>，这是实例还没 OPEN 的正常中间态，等 20~25 秒再看。</li>
+            <li><b>实例已经在跑会怎样</b>：监视器逐个报告 <span class="chip">实例DB1[PRIMARY, OPEN, ISTAT_SAME:TRUE]已经处于运行状态</span>，末尾补一句「不符合启动组(GRP1)中的所有实例条件」——不会重启实例，也不会报错退出。</li>
             <li class="warnline"><b>命令不对称</b>：停是 <span class="chip">stop group</span>，起是 <span class="chip">startup group</span>——写成 <span class="chip">start group</span> 会被监视器直接拒绝（<span class="chip">输入命令非法</span>）。</li>
             <li>只有不走监视器、改用操作系统服务分别启停 dmwatcher/dmserver 时，才需要自己把关启动顺序。</li>
           </ul>
@@ -346,14 +359,20 @@ startup group
           <div class="cmdbox">
             <button class="cp" type="button">复制</button>
             <pre><code><span class="cm"># 前置：两实例均 OPEN、（停机窗口内）FLSN/CLSN 基本一致、已 login</span>
-<span class="cm"># 库名写「要被升为 PRIMARY 的备库」，即 show 输出里的 INAME</span>
-switchover GRP1.GRP1_RT_01
+switchover
+<span class="cm"># 不写参数即可：监视器自动挑当前备库，并在确认提示里把目标填好</span>
 
-<span class="cm"># 系统要求二次确认（真实文案会带上你指定的库名）：</span>
-<span class="cm"># 此操作需谨慎, 将会导致主库发生切换, 是否继续使用GRP1.GRP1_RT_01执行SWITCHOVER操作(YES/NO/Y/N)?</span>
-YES</code></pre>
+<span class="cm"># 二次确认（实测文案，目标由监视器填）：</span>
+<span class="cm"># 此操作需谨慎, 将会导致主库发生切换, 是否继续使用GRP1.DB2执行SWITCHOVER操作(YES/NO/Y/N)?</span>
+Y
+
+<span class="cm"># 回答 Y 后逐条跑完（实测全程约 4 秒）：</span>
+<span class="cm"># 守护进程(DB1)状态切换 [OPEN-->SWITCHOVER]</span>
+<span class="cm"># 实例DB1 / DB2 执行 SP_SET_GLOBAL_DW_STATUS(0, 6) 成功</span>
+<span class="cm"># ALTER DATABASE MOUNT → 原主降 STANDBY、原备升 PRIMARY → ALTER DATABASE OPEN FORCE</span></code></pre>
           </div>          <ul>
-            <li><b>库名不能乱写</b>：<span class="chip">switchover</span> 的目标是<b>将被升为 PRIMARY 的备库</b>——写成当前主库没有意义，写成不存在的名字会被拒：<span class="chip">实例名(xxx)无效或尚未收到实例消息!</span> 外加一句「输入命令非法」。<b>实例名以 show 里的 INAME 为准</b>，各现场命名不同（GRP1_RT_01、DB1 都常见），别照抄示例。</li>
+            <li><b>目标可以不写</b>：实测直接敲 <span class="chip">switchover</span> 就能切，监视器自动选当前备库，并把目标填进确认提示（格式 <span class="chip">组名.实例名</span>，如 <span class="chip">GRP1.DB2</span>）。要显式指定就按这个格式写 <span class="chip">switchover GRP1.DB2</span>；目标是<b>将被升为 PRIMARY 的备库</b>，写成当前主库没有意义，写成不存在的名字会被拒：<span class="chip">实例名(xxx)无效或尚未收到实例消息!</span> 外加一句「输入命令非法」。</li>
+            <li><b>实测耗时与结果</b>：从回答 Y 到两实例重新 OPEN 约 <b>4 秒</b>（20:21:56.3 → 20:21:57.0）。本次连切两次（DB1→DB2、再切回 DB1），每次都回到库内用 <span class="chip">v$instance</span> 的 MODE 复核 PRIMARY / STANDBY 确已互换，两侧 FLSN=CLSN。</li>
             <li><b>switchover vs takeover</b>：switchover 用于<b>计划内</b>切换（主备都健康，不丢数据）；takeover 用于<b>主库故障</b>后备库强行顶上（可能丢数据）。不要混用。</li>
             <li class="warnline"><b>登录校验在二次确认之后</b>：未登录时答完 YES 只会得到 <span class="chip">未登录监视器或服务器公钥发生变化，请重新登录!</span>，切换不会执行。实例刚重启过尤其容易掉登录态，动手前重新 <span class="chip">login</span> 一次。</li>
           </ul>
@@ -370,7 +389,8 @@ show
 <span class="cm"># 验收标准：</span>
 <span class="cm"># 1) 两个实例的 ISTATUS 与 IMODE 都是 OPEN</span>
 <span class="cm"># 2) IMODE 已按预期互换（原主→STANDBY，原备→PRIMARY）</span>
-<span class="cm"># 3) RSTAT 均为 VALID，FLSN / CLSN 重新趋于一致（备库追平需要一点时间）</span></code></pre>
+<span class="cm"># 3) FLSN / CLSN 重新趋于一致（备库追平需要一点时间）</span>
+<span class="cm">#    RSTAT 主库侧 VALID、备库侧可能 NULL，不作为判据</span></code></pre>
           </div>          <ul>
             <li>若此时业务已恢复写入，FLSN/CLSN 有少量差值属正常——「一致」要在「业务已停」前提下看才算数。</li>
           </ul>
@@ -446,12 +466,12 @@ show
 <h3>一、先认清演示环境（照着换成自己的）</h3>
   <table class="kv">
     <tr><th style="width:200px">角色</th><th>值</th></tr>
-    <tr><td>主库</td><td>实例 GRP1_RT_02 ＠ 192.168.16.135 · <span class="chip">PRIMARY</span></td></tr>
-    <tr><td>备库</td><td>实例 GRP1_RT_01 ＠ 192.168.16.136 · <span class="chip">STANDBY</span></td></tr>
-    <tr><td>守护组名</td><td><span class="chip">GRP1</span> ——取自监视器配置文件的 <span class="chip">[GRP1]</span> 段名，不是自定义名称</td></tr>
+    <tr><td>主库</td><td>实例 <span class="chip">DB1</span> ＠ 192.168.16.135 · <span class="chip">PRIMARY</span> · SQL 端口 5666</td></tr>
+    <tr><td>备库</td><td>实例 <span class="chip">DB2</span> ＠ 192.168.16.136 · <span class="chip">STANDBY</span> · SQL 端口 5666</td></tr>
+    <tr><td>守护组名 / OGUID</td><td><span class="chip">GRP1</span> / <span class="chip">102314271</span> ——组名取自监视器配置文件的 <span class="chip">[GRP1]</span> 段名，不是自定义名称</td></tr>
     <tr><td>软件目录（DM_HOME）</td><td><span class="chip">/home/dmdba/dmdbms</span>（可执行文件在 <span class="chip">bin/</span> 下）</td></tr>
-    <tr><td>数据与配置目录</td><td><span class="chip">/data/dmdata</span>（实例 dm.ini 在 <span class="chip">/data/dmdata/DAMENG</span>，监视器配置在 <span class="chip">/data/dmdata/dmmon</span>）</td></tr>
-    <tr><td>监视器配置</td><td><span class="chip">/data/dmdata/dmmon/dmmonitor.ini</span>；临时用普通监视器则是同目录下的 <span class="chip">dmmonitor_normal.ini</span></td></tr>
+    <tr><td>数据与配置目录</td><td><span class="chip">/dmdata</span>（实例 dm.ini 在 <span class="chip">/dmdata/DAMENG</span>，监视器配置在 <span class="chip">/dmdata/dmmon/DAMENG</span>）</td></tr>
+    <tr><td>监视器配置</td><td><span class="chip">dmmonitor_auto.ini</span>（<span class="chip">MON_DW_CONFIRM = 1</span>，确认监视器，由 <span class="chip">DmMonitorServiceDBMM</span> 常驻）与同目录 <span class="chip">dmmonitor_manual.ini</span>（<span class="chip">= 0</span>，普通监视器，可与前者共存）</td></tr>
   </table>
   <div class="note">
     <b>文档口径 + 通行实践</b>：软件目录与数据目录<b>彻底分开</b>（如 <span class="chip">/u01/dmdbms</span> 放软件、<span class="chip">/u02/dmdata</span> 放数据）。
@@ -495,12 +515,13 @@ grep MON_DW_CONFIRM dmmonitor.ini
 
 <span class="cm"># 用普通监视器配置连上去（可与确认监视器共存）</span>
 sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_normal.ini
-/home/dmdba/dmdbms/bin/dmmonitor path=/data/dmdata/dmmon/dmmonitor_normal.ini</code></pre>
+<span class="cm"># 本演示环境已有现成的 dmmonitor_manual.ini（= 0），效果相同，直接用即可</span>
+/home/dmdba/dmdbms/bin/dmmonitor path=/dmdata/dmmon/DAMENG/dmmonitor_normal.ini</code></pre>
     </div>
   </div>
   <div class="note">
     <b>文档口径</b>：<span class="chip">DW_MODE = AUTO</span> 只决定「主库<b>故障</b>时备库是否自动接管」，
-    与人工发起的 <span class="chip">switchover</span> 无关——AUTO 模式下照常可以手工切换（实测：命令被正常受理并进入二次确认）。
+    与人工发起的 <span class="chip">switchover</span> 无关——AUTO 模式下照常可以手工切换（实测：switchover 完整执行到底，DB1→DB2 与切回 DB2→DB1 各一次，两实例均正常 OPEN）。
     当前监视器是不是确认模式，<span class="chip">show</span> 的组信息里 <span class="chip">MON_CONFIRM</span> 一列直接可见（普通监视器为 <span class="chip">FALSE</span>）；
     部分版本 <span class="chip">tip</span> 会额外提示 <span class="chip">This monitor is not in CONFIRM mode</span>，意思是该监视器无法执行自动接管——
     只做计划内维护时不必紧张，但生产上依赖自动切换的集群要按手册把监视器配成 CONFIRM 模式。
@@ -542,7 +563,7 @@ sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_norma
   <div class="faq-item">
     <button class="q" type="button">Q5：DW_MODE=AUTO 的集群还能手工 switchover 吗？<span class="src-tag src-official">文档</span><span class="arr">▼</span></button>
     <div class="a">
-      <p>能。文档口径：AUTO 只影响「主库故障时备库是否自动接管」，与人工发起的计划内切换无关——实测 AUTO 模式下 switchover 完全正常。</p>
+      <p>能。文档口径：AUTO 只影响「主库故障时备库是否自动接管」，与人工发起的计划内切换无关——实测 AUTO 模式下 switchover 完整跑通两个方向（角色互换后两实例仍双 OPEN、FLSN=CLSN）。</p>
     </div>
   </div>
 
