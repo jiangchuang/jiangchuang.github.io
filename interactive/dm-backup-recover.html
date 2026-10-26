@@ -100,10 +100,6 @@
   .src-official { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
   .src-field { background: #fffbeb; color: #b45309; border: 1px solid #fde68b; }
 
-  .transcript { font-size: 13.5px; color: #374151; }
-  .transcript p { margin: 8px 0; }
-  .transcript .t { font-weight: 700; color: #111827; }
-
   footer.ft { color: #6b7280; font-size: 12.5px; text-align: center; margin-top: 10px; }
 
   @media (max-width: 980px) {
@@ -125,13 +121,13 @@
 <div data-page-node-id="5anEz8woxSshdLKfS7ejbE" class="wrap">
 <header data-page-node-id="uieHXM7QDOwO6ZjBqHaSmt" class="hd">
   <h1 data-page-node-id="IjJmYLRu7AccYwxM9B2QZI"><!--pnid:DNxhOVPNK2KuhpxNwHziUZ-->达梦利用备份恢复误删数据 · 交互版</h1>
-  <div data-page-node-id="iHWidGKo0Aor5YLcFKcKtp" class="sub"><!--pnid:xbCHBF3EwCaCaSlAoFpYVK-->备份 + 时间点恢复 + 数据回迁 ｜ 适用 <b data-page-node-id="bMgO5nBZiMygeYIbkfGNKe"><!--pnid:HW1u5oYoFMULMD1Oktt0hP-->DM8 / DM9</b><!--pnid:dw1Xz6IcvcQiNUHQSai2Hk--> ｜ 核心前提：开启归档且存在有效备份 ｜ 命令含占位符，跨环境复用</div>
+  <div data-page-node-id="iHWidGKo0Aor5YLcFKcKtp" class="sub"><!--pnid:xbCHBF3EwCaCaSlAoFpYVK-->备份 + 时间点恢复 + 数据回迁 ｜ 适用 <b data-page-node-id="bMgO5nBZiMygeYIbkfGNKe"><!--pnid:HW1u5oYoFMULMD1Oktt0hP-->DM8</b><!--pnid:dw1Xz6IcvcQiNUHQSai2Hk--> ｜ 核心前提：开启归档且存在有效备份 ｜ 命令含占位符，跨环境复用</div>
   <div data-page-node-id="ovx8UIJozqhOYM78LGGJAL" class="badges">
     <span data-page-node-id="JafcJxGRaD2h2A8KRNn4Zz" class="badge b-new"><!--pnid:kvfbL5PvUTJTmUJCHIgY3D-->交互：点击左侧步骤卡片 → 右侧展开可复制命令</span>
-    <span data-page-node-id="D7EMpQ4WKRFKS5ocuSLmWk" class="badge b-src"><!--pnid:xrn9ZPL7JaDLhceknf1Iyq-->资料依据：DM8/DM9 备份恢复手册 ／ dmrman 工具 ／ V$ARCHIVED_LOG ／ DBA_SOURCE</span>
+    <span data-page-node-id="D7EMpQ4WKRFKS5ocuSLmWk" class="badge b-src"><!--pnid:xrn9ZPL7JaDLhceknf1Iyq-->资料依据：DM8 备份恢复手册 ／ dmrman 工具 ／ V$ARCHIVED_LOG ／ DBA_SOURCE</span>
     <span data-page-node-id="t46hdtYOwjSRP2qDFll1VQ" class="badge b-warn"><!--pnid:Dmyn9BhQH7XHVhjWUETNGa-->占位符 &lt;…&gt; 需按你的环境替换后再执行</span>
   </div>
-  <div data-page-node-id="NBtIj4OEyKZxPSf2rmuozq" class="copy-hint"><!--pnid:mWHM3d90GyiLHZ4shcUKk2-->💡 想直接拿命令？拉到本页底部 <b data-page-node-id="RfIpLZbyVWcWSfq2OSrFGR"><!--pnid:QvlkJbzN3kSkwVjJQLDePh-->「视频文字稿」</b><!--pnid:PY0qE9oLa9RpzgYNaxwCPf-->，每一段命令都带 <b data-page-node-id="85BYFlcUmgbYpigQKtHUWe"><!--pnid:sSo1jKs38q1GnCINZZkkEb-->一键复制</b><!--pnid:xwppP7WBAb19AxkPlafpKi--> 按钮，无需手敲、可直接粘贴执行。</div>
+  <div class="copy-hint">💡 想直接拿命令？看上方「五步速成」：点击步骤卡片，右侧每条命令右上角都有「复制」按钮，点一下即可整段粘贴执行。</div>
 </header>
 <div style="text-align:center;margin:12px 0 0"><a href="../posts/recover-deleted-dbf.html" style="color:inherit;opacity:.65;text-decoration:none;font-size:13px">← 返回文章版《数据文件误删后的恢复方案》</a></div>
 
@@ -249,21 +245,6 @@ dimp USERID=&lt;用户&gt;/&lt;密码&gt;@&lt;生产库IP&gt;:&lt;端口&gt;
 </div>
 </section>
 
-<section data-page-node-id="8iECAeo5MjkjeQuxrDI4GK" class="card">
-  <h2 data-page-node-id="jdrkFOsu71zZfiGo4av5DI"><!--pnid:mIjk7uanh6I0rbPP8fcqIg-->视频文字稿</h2>
-  <div data-page-node-id="nB16k34gxClu1mQCn5eWvV" class="h2sub"><!--pnid:Twftkn84rSowF6WE85M2j1-->与视频解说一致的文字版，方便检索与复制</div>
-  <div data-page-node-id="ez7IErQKCOFuUNAsHdF2cH" class="transcript">
-    <p data-page-node-id="e1pxWEggxHGGOh2GpRPwKy"><span data-page-node-id="RsF76dmOljdeSv67CQhmI9" class="t"><!--pnid:AsbvBvNTmDEbRfU8KY9mW2-->开场：</span><!--pnid:XMfJ9GcYqLmE0dX6WWr541-->本视频演示达梦数据库如何利用备份把误删的数据找回来。前提是你开启了归档、并且有有效的备份，否则只能恢复到全备时刻。</p><p data-page-node-id="1ZxF36nvNovgxP6Mt9RIs1"><span data-page-node-id="fsIePOYmOOYrqcDE6QAxac" class="t"><!--pnid:Yu0MJYhet9EbCtTKAoCv3t-->第一步，确认误删范围和时间点。</span><!--pnid:ytKVfnSAQkemEg11PSt8WA-->先确认丢了哪张表、大概什么时候删的，记下一个肯定在删除之前的时刻，比如当天上午九点半。</p><p data-page-node-id="qQ9o18E220v4slUht7gxe4"><span data-page-node-id="7kSQq8tWd3nkIL9fVNz7Xv" class="t"><!--pnid:XfamfdAqAhAciWNJgcDQeS-->第二步，核查全备和归档。</span><!--pnid:ox5oTn1MLl9ayZMbVQlMZv-->在数据库里查 V$BACKUPSET 确认有备份，查 V$ARCHIVED_LOG 确认误删前后的归档都在、且连续。</p><p data-page-node-id="8PhnP5PCu55WP7XvwqGZSK"><span data-page-node-id="rlilBXgMq25GzCQSieIPqT" class="t"><!--pnid:SXcT8oWdiHuvFVzfkpg4iH-->第三步，在恢复库恢复。</span><!--pnid:MVNJ9PaPbmMAehWPFOovbd-->在一台独立实例上用 dmrman 先 RESTORE 备份集，再 RECOVER 用归档恢复到误删前的时间点。</p><p data-page-node-id="I3kyqIMbvlBGVTOX7CvFer"><span data-page-node-id="fkUIy8b7EB8CHamsDVXQIK" class="t"><!--pnid:tb1mmHSKIkPZxiVU775fae-->第四步，导出目标数据。</span><!--pnid:45yamPN9TTObaTh6Te1oLP-->恢复到位后，用 dexp 把误删的那张表从恢复库导出来。</p><p data-page-node-id="VpsTHQZSjQ5cVib12UBq6M"><span data-page-node-id="FgfGpedUONrI6t3uCdpgMj" class="t"><!--pnid:qiGCFxERS7EMy6qxgEOjWa-->第五步，回写生产库。</span><!--pnid:fZCSPM4NLw0tJmxcbNCFqL-->用 dimp 把导出的数据导入生产库，注意表已存在时用 APPEND，导入后核对数据。详细原理和常见问题看页面下方。</p>
-  </div>
-</section>
-
-<section data-page-node-id="B0o2OHAXxOuBC4MthM5M8r" class="card">
-  <h2 data-page-node-id="moKXd2ynbDN43eLGkBqNow"><!--pnid:JtjeSyBlVlTkRff7pc4uFu-->口径与来源声明</h2>
-  <div data-page-node-id="x9ticuz6arcl2KEm3shVmk" class="h2sub"><!--pnid:ySP8h0i5jWJr95FIkzXgDv-->严谨性说明：文档结论与现场实测分开标注</div>
-  <div data-page-node-id="PpcQt8Gb0MpqMcmSZETu3t" class="note"><b data-page-node-id="7Uhpnsg714q0YuE192sNVr"><!--pnid:LB4SGzUaASTCevGVuSJIkF-->资料依据</b><!--pnid:s69Qcq72wjM2iFHoB0NRZA-->（经达梦知识库检索核对）：
-<ul data-page-node-id="Jib0beUXSRMNAN8ljQ8KC7"><li data-page-node-id="jywN5R5jQbEcpwAbjEs0dZ"><!--pnid:70D1iAcTpVeq2tdDq8cb3q-->《DM8/DM9 备份与还原》——备份集管理、dmrman RESTORE/RECOVER、时间点恢复（PITR）；</li><li data-page-node-id="ijCqpOs66BFzFHCe27Btdh"><!--pnid:TS2nC9kzmsOcAx0iWxYw0d-->《DM8/DM9 逻辑备份》——dexp/dimp 四种级别与 TABLE_EXISTS_ACTION；</li><li data-page-node-id="fiDw1ZqI8xIk6Ya3614u4P"><!--pnid:oxtei6x0kne9scbWQH5ydO-->动态性能视图 V$BACKUPSET / V$ARCHIVED_LOG。</li></ul></div><div data-page-node-id="FbWOE9GsPQxnxiUrBhOlcG" class="note warn"><b data-page-node-id="quyj8ckDxP4ZtrppSp321e" style="color:#b45309"><!--pnid:YNT5h7gW1fpIpD4vMjd0Zq-->现场口径标注</b><!--pnid:Htu8A6hH4sPZUguT6NvXHq-->：未开归档只能恢复到全备、异机恢复更安全、归档需纳入巡检等，来自售后现场经验，标注「现场」的内容请以你所在版本的手册与实查为准。</div><div data-page-node-id="Nr6AI8uvLFNIQR20JI7eaS" class="note"><b data-page-node-id="7V4PO9DM2yhIugbKklJnGR"><!--pnid:UL523LOp43i8N9cHlcGHAY-->适用范围</b><!--pnid:9OpJ1hFtO2fQmdQkhYUpyQ-->：DM8 / DM9；命令中的占位符按实际环境替换。本页为中性操作指南，不含特定环境信息。</div>
-</section>
-
 <footer data-page-node-id="UPyr0YESUjMsMy2hhDejE2" class="ft"><!--pnid:NEEHcydChNyvGZNqubN0Md-->达梦利用备份恢复误删数据 · 交互版 ｜ 2026-10-23 ｜ 可打印</footer>
 </div>
 <script data-page-node-id="WEqglL75lJJfont1uSJULP" data-pnid-children="ghqB0sBBIBsqrfZisMAiWl">
@@ -280,7 +261,8 @@ dimp USERID=&lt;用户&gt;/&lt;密码&gt;@&lt;生产库IP&gt;:&lt;端口&gt;
     dflt.style.display = 'none';
     details.forEach(function (d) { d.classList.toggle('in', d.dataset.k === k); });
     steps.forEach(function (g) { g.classList.toggle('on', g.dataset.k === k); });
-    title.textContent = (g.dataset.title || '步骤明细');
+    var cur = steps.filter(function (x) { return x.dataset.k === k; })[0];
+    title.textContent = (cur && cur.dataset.title) || '步骤明细';
   }
   function reset() {
     dflt.style.display = '';
