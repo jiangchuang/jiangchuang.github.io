@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦利用备份恢复误删表（时间点恢复）· 闯</title>
+<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">闯</span>
+      <span class="brand-txt">JC</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-故障恢复">图文版</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-10-26 &nbsp;·&nbsp; 故障恢复</div>
+    <h1>达梦利用备份恢复误删表（时间点恢复）</h1>
+    <span class="cat">故障恢复</span>
+  </div>
+  <div class="content">
+<blockquote><p>📋 <strong>想照着做？</strong>这篇有 <strong>交互操作版</strong>——左侧步骤卡片导航、命令一键复制，现场照着敲更方便：<a href="../interactive/dm-backup-recover.html">打开交互操作版 →</a></p></blockquote>
+<blockquote><p>本文内容与交互版逐条对应，命令均为实测输出，未做删改。占位符 <code>&lt;…&gt;</code> 请按本机环境替换后执行。</p></blockquote>
+<h2>先看结论：你手里有什么，决定能救回多少</h2>
+<blockquote><p>误删表能不能救回来，只取决于两样东西：<strong>全库备份</strong>和<strong>归档日志</strong>。备份决定"能回到哪个基线"，归档决定"能从基线往前走多远"。两者齐备，误删的数据能完整找回；缺归档，就只能回到备份那一刻，备份之后写入的数据一律丢失。</p></blockquote>
+<h2>九步速成：把误删的表连数据一起救回来</h2>
+<h3>第 1 步：确认表真没了，记下误删前时间</h3>
+<pre class="code"><code class="lang-sql">-- 1) 确认表确实不存在了（返回 0 就是没了）
+SELECT COUNT(*) AS EXISTS_CNT
+  FROM DBA_TABLES
+ WHERE OWNER = '&lt;模式名&gt;'
+   AND TABLE_NAME = '&lt;表名&gt;';
+
+-- 2) 记下恢复目标时间点（误删前一刻）
+SELECT TO_CHAR(SYSDATE,'YYYY-MM-DD HH24:MI:SS') AS T1 FROM DUAL;</code></pre>
+<blockquote><p>实测输出：<code>EXISTS_CNT = 0</code>，时间点 <code>2026-10-26 22:19:56</code>。返回 0 说明表已经不在数据字典里，任何"查表"手段都看不到它。接下来能救它的只有备份。</p></blockquote>
+<blockquote><p>时间点取在哪：要取<strong>误删动作之前、最后一次业务写入之后</strong>。本次实测在插入 50 行后等了 10 秒才记时间、又等 10 秒才 DROP，就是为了留出足够宽的窗口 —— 只留 3 秒时，秒级精度很容易踩到 DROP 那一秒上，恢复出来表还是空的。</p></blockquote>
+<h3>第 2 步：核查全备与归档是否具备</h3>
+<pre class="code"><code class="lang-sql">-- 归档模式：Y=已开，N=未开
+SELECT ARCH_MODE, STATUS$ FROM V$DATABASE;
+
+-- 归档配置开关（1=启用 dmarch.ini）
+-- 查看 dm.ini 与 dmarch.ini
+grep -E "^\s*ARCH_INI" $DM_HOME/../dmdata/DAMENG/dm.ini
+cat $DM_HOME/../dmdata/DAMENG/dmarch.ini
+
+-- 已有的备份集与归档文件
+ls -la &lt;备份集目录&gt;
+ls -la &lt;归档目录&gt;</code></pre>
+<blockquote><p>实测输出：<code>ARCH_MODE = Y</code>，<code>ARCH_INI = 1</code>，归档目录里已有 <code>ARCHIVE_LOCAL1_0x14DB70B5_EP0_2026</code> 文件。<strong>ARCH_MODE 是 N 就基本没戏了</strong>——归档没开，备份之后的增量无处可寻。</p></blockquote>
+<h3>第 3 步：做一次可用的全库备份</h3>
+<pre class="code"><code class="lang-sql">-- 在线全库备份（OPEN 状态即可执行）
+BACKUP DATABASE FULL BACKUPSET '&lt;备份集目录&gt;';</code></pre>
+<blockquote><p>实测输出：<code>executed successfully</code>，用时 3.085 秒，备份集 16 MB（空库量级），包含 <code>full_G.bak / full_G_1.bak / full_G.meta</code>。备份集格式与 dmrman 完全兼容 —— 备份可以用 SQL 做，恢复照样用 dmrman，两者能对接。</p></blockquote>
+<blockquote><p>两个必踩的坑：① 备份依赖 DmAPService（DMAP 进程，4236 端口），没起来会报 <code>[-7170] Bakres failed to connect DMAP</code>；② 用 systemd 启动的实例如果没设 <code>WorkingDirectory</code>，备份会报 <code>[-8086] the trace file [../log/...] is invalid</code>，因为相对路径 <code>../log</code> 解析到了无写权限的目录。</p></blockquote>
+<h3>第 4 步：备份之后写的数据，只能靠归档</h3>
+<pre class="code"><code class="lang-sql">-- 备份完成后再写入一批数据（模拟正常业务）
+INSERT INTO &lt;模式名&gt;.&lt;表名&gt;
+  SELECT LEVEL+200, 'CUST_'||LPAD(LEVEL+200,4,'0'), 1000+LEVEL+200
+    FROM DUAL CONNECT BY LEVEL &lt;= 50;
+COMMIT;
+
+SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MAX(ID) AS MAX_ID
+  FROM &lt;模式名&gt;.&lt;表名&gt;;</code></pre>
+<blockquote><p>实测输出：备份集里只有 200 行（SUM=220100），现在表里有 250 行（SUM=281375）。多出的 50 行只能靠归档救。</p></blockquote>
+<blockquote><p>为什么这步要单独讲：很多恢复失败的案例不是"备份坏了"，而是恢复到备份点就以为完事了，把备份之后的增量当成"本来就没有"。有归档却不用，等于白开了归档。</p></blockquote>
+<h3>第 5 步：误删后第一件事：把归档切出来</h3>
+<pre class="code"><code class="lang-sql">-- 强制把当前归档文件写完并闭卷，开启新的归档文件
+ALTER DATABASE ARCHIVELOG CURRENT;</code></pre>
+<blockquote><p>实测输出（切换前后归档目录对比）：</p></blockquote>
+<pre class="code"><code class="lang-shell">切换前：
+-rw-r--r--  1 dmdba dinstall 134217728 2026-10-26 22:16 ..._22-10-19.log   ← 预分配 128M，实际只写了 372K
+切换后：
+-rw-r--r--  1 dmdba dinstall    372736 2026-10-26 22:18 ..._22-10-19.log   ← 闭卷，回落到真实大小
+-rw-r--r--  1 dmdba dinstall     8192 2026-10-26 22:18 ..._22-18-17.log   ← 新归档文件开始写</code></pre>
+<blockquote><p>不切的后果（实测踩到过）：RECOVER 会报 <code>recover successfully</code>，看起来一切正常，但恢复库里查出来还是备份时的 200 行，备份后的 50 行一行都没有。报"成功"不等于恢复到位，必须靠第 8 步的数据校验来确认。</p></blockquote>
+<h3>第 6 步：建恢复库，把全备还原进去</h3>
+<pre class="code"><code class="lang-shell"># 1) 用 dminit 建一个空库（端口避开生产库的 5236）
+./dminit path=&lt;恢复库目录&gt; DB_NAME=DAMENG INSTANCE_NAME=DR01 PORT_NUM=5237 \
+          SYSDBA_PWD=&lt;口令&gt; SYSAUDITOR_PWD=&lt;口令&gt;
+
+# 2) 把全备还原到恢复库（dmrman 必须用 CTLFILE 传命令）
+echo "RESTORE DATABASE '&lt;恢复库&gt;/DAMENG/dm.ini' FROM BACKUPSET '&lt;备份集目录&gt;'" &gt; restore.txt
+./dmrman CTLFILE=restore.txt</code></pre>
+<blockquote><p>实测输出：<code>restore successfully.</code>，用时 3.871 秒。</p></blockquote>
+<blockquote><p>dminit 的两个硬性要求：本版 dminit 必须显式给 <code>SYSDBA_PWD</code> 和 <code>SYSAUDITOR_PWD</code>，漏一个就 <code>fail to init db</code>，而且它是逐个提示的 —— 补了 SYSDBA 才告诉你还缺 SYSAUDITOR。另外恢复库的端口要和生产库错开，否则恢复库一起来就抢 5236。</p></blockquote>
+<h3>第 7 步：应用归档，恢复到误删前一刻</h3>
+<pre class="code"><code class="lang-shell"># 恢复到指定的误删前时间点
+echo "RECOVER DATABASE '&lt;恢复库&gt;/DAMENG/dm.ini' \
+      WITH ARCHIVEDIR '&lt;归档目录&gt;' \
+      UNTIL TIME '2026-10-26 22:19:56'" &gt; recover.txt
+./dmrman CTLFILE=recover.txt</code></pre>
+<blockquote><p>实测输出：<code>recover successfully!</code>，用时 457 毫秒 —— 归档量小。归档越多、跨越时间越长，这一步越慢。</p></blockquote>
+<blockquote><p>只给"恢复前"的时间点还不够：这一次恢复能成立，前提是第 5 步已经把归档切出来。<strong>第 5 步 + 第 7 步是一对</strong>，缺一个都会退化成"只回到备份点"。</p></blockquote>
+<h3>第 8 步：UPDATE DB_MAGIC 并校验数据</h3>
+<pre class="code"><code class="lang-shell"># 对齐 db_magic
+echo "RECOVER DATABASE '&lt;恢复库&gt;/DAMENG/dm.ini' UPDATE DB_MAGIC" &gt; dbmagic.txt
+./dmrman CTLFILE=dbmagic.txt</code></pre>
+<pre class="code"><code class="lang-sql">-- 启动恢复库实例后校验数据
+SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MAX(ID) AS MAX_ID
+  FROM &lt;模式名&gt;.&lt;表名&gt;;</code></pre>
+<blockquote><p>实测输出：<code>recover successfully!</code>（1.101 秒），校验结果 <code>CNT=250 / SUM=281375 / MIN_ID=1 / MAX_ID=250</code> —— 与误删前的生产库完全一致，备份后新增的 50 行全部回来了。</p></blockquote>
+<blockquote><p>不执行 <code>UPDATE DB_MAGIC</code>，恢复库启动会报：<code>[FATAL] Instance DR01 startup failed, execute 'recover database ... update db_magic' in dmrman</code>。</p></blockquote>
+<h3>第 9 步：dexp 导出，dimp 导回生产库</h3>
+<pre class="code"><code class="lang-shell"># 1) 从恢复库导出目标表（FILE 必须给全路径）
+./dexp USERID=SYSDBA/&lt;口令&gt;@localhost:5237 \
+       FILE=&lt;全路径&gt;/orders_recovered.dmp \
+       TABLES=&lt;模式名&gt;.&lt;表名&gt;
+
+# 2) 导入生产库（5236）
+./dimp USERID=SYSDBA/&lt;口令&gt;@localhost:5236 \
+       FILE=&lt;全路径&gt;/orders_recovered.dmp \
+       TABLES=&lt;模式名&gt;.&lt;表名&gt;
+
+# 3) 生产库校验
+SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MIN(ID) AS MIN_ID, MAX(ID) AS MAX_ID
+  FROM &lt;模式名&gt;.&lt;表名&gt;;</code></pre>
+<blockquote><p>实测输出：<code>total export 250 rows, size 5.266 KB</code>，导入后 <code>import table ORDERS, has coped with 250 rows</code>，生产库校验 <code>CNT=250 / SUM=281375 / MIN_ID=1 / MAX_ID=250</code>，与误删前完全一致。</p></blockquote>
+<blockquote><p><code>dexp</code> / <code>dimp</code> 的 <code>FILE</code> 必须给<strong>全路径</strong>，只给文件名会在当前工作目录里找。</p></blockquote>
+<h2>另一条快路：回收站闪回（前提是它恰好开着）</h2>
+<blockquote><p>如果目标实例开了回收站，误删的表可以直接闪回，不用走上面这一整套备份恢复流程。前提是 <code>RECYCLEBIN=1</code>，详见另一篇<a href="../interactive/recover-dropped-table.html">误删表（DROP TABLE）恢复交互版</a>。</p></blockquote>
+</div>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="../interactive/recover-dropped-table.html">达梦误删表（DROP TABLE）恢复 · 交互版 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>闯 · JC · 共 10 篇</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+  </div>
+</footer>
+</body>
+</html>
