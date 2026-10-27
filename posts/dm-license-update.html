@@ -194,6 +194,18 @@ FROM V$LICENSE;</code></pre>
 <p>想确认是不是授权导致的停机，去看数据库日志（路径通常是 <code>达梦安装目录/log/</code>，文件名类似 <code>dm_INSTANCENAME_YYYYMM.log</code>）。<strong>只要出现下面这行 <code>[FATAL]</code>，就是授权问题</strong>：</p>
 <pre class="code"><code class="lang-log">[FATAL] ... License violation detected, or product has expired. System halt!</code></pre>
   </div>
+  <section class="contact">
+  <div class="contact-qr">
+    <img src="../assets/wechat-qr.png" alt="微信扫码添加 JC" width="120" height="120" loading="lazy">
+    <span>微信扫码加我<br>备注「达梦」</span>
+  </div>
+  <div class="contact-body">
+    <h3>卡在某一步了？</h3>
+    <p>把报错原文和 <code>dm.ini</code> 里的关键参数发我。<a href="../interactive/dm-lic-update.html">交互版</a>里每一步都有实测输出，先对照一遍；还对不上，那多半是环境差异，我帮你看。</p>
+    <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p class="contact-fine">要按你的环境过一遍：发我全备与归档现状、库大小、能容忍多久停机，给你一份针对性方案和风险评估。<br>命令和你环境对不上？在 <a href="https://gitee.com/jiangchuang/blog/issues" target="_blank" rel="noopener">Gitee 仓库</a> 提 issue，回复公开可查。</p>
+  </div>
+</section>
   <div class="art-foot">
     <a href="../index.html">← 返回目录</a>
     <a href="dm-backup-recover.html">达梦利用备份恢复误删表（时间点恢复）→</a>

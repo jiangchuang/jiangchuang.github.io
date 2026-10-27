@@ -116,6 +116,22 @@
     .faq-item .a { display: block !important; }
     .cmdbox .cp { display: none; }
   }
+
+  /* ---------- 联系方式 ---------- */
+  section.card.cta { background: #fbfcfe; border-color: #dbe4f0; }
+  .cta-grid { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 26px; align-items: start; margin-top: 8px; }
+  .cta-qr { text-align: center; }
+  .cta-qr img { display: block; width: 176px; height: 176px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px; }
+  .cta-cap { font-size: 12px; color: #6b7280; margin-top: 9px; line-height: 1.55; }
+  .cta-item + .cta-item { margin-top: 16px; padding-top: 16px; border-top: 1px dashed #e5e7eb; }
+  .cta-item b { font-size: 14px; color: #111827; }
+  .cta-item p { margin: 5px 0 0; font-size: 13.5px; color: #374151; }
+  .cta-item p.cta-mail { margin-top: 8px; }
+  .cta-mail a { color: #1d4ed8; font-weight: 600; text-decoration: none; border-bottom: 1px solid #bfdbfe; }
+  .cta-mail a:hover { border-bottom-color: #1d4ed8; }
+  .cta-fine { margin: 16px 0 0; font-size: 12px; color: #9ca3af; }
+  .cta-fine a { color: #6b7280; text-decoration: underline; }
+  @media (max-width: 640px) { .cta-grid { grid-template-columns: 1fr; gap: 18px; } }
 </style>
 </head>
 <body>
@@ -456,7 +472,32 @@ SELECT CPU_TYPE, OS_TYPE, SERVER_SERIES, SERVER_TYPE FROM V$LICENSE;</code></pre
 
 </section>
 
-<footer class="ft">达梦数据库在线更换授权（dm.key）· 交互版 ｜ 适用 DM8 ｜ 2026-10-26 ｜ 命令中的占位符 &lt;…&gt; 请按本机环境替换后执行 ｜ 联系：jiang-chuang@qq.com</footer>
+  <section class="card cta">
+    <h2>卡在某一步了？</h2>
+    <div class="h2sub">这一步在你环境里报的错，大概率我也碰过 —— 别自己硬扛。</div>
+    <div class="cta-grid">
+      <div class="cta-qr">
+        <img src="../assets/wechat-qr.png" alt="微信扫码添加 JC" width="176" height="176" loading="lazy">
+        <div class="cta-cap">微信扫码加我<br>备注「达梦」即可</div>
+      </div>
+      <div class="cta-txt">
+        <div class="cta-item">
+          <b>卡住了 / 报错对不上</b>
+          <p>把报错原文和 <code>dm.ini</code> 里的关键参数发我。共性问题我会补进这篇，下一个人就不用再踩这个坑。</p>
+        </div>
+        <div class="cta-item">
+          <b>要按你的环境过一遍</b>
+          <p>全备与归档现状、库大小、能容忍多久停机 —— 发这三样给我，我给你一份针对性的恢复方案和风险评估。</p>
+          <p class="cta-mail"><a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+        </div>
+        <p class="cta-fine">命令和你环境对不上？在 <a href="https://gitee.com/jiangchuang/blog/issues" target="_blank" rel="noopener">Gitee 仓库</a> 提 issue，回复公开可查。</p>
+      </div>
+    </div>
+  </section>
+
+
+<footer class="ft">达梦数据库在线更换授权（dm.key）· 交互版 ｜ 适用 DM8 ｜ 2026-10-26 ｜ 命令中的占位符 &lt;…&gt; 请按本机环境替换后执行<br><span>联系：<a href="mailto:jiang-chuang@qq.com" style="color:inherit;text-decoration:underline">jiang-chuang@qq.com</a></span>
+</footer>
 
 </div>
 
