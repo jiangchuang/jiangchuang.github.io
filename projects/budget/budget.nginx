@@ -9,10 +9,11 @@ location /budget/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
 
-    # 单页 55KB、数据 7KB，压缩后约剩 1/4。
+    # 单页 65KB、数据 7KB，压缩后约剩 1/4。
     # （命中 ETag 时后端直接回 304，连这 1/4 都不用传）
+    # text/html 是 nginx 默认就压的，再写进 gzip_types 会报 duplicate MIME type
     gzip on;
-    gzip_types text/html text/css text/plain application/json application/javascript image/svg+xml;
+    gzip_types text/css text/plain application/json application/javascript image/svg+xml;
     gzip_min_length 1024;
     gzip_comp_level 6;
     gzip_proxied any;
