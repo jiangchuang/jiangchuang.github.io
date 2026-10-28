@@ -35,7 +35,7 @@
   .topbar{padding:12px 18px 10px}
   .topbar .row1{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
   h1{margin:0;font-size:18px;letter-spacing:.3px;font-weight:650}
-  .sub{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sub{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
   .pill{padding:2px 9px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:#fff}
   .pill.saved{color:var(--ok);border-color:#cfe6da;background:#f2f9f5}
   .pill.dirty{color:var(--warn);border-color:#f0dfc0;background:#fdf8ee}
@@ -43,6 +43,8 @@
   .pill.error{color:var(--err);border-color:#f0cdc9;background:#fdf3f2}
   .pill.who{font:inherit;font-size:12px;color:#6b6560;cursor:pointer;transition:.15s}
   .pill.who:hover{border-color:#d9cdc4;color:var(--accent);background:#fff}
+  .pill.ver{color:#2a5d9e;border-color:#cfdff5;background:#f2f7fd;text-decoration:none;transition:.15s}
+  .pill.ver:hover{background:#e4eefb;border-color:#b7d1ef;color:#1d4a80}
 
   .kpis{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:flex-start}
   .kpi{
@@ -58,6 +60,13 @@
     font-size:11.5px;color:var(--muted);text-align:center;padding:0 1px;margin:0 1px;
   }
   .kpi input[type=number]:focus{outline:none;border-bottom-color:var(--accent);color:var(--accent)}
+  /* 预算总额是怎么算出来的，直接写在数字下面 —— 原来只有一个 5% 的输入框，
+     看不出「总额 = 明细 + 不可预见费」，系数一变人也不知道 */
+  .kpi .k-formula{
+    display:block;margin-top:1px;font-style:normal;font-size:10.5px;line-height:1.3;
+    color:#9a908a;letter-spacing:.2px;white-space:nowrap;font-variant-numeric:tabular-nums;
+  }
+  .kpi.accent .k-formula{color:#b8806c}
 
   /* ---------- 近期待办 ---------- */
   .todo{
@@ -374,12 +383,13 @@
       <span class="pill" id="stat">加载中…</span>
       <span id="statWho"></span>
       <button class="pill who" id="whoBtn" title="设置改名，用于显示谁最后修改">我是…</button>
+      <a class="pill ver" href="v2" title="切换到新版界面。数据完全通用，随时能切回来">新界面 ↗</a>
     </div>
   </div>
   <div class="kpis">
     <div class="kpi"><span>明细合计</span><b id="kTotal">—</b></div>
-    <div class="kpi"><span>不可预见费 <input id="rate" type="number" min="0" max="30" step="0.5" value="5"> %</span><b id="kReserve">—</b></div>
-    <div class="kpi accent"><span>预算总额</span><b id="kGrand">—</b></div>
+    <div class="kpi"><span>不可预见费 <input id="rate" type="number" min="0" max="30" step="0.5" value="5" title="费率可改，预算总额会跟着变"> %</span><b id="kReserve">—</b></div>
+    <div class="kpi accent"><span>预算总额</span><b id="kGrand">—</b><em class="k-formula" id="kFormula">= 明细合计 × 1.05</em></div>
 
     <section class="todo" id="todoBox">
       <div class="td-hd">
@@ -754,6 +764,11 @@
     $("kTotal").textContent = "¥" + money(total);
     $("kReserve").textContent = "¥" + money(reserve);
     $("kGrand").textContent = "¥" + money(total + reserve);
+    // 系数跟着费率实时变：5% → ×1.05，8% → ×1.08，2.5% → ×1.025
+    var coef = Math.round((1 + rate / 100) * 1000) / 1000;
+    $("kFormula").textContent = rate > 0
+      ? "= 明细合计 × " + coef
+      : "= 明细合计（不可预见费为 0）";
     $("footSum").textContent = "¥" + money(total);
 
     // 有筛选/搜索时把「筛出几条 / 一共几条」说清楚，否则底部合计看着像少了东西

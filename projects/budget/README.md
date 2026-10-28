@@ -6,6 +6,19 @@
 - **后端** `app.py` —— Python 3.6+ 标准库，零第三方包（线上机是 Rocky 8 自带 Python 3.6.8）
 - **数据** `data.json` —— 单个 JSON + 版本号乐观锁；图片单独落盘到 `img/`
 
+## 两个界面版本（共用一份数据）
+
+| 版本 | 地址 | 定位 |
+|---|---|---|
+| **老版 v1** | `/budget/` | 默认。原有表格界面，只修 bug（搜索聚焦、保存超时、焦点跳动、排序/高亮），不改布局。家人用这个 |
+| **新版 v2** | `/budget/v2` | 重新设计：预算执行进度条、分类环形图、表格/卡片双视图、手机卡片流、编辑抽屉、删除可撤销 |
+| 原始版 | `/budget/orig` | 最初上线的那版，连 bug 修复都没有。纯救命用，不日常维护（文件不存在就 404，不影响使用） |
+
+两个版本**共用同一份 `data.json`**，页头互相有入口，随时切换，数据不会分叉。
+
+> ⚠️ 这里有个必须守住的地基：`PUT /api/data` 是**整包替换**。如果后端的字段白名单写死成 `rows/rate/title/...`，那么老版前端保存时（payload 里没有 `goal`）就会把新版设的预算上限抹掉。`app.py` 现在是 `new = dict(cur)` 再覆盖已知字段，**未知字段自动保留** —— 改这段时别退回成白名单重建。
+
+
 ## 放在这里的原因
 
 本站（博客）跑在 `47.117.13.158:80`；应用跑在同一台机器的 `127.0.0.1:8082`，由 nginx 反代到 `/budget/`。源码放博客仓的 `projects/` 下，跨机取用和迭代都方便。
@@ -38,7 +51,8 @@
 |---|---|
 | `v` | 版本号，每次成功写入 +1，用于乐观锁 |
 | `ts` / `who` | 最后保存时间 / 保存人（浏览器本地记的名字） |
-| `rate` | 不可预见费费率（百分数，如 `5`） |
+| `rate` | 不可预见费费率（百分数，如 `5`）。预算总额 = 明细合计 × (1 + rate/100) |
+| `goal` | **预算上限**（元，`0` 或缺失表示没设）。只有 v2 会写它；v1 保存时后端会原样留住 |
 | `title` | 页面标题 |
 | `rows[]` | 明细行，字段见下 |
 | `todos[]` | 待办，`{id, text, due, img, by, done}` |
@@ -50,13 +64,17 @@
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| GET | `/` | 否 | 前端单页。带 `ETag`，`If-None-Match` 命中回 `304`（刷新不再重下 58KB） |
+| GET | `/` | 否 | 老版 v1 单页。带 `ETag`，`If-None-Match` 命中回 `304`（刷新不再重下 65KB） |
+| GET | `/v2` | 否 | 新版 v2 单页。同样带 ETag |
+| GET | `/orig` | 否 | 原始版快照（文件不存在则 404） |
 | GET | `/api/data` | 口令 | 读全量数据。带 `ETag`，未变更回 `304`（8 秒轮询靠这个省流量） |
 | PUT | `/api/data` | 口令 | 写数据。`200` 成功（回 `v` 与**新 ETag**）、`400` 参数非法、`409` 版本冲突（返回 `data` 供前端行级合并） |
 | POST | `/api/upload` | 口令 | 上传配图（二进制），返回 `{url:"img/xxxx.jpg"}`；按**文件头**校验真实类型 |
 | GET | `/img/<name>` | 否 | 读配图，文件名 18 位随机 hex，`max-age=604800, immutable` |
 | GET | `/api/health` | 否 | 健康检查 |
 | GET | `/robots.txt` | 否 | `Disallow: /`（另加 `<meta name="robots" content="noindex">` 双保险） |
+
+> 新版页面里的接口地址是**从当前路径推出来的**（`location.pathname` 去掉最后一段），不是写死 `/budget/api`。这样 `/budget/v2` 和根路径部署都能用，少一个踩坑点。
 
 口令取 `secret.txt` 首行；文件不存在则首次启动自动生成。请求头 `X-Auth: <口令>`，也接受 `?k=<口令>`（仅首次点链接用，前端随即存进 localStorage，之后所有请求——含上传——都只走 `X-Auth` 头）。
 
@@ -88,9 +106,17 @@ Windows 上 `python app.py 8099` 同理。Python 3.6 即可，无需建虚拟环
 ## 部署（线上机 `47.117.13.158`）
 
 ```bash
-scp app.py index.html root@47.117.13.158:/opt/budget/
+scp app.py index.html index.v2.html root@47.117.13.158:/opt/budget/
 ssh root@47.117.13.158 'systemctl restart budget'      # unit 里已 Restart=always
 ```
+
+> 部署前**先留一份原始版快照**，这样 `/budget/orig` 才有东西可以回：
+>
+> ```bash
+> ssh root@47.117.13.158 'cd /opt/budget && [ -f index.html ] && [ ! -f index.orig.html ] && cp -p index.html index.orig.html'
+> ```
+>
+> 只做一次，之后不会被覆盖。回退时把 `index.orig.html` 拷回 `index.html` 即可。
 
 首次部署（或改了 unit/nginx 片段）跑一遍幂等脚本：
 
@@ -144,13 +170,15 @@ bash check_prod.sh <口令> http://47.117.13.158/budget
 
 | 文件 | 说明 |
 |---|---|
-| `app.py` | 后端（静态页 + API + 图片上传） |
-| `index.html` | 前端单页（内联 CSS/JS） |
+| `app.py` | 后端（三版本页面路由 + API + 图片上传） |
+| `index.html` | **老版 v1** 单页（内联 CSS/JS），默认入口 |
+| `index.v2.html` | **新版 v2** 单页，`/budget/v2` |
 | `budget.service` | systemd unit（`127.0.0.1:8082`，开机自启） |
 | `budget.nginx` | nginx 片段（`/budget/` 反代 + gzip + 关访问日志） |
-| `deploy.sh` | 幂等部署脚本 |
+| `deploy.sh` | 幂等部署脚本（含两版本自测） |
 | `smoke_test.py` | 接口冒烟测试（**会写数据**，只对测试实例跑） |
 | `ui_test.py` | 前端交互测试（本机 Chrome 无头，自己起临时实例，不碰数据） |
 | `check_prod.sh` | 线上只读验收（不改数据） |
 | `data.sample.json` | 示例数据（**真实账目不入库**） |
 | `secret.txt` `data.json` `img/` | 运行时生成，已在 `.gitignore` 中排除 |
+| `index.orig.html` | 原始版快照（**只在服务器上**，不入库；部署前手动 cp 一份） |

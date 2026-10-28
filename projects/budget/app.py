@@ -34,7 +34,9 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE, "data.json")
 BAK_PATH = os.path.join(BASE, "data.json.bak")
 SECRET_PATH = os.path.join(BASE, "secret.txt")
-HTML_PATH = os.path.join(BASE, "index.html")
+HTML_PATH = os.path.join(BASE, "index.html")        # v1 老版界面（默认）
+HTML_V2_PATH = os.path.join(BASE, "index.v2.html")  # v2 新版界面
+HTML_ORIG_PATH = os.path.join(BASE, "index.orig.html")  # 最初上线版，救命用，不日常维护
 IMG_DIR = os.path.join(BASE, "img")
 
 MAX_BODY = 4 * 1024 * 1024          # 4MB
@@ -232,6 +234,32 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         self._send(code, json.dumps(obj, ensure_ascii=False), "application/json; charset=utf-8")
 
+    def _serve_html(self, fp, missing_hint="页面文件不存在"):
+        """返回一个 HTML 文件，带 ETag 协商。v1 / v2 / 原始版共用这一条通道。"""
+        try:
+            with open(fp, "rb") as f:
+                html = f.read()
+            st = os.stat(fp)
+        except OSError:
+            body = ("<meta charset=utf-8><body style=\"font:14px/1.7 system-ui;padding:40px;"
+                    "color:#444\"><p>%s</p><p style=\"color:#888\">文件：%s</p></body>"
+                    % (missing_hint, os.path.basename(fp)))
+            return self._send(404, body, "text/html; charset=utf-8")
+        # 单页 60KB 上下，用 mtime+size 做指纹：刷新时只走 304，不重下整包
+        etag = 'W/"h-%x-%x"' % (int(st.st_mtime), st.st_size)
+        if self._not_modified(etag):
+            return
+        return self._send(200, html, "text/html; charset=utf-8",
+                          {"Cache-Control": "no-cache", "ETag": etag})
+
+    def _redirect(self, location):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        for k, v in self.SEC_HEADERS:
+            self.send_header(k, v)
+        self.end_headers()
+
     def _authed(self, qs):
         tok = self.headers.get("X-Auth", "") or (qs.get("k", [""])[0])
         return bool(tok) and secrets.compare_digest(tok, get_secret())
@@ -247,18 +275,22 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(u.query)
 
         if path in ("/", "/index.html"):
-            try:
-                with open(HTML_PATH, "rb") as f:
-                    html = f.read()
-                st = os.stat(HTML_PATH)
-            except OSError:
-                return self._send(500, "index.html missing", "text/plain; charset=utf-8")
-            # 单页 55KB，用 mtime+size 做指纹：刷新时只走 304，不重下整包
-            etag = 'W/"h-%x-%x"' % (int(st.st_mtime), st.st_size)
-            if self._not_modified(etag):
-                return
-            return self._send(200, html, "text/html; charset=utf-8",
-                              {"Cache-Control": "no-cache", "ETag": etag})
+            return self._serve_html(HTML_PATH)
+
+        # ---- 多版本共存 ----
+        # /v2   新版界面（大改）
+        # /orig 最初上线版（连 bug 修复都没有，纯救命）
+        # 三版共用同一份 data.json：页面上随时切，数据不会分叉。
+        if path in ("/v2", "/index.v2.html"):
+            return self._serve_html(HTML_V2_PATH, "新版界面还没部署（index.v2.html 不存在）")
+
+        # 带尾斜杠的 /v2/ 会让页面里"api/data"这类相对路径解析成 /v2/api/data 而 404，
+        # 用一个相对跳转把它拉回不带尾杠的形态
+        if path == "/v2/":
+            return self._redirect("../v2")
+
+        if path in ("/orig", "/index.orig.html"):
+            return self._serve_html(HTML_ORIG_PATH, "原始版快照不存在（部署时若线上已有页面会自动留一份）")
 
         if path in ("/robots.txt", "/budget/robots.txt"):
             return self._send(200, "User-agent: *\nDisallow: /\n",
@@ -367,7 +399,11 @@ class Handler(BaseHTTPRequestHandler):
                 rate = float(payload.get("rate", cur.get("rate", 5)))
             except (TypeError, ValueError):
                 rate = 5
-            new = {
+            # 以现有数据为底，再覆盖已知字段。
+            # 这一句是 v1/v2 共存的地基：老版前端 PUT 里不带的新字段（比如 v2 的
+            # goal 预算上限），必须原样留住 —— 否则在旧界面随手改一行，就把它抹了。
+            new = dict(cur)
+            new.update({
                 "v": int(cur.get("v", 0)) + 1,
                 "ts": now_iso(),
                 "who": str(payload.get("who", "") or "")[:20],
@@ -375,7 +411,13 @@ class Handler(BaseHTTPRequestHandler):
                 "title": str(payload.get("title") or cur.get("title") or "装修预算")[:60],
                 "rows": sanitize_rows(payload.get("rows")),
                 "todos": sanitize_todos(payload.get("todos", cur.get("todos", []))),
-            }
+            })
+            if "goal" in payload:
+                try:
+                    goal = float(payload.get("goal") or 0)
+                except (TypeError, ValueError):
+                    goal = 0.0
+                new["goal"] = max(0.0, goal)   # 0 表示没设预算上限
             write_data(new)
         # 顺带把新 ETag 回给前端，下一次轮询就能直接 304，不用再拉一遍全量
         return self._json(200, {"v": new["v"], "ts": new["ts"], "who": new["who"],
