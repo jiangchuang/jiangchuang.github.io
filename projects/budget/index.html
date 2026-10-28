@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f6f4f1">
+<meta name="robots" content="noindex,nofollow,noarchive,noimageindex">
+<meta name="referrer" content="no-referrer">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b8503a'/%3E%3Ctext x='16' y='22' font-size='17' text-anchor='middle' fill='%23fff' font-family='sans-serif'%3E%C2%A5%3C/text%3E%3C/svg%3E">
 <title>装修预算 · CCYY</title>
 <style>
@@ -161,7 +163,7 @@
   .chip[aria-pressed=true]{background:var(--accent-soft);border-color:#e7c6bb;color:var(--accent);font-weight:600}
 
   /* ---------- 表格 ---------- */
-  main{padding:14px 18px 60px;max-width:1560px;margin:0 auto}
+  main{padding:14px 18px calc(60px + env(safe-area-inset-bottom, 0px));max-width:1560px;margin:0 auto}
   .tablewrap{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:auto;max-height:calc(100vh - 200px)}
   table{border-collapse:separate;border-spacing:0;width:100%;min-width:1180px}
   thead th{
@@ -272,7 +274,7 @@
 
   /* ---------- 提示 ---------- */
   .toast{
-    position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);
+    position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom, 0px));transform:translate(-50%,20px);
     background:#26221f;color:#fff;padding:10px 18px;border-radius:999px;font-size:13.5px;
     opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:86vw;text-align:center;
   }
@@ -301,7 +303,7 @@
     .td-plus{width:28px;height:28px;font-size:16px;border-radius:9px}
     .td-ops button{width:28px;height:28px;font-size:15px}
     .td-thumb{width:36px;height:36px}
-    main{padding:10px 12px 80px}
+    main{padding:10px 12px calc(80px + env(safe-area-inset-bottom, 0px))}
     .toolbar{padding:8px 12px;gap:6px}
     .toolbar input[type=search]{flex:1 1 100%}
     .tablewrap{background:transparent;border:none;box-shadow:none;overflow:visible;max-height:none}
@@ -520,19 +522,36 @@
   }
 
   /* ---------- 网络 ---------- */
-  function api(method, body){
-    var opt = {method:method, headers:{"X-Auth":token}};
+  var lastEtag = "", saveFails = 0;
+
+  // 没超时的 fetch 在弱网下会一直挂着：saving 永远 true，保存和轮询双双被挡住，
+  // 改动只剩内存，刷新就没。统一加 AbortController 超时兜住。
+  function api(method, body, ifNoneMatch){
+    var opt = {method:method, headers:{"X-Auth":token}, cache:"no-store"};
     if (body != null){
       opt.body = body;
       opt.headers["Content-Type"] = "application/json";
     }
+    if (ifNoneMatch) opt.headers["If-None-Match"] = ifNoneMatch;
+    var ctl = (typeof AbortController === "function") ? new AbortController() : null;
+    var ms = (body != null) ? 15000 : 10000;
+    if (ctl) opt.signal = ctl.signal;
+    var timer = setTimeout(function(){ if (ctl) ctl.abort(); }, ms);
+    function fail(){
+      clearTimeout(timer);
+      var aborted = !!(ctl && ctl.signal.aborted);
+      var e = new Error(aborted ? "请求超时" : "网络异常");
+      e.name = aborted ? "TimeoutError" : "NetworkError";
+      throw e;
+    }
     return fetch(API, opt).then(function(r){
       return r.text().then(function(t){
+        clearTimeout(timer);
         var j = null;
         try { j = JSON.parse(t); } catch(e){}
-        return {status:r.status, ok:r.ok, json:j};
-      });
-    });
+        return {status:r.status, ok:r.ok, json:j, etag:r.headers.get("ETag") || ""};
+      }, fail);
+    }, fail);
   }
 
   function setStatus(kind, text){
@@ -604,6 +623,16 @@
   }
 
   function render(){
+    // 重建 tbody 会丢掉输入焦点：改完「分类」光标跳走、轮询到对方改动时正在打字也被打断。
+    // 先把当前位置记下来，重建完再放回去（连光标位置一起）。
+    var keep = null, ae = document.activeElement;
+    if (ae && ae.dataset && ae.dataset.f && elTbody.contains(ae)){
+      var ktr = ae.closest("tr");
+      if (ktr && ktr.dataset.id){
+        keep = {id:ktr.dataset.id, f:ae.dataset.f, s:null, e:null};
+        try { keep.s = ae.selectionStart; keep.e = ae.selectionEnd; } catch(err){}
+      }
+    }
     // datalist for categories
     var dl = document.getElementById("catList");
     if (!dl){
@@ -633,6 +662,19 @@
       rows.forEach(function(r, i){ elTbody.appendChild(rowHtml(r, i)); });
     }
     recalc();
+    if (keep) restoreFocus(keep);
+  }
+
+  function restoreFocus(keep){
+    var trs = elTbody.querySelectorAll("tr[data-id]");
+    for (var i = 0; i < trs.length; i++){
+      if (trs[i].dataset.id !== keep.id) continue;
+      var el = trs[i].querySelector('[data-f="' + keep.f + '"]');
+      if (!el) return;
+      el.focus();
+      try { if (keep.s != null) el.setSelectionRange(keep.s, keep.e); } catch(err){}
+      return;
+    }
   }
 
   function recalc(){
@@ -941,17 +983,23 @@
   }
 
   function uploadImage(blob, cb){
+    var done = false;
+    function fin(v){ if (!done){ done = true; cb(v); } }
     var xhr = new XMLHttpRequest();
-    xhr.open("POST", "api/upload?k=" + encodeURIComponent(token), true);
+    // 口令走 X-Auth 头，不拼进 URL —— 否则会落到 nginx access log 与浏览器历史里
+    xhr.open("POST", "api/upload", true);
     xhr.setRequestHeader("Content-Type", "image/jpeg");
+    xhr.setRequestHeader("X-Auth", token);
+    xhr.timeout = 25000;
     xhr.onload = function(){
       if (xhr.status === 200){
-        try { var r = JSON.parse(xhr.responseText); if (r && r.url){ cb(r.url); return; } } catch (e) {}
+        try { var r = JSON.parse(xhr.responseText); if (r && r.url){ fin(r.url); return; } } catch (e) {}
       }
       if (xhr.status === 401) onAuthFail();
-      cb(null);
+      fin(null);
     };
-    xhr.onerror = function(){ cb(null); };
+    xhr.onerror = function(){ fin(null); };
+    xhr.ontimeout = function(){ fin(null); };
     xhr.send(blob);
   }
 
@@ -1107,6 +1155,8 @@
         if (sentMeta) metaDirty = false;
         if (sentTodo) todoDirty = false;
         retry = 0;
+        saveFails = 0;
+        if (res.json.etag) lastEtag = res.json.etag;
         var pending = dirty.size || todoDirty;
         setStatus(pending ? "dirty" : "saved", pending ? "未保存" : "已保存");
         $("statWho").textContent = (state.who ? "最后保存：" + state.who + " · " : "") + state.ts.replace("T", " ");
@@ -1115,12 +1165,27 @@
           saveTimer = setTimeout(flush, 700);
         }
       } else {
-        setStatus("error", "保存失败 " + res.status);
+        saving = false;
+        scheduleSaveRetry("保存失败 " + res.status);
       }
-    }).catch(function(){
+    }).catch(function(err){
       saving = false;
-      setStatus("error", "网络异常，稍后重试");
+      var to = err && err.name === "TimeoutError";
+      scheduleSaveRetry(to ? "网络超时" : "网络异常");
     });
+  }
+
+  // 失败后自动重试：弱网一次没存上不该让用户手动再碰一遍（他还以为存好了）
+  function scheduleSaveRetry(msg){
+    saveFails++;
+    if (saveFails <= 3){
+      setStatus("error", msg + " · 重试 " + saveFails + "/3");
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flush, 1500 * saveFails);
+    } else {
+      setStatus("error", msg);
+      toast("多次保存失败，改动还在本页 —— 别关页面。检查网络后按 Ctrl+S 重试", 9000);
+    }
   }
 
   function onAuthFail(){
@@ -1135,8 +1200,10 @@
     if (!token){ $("gate").hidden = false; return; }
     api("GET").then(function(res){
       if (res.status === 401){ onAuthFail(); return; }
+      if (res.status === 304){ setStatus("saved", "已同步"); return; }
       if (!res.ok || !res.json){ setStatus("error", "加载失败"); return; }
       var d = res.json;
+      lastEtag = res.etag || "";
       state = {
         v: d.v || 0, ts: d.ts || "", who: d.who || "",
         rate: (d.rate == null ? 5 : d.rate),
@@ -1161,9 +1228,11 @@
   /* ---------- 轮询同步 ---------- */
   function poll(){
     if (saving || dirty.size || metaDirty || todoDirty || !token || document.hidden) return;
-    api("GET").then(function(res){
+    api("GET", null, lastEtag).then(function(res){
       if (res.status === 401) return;
+      if (res.status === 304) return;          // 对方没改，只回了 300 字节头部
       if (!res.ok || !res.json) return;
+      if (res.etag) lastEtag = res.etag;
       var d = res.json;
       if ((d.v || 0) > state.v){
         state.v = d.v; state.ts = d.ts; state.who = d.who; state.rate = d.rate; state.title = d.title;
@@ -1344,6 +1413,20 @@
   initTodos();
   load();
   setInterval(poll, 8000);
+
+  // 手机切后台会节流定时器：切走前把脏改动立刻发出，切回来立刻拉一次。
+  document.addEventListener("visibilitychange", function(){
+    if (document.hidden){
+      if (dirty.size || metaDirty || todoDirty){ clearTimeout(saveTimer); flush(); }
+    } else {
+      poll();
+    }
+  });
+  // 断网期间的重试次数在恢复时清零，否则会被「已放弃」状态挡住
+  window.addEventListener("online", function(){
+    if (dirty.size || metaDirty || todoDirty){ saveFails = 0; clearTimeout(saveTimer); flush(); }
+    else poll();
+  });
 })();
 </script>
 </body>

@@ -8,6 +8,20 @@ location /budget/ {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+
+    # 单页 55KB、数据 7KB，压缩后约剩 1/4。
+    # （命中 ETag 时后端直接回 304，连这 1/4 都不用传）
+    gzip on;
+    gzip_types text/html text/css text/plain application/json application/javascript image/svg+xml;
+    gzip_min_length 1024;
+    gzip_comp_level 6;
+    gzip_proxied any;
+    gzip_vary on;
+
+    # ?k=<口令> 会原样落进 access log。私人账本，日志价值远低于泄露风险。
+    access_log off;
+
+    # 安全响应头（含 CSP）由 app.py 统一发，这里不要重复加，否则会出现两个同名头
     proxy_read_timeout 60s;
     proxy_send_timeout 60s;
     client_max_body_size 8m;

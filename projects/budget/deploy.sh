@@ -67,7 +67,28 @@ nginx -t
 systemctl reload nginx
 
 echo "== 5. 本机自测 =="
+# reload 是异步的，老 worker 可能还在接新连接，等一拍再测
+sleep 2
 echo -n "  直连后端 health: "; curl -s http://127.0.0.1:8082/api/health; echo
 echo -n "  经 nginx /budget/ 首页: "; curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1/budget/
 echo -n "  经 nginx /budget/api/health: "; curl -s http://127.0.0.1/budget/api/health; echo
+
+RAW=$(curl -s -o /dev/null -w '%{size_download}' http://127.0.0.1/budget/)
+GZ=$(curl -s -o /dev/null -H 'Accept-Encoding: gzip' -w '%{size_download}' http://127.0.0.1/budget/)
+if [ "$GZ" -lt "$RAW" ]; then
+  echo "  首页 gzip: 生效 ${RAW}B -> ${GZ}B"
+else
+  echo "  首页 gzip: 未生效（${RAW}B -> ${GZ}B）—— 检查 budget.nginx 是否已安装"
+fi
+
+HH=$(curl -s -D - -o /dev/null http://127.0.0.1/budget/ | tr -d '\r')
+echo -n "  安全头: nosniff="; printf '%s' "$HH" | grep -qi 'x-content-type-options: nosniff' && echo -n "yes" || echo -n "no"
+echo -n " csp=";        printf '%s' "$HH" | grep -qi 'content-security-policy:' && echo -n "yes" || echo -n "no"
+echo -n " referrer=";   printf '%s' "$HH" | grep -qi 'referrer-policy:' && echo "yes" || echo "no"
+ET=$(printf '%s' "$HH" | awk 'tolower($1)=="etag:"{print $2}')
+if [ -n "$ET" ]; then
+  echo "  首页 ETag: $ET -> 复请求 $(curl -s -o /dev/null -w '%{http_code}' -H "If-None-Match: $ET" http://127.0.0.1/budget/)"
+else
+  echo "  首页 ETag: 缺失（app.py 没更新？）"
+fi
 echo "== 完成 =="

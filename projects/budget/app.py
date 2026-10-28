@@ -54,6 +54,15 @@ def now_iso():
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def data_etag(v):
+    """数据版本指纹：v 单调递增，再带上 mtime/size 兜住「手工改文件不改 v」。"""
+    try:
+        st = os.stat(DATA_PATH)
+        return 'W/"d-%s-%x-%x"' % (v, int(st.st_mtime), st.st_size)
+    except OSError:
+        return 'W/"d-%s"' % v
+
+
 def get_secret():
     if os.path.exists(SECRET_PATH):
         with open(SECRET_PATH, "r", encoding="utf-8") as f:
@@ -93,14 +102,35 @@ def write_data(obj):
     os.replace(tmp, DATA_PATH)
 
 
+def sniff_image(data):
+    """按文件头判断真实图片类型，返回扩展名；不是已知图片返回 None。
+
+    只信 Content-Type 头等于放任客户端伪造 —— 传个 HTML 改个头就能存成 .jpg。
+    """
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
 def sanitize_rows(raw):
     out = []
+    seen = set()
     if not isinstance(raw, list):
         return out
     for i, r in enumerate(raw[:MAX_ROWS]):
         if not isinstance(r, dict):
             continue
-        row = {"id": str(r.get("id") or ("r%d" % (i + 1)))}
+        rid = str(r.get("id") or ("r%d" % (i + 1)))
+        while rid in seen:                      # id 撞车会让行级合并张冠李戴
+            rid += "x"
+        seen.add(rid)
+        row = {"id": rid}
         for k in ROW_FIELDS:
             v = r.get(k, "")
             if k in NUM_FIELDS:
@@ -137,25 +167,67 @@ def sanitize_todos(raw):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "BudgetApp/1.0"
+    server_version = "BudgetApp/1.1"
     protocol_version = "HTTP/1.1"
+
+    # 所有响应统一附带的安全头（CSP 允许内联脚本/样式，因为前端是单文件设计）
+    SEC_HEADERS = (
+        ("X-Content-Type-Options", "nosniff"),
+        ("Referrer-Policy", "no-referrer"),
+        ("X-Frame-Options", "SAMEORIGIN"),
+        ("Content-Security-Policy",
+         "default-src 'self'; img-src 'self' data: blob:; "
+         "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+         "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"),
+    )
 
     # ---------- helpers ----------
     def _send(self, code, body, ctype="application/json; charset=utf-8", extra=None):
         if isinstance(body, str):
             body = body.encode("utf-8")
         extra = extra or {}
+        cc = "no-store"
+        for k, v in extra.items():
+            if k.lower() == "cache-control":
+                cc = v
+                break
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", extra.get("Cache-Control", "no-store"))
+        self.send_header("Cache-Control", cc)
         for k, v in extra.items():
             if k.lower() == "cache-control":
                 continue
             self.send_header(k, v)
+        for k, v in self.SEC_HEADERS:
+            self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def _not_modified(self, etag):
+        """If-None-Match 命中就回 304（无 body）。命中返回 True，调用方应立刻 return。"""
+        inm = (self.headers.get("If-None-Match") or "").strip()
+        if not inm:
+            return False
+        tags = [t.strip() for t in inm.split(",")]
+        if etag not in tags and "*" not in tags:
+            return False
+        self.send_response(304)
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "no-cache")
+        for k, v in self.SEC_HEADERS:
+            self.send_header(k, v)
+        self.end_headers()
+        return True
+
+    def _json_etagged(self, etag, obj):
+        """带 ETag 的 JSON 响应：命中 If-None-Match 只回 304，省掉整包重传。"""
+        body = json.dumps(obj, ensure_ascii=False)
+        if self._not_modified(etag):
+            return
+        return self._send(200, body, "application/json; charset=utf-8",
+                          {"Cache-Control": "no-cache", "ETag": etag})
 
     def _json(self, code, obj):
         self._send(code, json.dumps(obj, ensure_ascii=False), "application/json; charset=utf-8")
@@ -178,18 +250,32 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 with open(HTML_PATH, "rb") as f:
                     html = f.read()
+                st = os.stat(HTML_PATH)
             except OSError:
                 return self._send(500, "index.html missing", "text/plain; charset=utf-8")
-            return self._send(200, html, "text/html; charset=utf-8")
+            # 单页 55KB，用 mtime+size 做指纹：刷新时只走 304，不重下整包
+            etag = 'W/"h-%x-%x"' % (int(st.st_mtime), st.st_size)
+            if self._not_modified(etag):
+                return
+            return self._send(200, html, "text/html; charset=utf-8",
+                              {"Cache-Control": "no-cache", "ETag": etag})
+
+        if path in ("/robots.txt", "/budget/robots.txt"):
+            return self._send(200, "User-agent: *\nDisallow: /\n",
+                              "text/plain; charset=utf-8",
+                              {"Cache-Control": "public, max-age=86400"})
 
         if path == "/api/health":
             d = read_data()
-            return self._json(200, {"ok": True, "v": d.get("v", 0)})
+            return self._send(200, json.dumps({"ok": True, "v": d.get("v", 0)}),
+                              "application/json; charset=utf-8",
+                              {"Cache-Control": "no-store"})
 
         if path == "/api/data":
             if not self._authed(qs):
                 return self._json(401, {"error": "auth"})
-            return self._json(200, read_data())
+            d = read_data()
+            return self._json_etagged(data_etag(d.get("v", 0)), d)
 
         if path == "/favicon.ico":
             return self._send(204, "")
@@ -208,7 +294,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(500, '{"error":"read"}')
             ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
             # 文件名是随机串，内容不会变，允许长缓存
-            return self._send(200, blob, ctype, {"Cache-Control": "public, max-age=604800"})
+            return self._send(200, blob, ctype, {
+                "Cache-Control": "public, max-age=604800, immutable",
+            })
 
         return self._send(404, '{"error":"not found"}')
 
@@ -227,13 +315,15 @@ class Handler(BaseHTTPRequestHandler):
         if length <= 0 or length > MAX_IMG:
             return self._json(400, {"error": "bad length"})
         ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        ext = IMG_TYPES.get(ctype)
-        if not ext:
+        if ctype not in IMG_TYPES:
             return self._json(400, {"error": "bad type"})
 
         data = self.rfile.read(length)
         if len(data) != length:
             return self._json(400, {"error": "short body"})
+        ext = sniff_image(data)              # 以真实文件头为准，声明的 type 只作初筛
+        if not ext:
+            return self._json(400, {"error": "not an image"})
         try:
             os.makedirs(IMG_DIR, exist_ok=True)
             name = secrets.token_hex(9) + ext
@@ -266,8 +356,13 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             cur = read_data()
             base_v = payload.get("base_v")
-            if base_v is not None and int(base_v) != int(cur.get("v", 0)):
-                return self._json(409, {"error": "conflict", "data": cur})
+            if base_v is not None:
+                try:
+                    base_v = int(base_v)
+                except (TypeError, ValueError):
+                    return self._json(400, {"error": "bad base_v"})
+                if base_v != int(cur.get("v", 0)):
+                    return self._json(409, {"error": "conflict", "data": cur})
             try:
                 rate = float(payload.get("rate", cur.get("rate", 5)))
             except (TypeError, ValueError):
@@ -282,7 +377,9 @@ class Handler(BaseHTTPRequestHandler):
                 "todos": sanitize_todos(payload.get("todos", cur.get("todos", []))),
             }
             write_data(new)
-        return self._json(200, {"v": new["v"], "ts": new["ts"], "who": new["who"]})
+        # 顺带把新 ETag 回给前端，下一次轮询就能直接 304，不用再拉一遍全量
+        return self._json(200, {"v": new["v"], "ts": new["ts"], "who": new["who"],
+                                "etag": data_etag(new["v"])})
 
     def do_HEAD(self):
         self.do_GET()

@@ -47,14 +47,29 @@
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| GET | `/` | 否 | 前端单页 |
-| GET | `/api/data` | 口令 | 读全量数据 |
-| PUT | `/api/data` | 口令 | 写数据；`200` 成功、`409` 版本冲突（返回 `data` 供前端合并） |
-| POST | `/api/upload` | 口令 | 上传配图（二进制），返回 `{url:"img/xxxx.jpg"}` |
-| GET | `/img/<name>` | 否 | 读配图，文件名 18 位随机 hex，`max-age=604800` |
+| GET | `/` | 否 | 前端单页。带 `ETag`，`If-None-Match` 命中回 `304`（刷新不再重下 58KB） |
+| GET | `/api/data` | 口令 | 读全量数据。带 `ETag`，未变更回 `304`（8 秒轮询靠这个省流量） |
+| PUT | `/api/data` | 口令 | 写数据。`200` 成功（回 `v` 与**新 ETag**）、`400` 参数非法、`409` 版本冲突（返回 `data` 供前端行级合并） |
+| POST | `/api/upload` | 口令 | 上传配图（二进制），返回 `{url:"img/xxxx.jpg"}`；按**文件头**校验真实类型 |
+| GET | `/img/<name>` | 否 | 读配图，文件名 18 位随机 hex，`max-age=604800, immutable` |
 | GET | `/api/health` | 否 | 健康检查 |
+| GET | `/robots.txt` | 否 | `Disallow: /`（另加 `<meta name="robots" content="noindex">` 双保险） |
 
-口令取 `secret.txt` 首行；文件不存在则首次启动自动生成。请求头 `X-Auth: <口令>`，也接受 `?k=<口令>`（首次点链接用，前端会存到 localStorage）。
+口令取 `secret.txt` 首行；文件不存在则首次启动自动生成。请求头 `X-Auth: <口令>`，也接受 `?k=<口令>`（仅首次点链接用，前端随即存进 localStorage，之后所有请求——含上传——都只走 `X-Auth` 头）。
+
+> 上传曾经把口令拼在 URL 上（`api/upload?k=...`），会原样落进 nginx access log。现在统一走 `X-Auth`，并且 nginx 片段对 `/budget/` 直接 `access_log off`。
+
+## 响应头
+
+后端对**所有**响应统一附加（见 `Handler.SEC_HEADERS`）：
+
+| 头 | 值 | 为什么 |
+|---|---|---|
+| `X-Content-Type-Options` | `nosniff` | 不让浏览器猜类型（配合上传校验） |
+| `Referrer-Policy` | `no-referrer` | 链接里带 `?k=`，外跳时别把口令带给别人 |
+| `X-Frame-Options` | `SAMEORIGIN` | 防点击劫持 |
+| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data: blob:; …` | 只允许同源，挡掉外部脚本注入 |
+| `Cache-Control` | 首页/数据 `no-cache`（必须回源校验）、API 写操作 `no-store` | 配合 ETag 做协商缓存 |
 
 ## 本地跑起来
 
@@ -94,16 +109,31 @@ ssh root@47.117.13.158 'journalctl -u budget -n 50 --no-pager'                  
 
 ## 已知限制（也是可以下手优化的地方）
 
-1. **待办是整体合并**，不是逐条合并。两人同时改待办时，后保存的会覆盖前者（明细行是逐行合并的，不受影响）。
-2. **轮询 8 秒全量拉取**。现在 `data.json` 只有 8KB，够用；数据涨到几百 KB 就该换 ETag / 增量。
-3. **单口令，无用户体系**。`?k=` 会出现在 nginx access log 和浏览器历史里；改成登录态 Cookie 更干净。
+1. **待办是整体合并**，不是逐条合并。两人同时改待办时，后保存的会覆盖前者（明细行是逐行合并的，不受影响）。要改成逐条合并得动协议（每行加 `updTs` 或删除墓碑），没实测过的并发场景不敢上。
+2. ~~轮询 8 秒全量拉取~~ → **已改**：加 `ETag` + `If-None-Match`，对方没改动时后端只回 304（约 300 字节），不再每次传 7KB 全量。
+3. **单口令，无用户体系**。已缓解（上传改走 `X-Auth`、nginx 对 `/budget/` 关访问日志、加 `no-referrer`），但地址栏首次仍会出现 `?k=`。彻底解决要登录态 Cookie。
 4. **只有 `.bak`，无历史版本**。想回溯只能靠外部快照。
 5. **CSV 导出在前端拼字符串**，几千行以上会卡。
 6. **打印样式没做 A4 分页控制**，长表会断在奇怪的位置。
 7. 表格不支持列宽拖拽、列排序。
 8. 无 PWA，手机上不能离线打开。
+9. **HTTPS 还没上**。站点走 80 明文，`?k=` 在此环境下可被中间人看到。要上得先有证书（IP 签不了 DV，得用域名 + 备案，而 `jiangchuang.top` 现在被备案阻断）。
 
 改代码时注意：**线上是 Python 3.6.8**，别用 3.7+ 语法（`:=`、`dataclasses`、`from __future__ import annotations` 那套）。前端为了能单文件离线用，**不引入任何外部库**。
+
+## 验证
+
+```bash
+# 1) 本地起一个测试实例（会写数据，别指线上目录）
+cp data.sample.json data.json && python3 app.py 8099
+python3 smoke_test.py http://127.0.0.1:8099 "$(cat secret.txt)"      # 16 项全链路
+
+# 2) 线上只读验收（不改数据，可随时跑）
+bash check_prod.sh <口令> http://47.117.13.158/budget
+```
+
+`smoke_test.py` 覆盖：鉴权、304 协商、乐观锁（正确/过期/非法 `base_v`）、上传类型校验、`robots.txt`、重复 id 去重。
+`check_prod.sh` 覆盖：首页与数据的 304、五项安全头、gzip 压缩比、401/400 分支、账目条数与合计（只读，最后打印 `v`/rows/合计供人工比对）。
 
 ## 文件
 
@@ -112,7 +142,9 @@ ssh root@47.117.13.158 'journalctl -u budget -n 50 --no-pager'                  
 | `app.py` | 后端（静态页 + API + 图片上传） |
 | `index.html` | 前端单页（内联 CSS/JS） |
 | `budget.service` | systemd unit（`127.0.0.1:8082`，开机自启） |
-| `budget.nginx` | nginx 片段（`/budget/` 反代） |
+| `budget.nginx` | nginx 片段（`/budget/` 反代 + gzip + 关访问日志） |
 | `deploy.sh` | 幂等部署脚本 |
+| `smoke_test.py` | 接口冒烟测试（**会写数据**，只对测试实例跑） |
+| `check_prod.sh` | 线上只读验收（不改数据） |
 | `data.sample.json` | 示例数据（**真实账目不入库**） |
 | `secret.txt` `data.json` `img/` | 运行时生成，已在 `.gitignore` 中排除 |
