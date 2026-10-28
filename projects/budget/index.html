@@ -1391,6 +1391,19 @@
     }
   });
 
+  // 排序生效时，离开正在编辑的格子后补一次重绘：
+  // 打字期间为防行跳动会冻住顺序，松开就得把顺序摆回排序该有的样子。
+  elTbody.addEventListener("focusout", function(e){
+    var el = e.target;
+    if (!el.dataset || !el.dataset.f) return;
+    setTimeout(function(){
+      if (!sortBy) return;
+      var a = document.activeElement;
+      if (a && a.dataset && a.dataset.f && elTbody.contains(a)) return;   // 换到别的格子继续改，别打断
+      render();
+    }, 180);
+  });
+
   elTbody.addEventListener("click", function(e){
     var btn = e.target.closest("[data-act]");
     if (!btn) return;
