@@ -130,12 +130,14 @@ ssh root@47.117.13.158 'journalctl -u budget -n 50 --no-pager'                  
 # 1) 本地起一个测试实例（会写数据，别指线上目录）
 cp data.sample.json data.json && python3 app.py 8099
 python3 smoke_test.py http://127.0.0.1:8099 "$(cat secret.txt)"      # 16 项全链路
+python3 ui_test.py                                                   # 22 项前端交互（自己起临时实例）
 
 # 2) 线上只读验收（不改数据，可随时跑）
 bash check_prod.sh <口令> http://47.117.13.158/budget
 ```
 
 `smoke_test.py` 覆盖：鉴权、304 协商、乐观锁（正确/过期/非法 `base_v`）、上传类型校验、`robots.txt`、重复 id 去重。
+`ui_test.py` 用本机 Chrome 无头跑真页面：表头排序三态、手机排序下拉、筛选计数、`/` 与 `Esc` 快捷键、打字期间不重排、失焦归位、排序不影响合计。它会自己复制一份临时实例（端口默认 8098，`python3 ui_test.py 8111` 可换），不碰仓库数据；找不到浏览器时用 `CHROME=/path/to/chrome` 指定。
 `check_prod.sh` 覆盖：首页与数据的 304、五项安全头、gzip 压缩比、401/400 分支、账目条数与合计（只读，最后打印 `v`/rows/合计供人工比对）。
 
 ## 文件
@@ -148,6 +150,7 @@ bash check_prod.sh <口令> http://47.117.13.158/budget
 | `budget.nginx` | nginx 片段（`/budget/` 反代 + gzip + 关访问日志） |
 | `deploy.sh` | 幂等部署脚本 |
 | `smoke_test.py` | 接口冒烟测试（**会写数据**，只对测试实例跑） |
+| `ui_test.py` | 前端交互测试（本机 Chrome 无头，自己起临时实例，不碰数据） |
 | `check_prod.sh` | 线上只读验收（不改数据） |
 | `data.sample.json` | 示例数据（**真实账目不入库**） |
 | `secret.txt` `data.json` `img/` | 运行时生成，已在 `.gitignore` 中排除 |
