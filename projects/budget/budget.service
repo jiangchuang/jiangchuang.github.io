@@ -1,0 +1,15 @@
+[Unit]
+Description=Budget App (装修预算 · 协同编辑)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/budget
+ExecStart=/usr/bin/python3 /opt/budget/app.py 8082
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

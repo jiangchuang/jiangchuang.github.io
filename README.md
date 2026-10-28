@@ -39,9 +39,12 @@ assets/site.css       全站样式（两套主题的变量都在这一个文件�
 assets/search.json    搜索索引（收录全部 10 篇）
 assets/video/         图文版内嵌的录屏
 .nojekyll             关闭 Jekyll，纯静态直出
+projects/*/           站外小项目源码（不随站点发布，各自有 README）
 ```
 
 纯静态站点：**无后端、无构建步骤**，克隆下来直接打开 `index.html` 就能看。
+
+`projects/` 下放的是独立小项目的源码，与站点内容无关，不会被部署到线上；目前有 `projects/budget/`（家庭装修预算协同账本）。
 
 ## 主题
 

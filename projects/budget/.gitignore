@@ -1,0 +1,9 @@
+# 运行时数据与凭据，一律不入库
+secret.txt
+data.json
+data.json.bak
+# 日期快照，形如 data.2026-10-28.json
+data.[0-9]*.json
+img/
+__pycache__/
+*.pyc
