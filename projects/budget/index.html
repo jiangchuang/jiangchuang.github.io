@@ -148,6 +148,7 @@
   }
   .toolbar input[type=search]:focus,.toolbar select:focus{outline:2px solid var(--accent-soft);border-color:#e0cfc7}
   .toolbar select{padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  #fSort{display:none}   /* 桌面用表头排序；手机表头是隐藏的，改由这个下拉代替 */
   .btn{
     padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:10px;
     transition:.15s;white-space:nowrap;
@@ -175,6 +176,17 @@
   tbody tr:hover td{background:#fdfbf9}
   tbody tr.hl td{background:#fbf2ec}
   tbody tr:last-child td{border-bottom:none}
+
+  /* 表头排序：点一下升序、再点降序、第三下回到原始顺序 */
+  thead th[data-k]{cursor:pointer;user-select:none}
+  thead th[data-k]:hover{color:var(--ink);background:#f4efea}
+  thead th[data-k]::after{content:attr(data-arrow);margin-left:3px;font-size:9.5px;color:var(--accent)}
+  /* 对方刚改过的行闪一下，否则 8 秒轮询悄悄把表格换了你根本不知道哪儿变了 */
+  tbody tr.flash td{animation:rowflash 2.4s ease-out}
+  @keyframes rowflash{
+    0%,45%{background:#fdf0e6}
+    100%{background:transparent}
+  }
   td .cell{
     width:100%;border:none;background:transparent;padding:9px 8px;border-radius:0;
     min-height:38px;font-size:14px;
@@ -306,6 +318,7 @@
     main{padding:10px 12px calc(80px + env(safe-area-inset-bottom, 0px))}
     .toolbar{padding:8px 12px;gap:6px}
     .toolbar input[type=search]{flex:1 1 100%}
+    #fSort{display:inline-block;flex:1 1 auto}
     .tablewrap{background:transparent;border:none;box-shadow:none;overflow:visible;max-height:none}
     table{min-width:0;display:block}
     thead{display:none}
@@ -387,8 +400,16 @@
 </header>
 
 <div class="toolbar">
-  <input id="q" type="search" placeholder="搜索项目 / 品牌 / 备注…">
+  <input id="q" type="search" placeholder="搜索项目 / 品牌 / 型号 / 供应商 / 备注" title="按 / 或 Ctrl+K 随时回到这里">
   <select id="fProg"><option value="">全部进度</option></select>
+  <select id="fSort" title="排序">
+    <option value="">排序：默认顺序</option>
+    <option value="sub:-1">小计 从高到低</option>
+    <option value="sub:1">小计 从低到高</option>
+    <option value="price:-1">单价 从高到低</option>
+    <option value="cat:1">按分类</option>
+    <option value="prog:1">按进度</option>
+  </select>
   <div class="chips" id="catChips"></div>
   <span style="flex:1"></span>
   <button class="btn primary" id="btnAdd">+ 新增一行</button>
@@ -403,18 +424,18 @@
       <thead>
         <tr>
           <th style="width:38px">#</th>
-          <th style="width:96px">分类</th>
-          <th style="min-width:150px">项目</th>
-          <th style="width:74px">数量</th>
-          <th style="width:58px">单位</th>
-          <th style="width:104px">单价</th>
-          <th style="width:92px">附加费</th>
-          <th style="width:106px;text-align:right">小计</th>
-          <th style="width:96px">品牌</th>
-          <th style="min-width:140px">型号 / 规格</th>
-          <th style="width:104px">供应商</th>
-          <th style="width:86px">进度</th>
-          <th style="min-width:130px">备注</th>
+          <th style="width:96px" data-k="cat" title="点击排序">分类</th>
+          <th style="min-width:150px" data-k="name" title="点击排序">项目</th>
+          <th style="width:74px" data-k="qty" title="点击排序">数量</th>
+          <th style="width:58px" data-k="unit" title="点击排序">单位</th>
+          <th style="width:104px" data-k="price" title="点击排序">单价</th>
+          <th style="width:92px" data-k="extra" title="点击排序">附加费</th>
+          <th style="width:106px;text-align:right" data-k="sub" title="点击排序">小计</th>
+          <th style="width:96px" data-k="brand" title="点击排序">品牌</th>
+          <th style="min-width:140px" data-k="spec" title="点击排序">型号 / 规格</th>
+          <th style="width:104px" data-k="sup" title="点击排序">供应商</th>
+          <th style="width:86px" data-k="prog" title="点击排序">进度</th>
+          <th style="min-width:130px" data-k="note" title="点击排序">备注</th>
           <th></th>
         </tr>
       </thead>
@@ -609,9 +630,43 @@
     return out;
   }
 
+  // 排序只改视图顺序，不动 state.rows —— 保存与 CSV 仍按原始顺序
+  var sortBy = "", sortDir = 1;
+  var NUM_SORT = {qty:1, price:1, extra:1, sub:1};
+
+  function applySort(rows){
+    if (!sortBy) return rows;
+    var numeric = !!NUM_SORT[sortBy];
+    var out = rows.slice();
+    out.sort(function(a, b){
+      if (sortBy === "sub") return (sub(a) - sub(b)) * sortDir;
+      if (numeric) return (num(a[sortBy]) - num(b[sortBy])) * sortDir;
+      var x = String(a[sortBy] == null ? "" : a[sortBy]).trim();
+      var y = String(b[sortBy] == null ? "" : b[sortBy]).trim();
+      if (!x && y) return 1;                 // 空值永远沉底，别管升序降序
+      if (x && !y) return -1;
+      if (!x && !y) return 0;
+      return x.localeCompare(y, "zh-CN") * sortDir;
+    });
+    return out;
+  }
+
+  function paintSort(){
+    Array.prototype.forEach.call(document.querySelectorAll("thead th[data-k]"), function(th){
+      th.dataset.arrow = (th.dataset.k === sortBy) ? (sortDir > 0 ? "▲" : "▼") : "";
+    });
+    // 手机那个下拉要跟着走；表头点出来的组合如果不在选项里，就置回「默认顺序」
+    var cur = sortBy ? sortBy + ":" + sortDir : "";
+    var sel = $("fSort"), has = false;
+    for (var i = 0; i < sel.options.length; i++){
+      if (sel.options[i].value === cur){ has = true; break; }
+    }
+    sel.value = has ? cur : "";
+  }
+
   function visibleRows(){
     var q = filter.q.trim().toLowerCase();
-    return state.rows.filter(function(r){
+    return applySort(state.rows.filter(function(r){
       if (filter.cat && (r.cat || "未分类") !== filter.cat) return false;
       if (filter.prog && (r.prog || "") !== filter.prog) return false;
       if (q){
@@ -619,7 +674,7 @@
         if (hay.indexOf(q) < 0) return false;
       }
       return true;
-    });
+    }));
   }
 
   function render(){
@@ -652,6 +707,8 @@
 
     // rows
     var rows = visibleRows();
+    // 正在某个格子里打字时不跟着重排：按「小计」排序时改单价，行会在手底下跳走
+    if (keep && sortBy) rows = keepOrder(rows);
     elTbody.innerHTML = "";
     if (!rows.length){
       var tr = document.createElement("tr");
@@ -662,19 +719,31 @@
       rows.forEach(function(r, i){ elTbody.appendChild(rowHtml(r, i)); });
     }
     recalc();
+    paintSort();
     if (keep) restoreFocus(keep);
   }
 
+  // 沿用当前屏幕上的顺序（新出现的行追加到末尾）
+  function keepOrder(rows){
+    var pos = {}, i = 0;
+    Array.prototype.forEach.call(elTbody.querySelectorAll("tr[data-id]"), function(tr){
+      pos[tr.dataset.id] = i++;
+    });
+    var keepList = [], added = [];
+    rows.forEach(function(r){
+      if (pos[r.id] == null) added.push(r); else keepList.push(r);
+    });
+    keepList.sort(function(a, b){ return pos[a.id] - pos[b.id]; });
+    return keepList.concat(added);
+  }
+
   function restoreFocus(keep){
-    var trs = elTbody.querySelectorAll("tr[data-id]");
-    for (var i = 0; i < trs.length; i++){
-      if (trs[i].dataset.id !== keep.id) continue;
-      var el = trs[i].querySelector('[data-f="' + keep.f + '"]');
-      if (!el) return;
-      el.focus();
-      try { if (keep.s != null) el.setSelectionRange(keep.s, keep.e); } catch(err){}
-      return;
-    }
+    var tr = findRow(keep.id);
+    if (!tr) return;
+    var el = tr.querySelector('[data-f="' + keep.f + '"]');
+    if (!el) return;
+    el.focus();
+    try { if (keep.s != null) el.setSelectionRange(keep.s, keep.e); } catch(err){}
   }
 
   function recalc(){
@@ -686,7 +755,13 @@
     $("kReserve").textContent = "¥" + money(reserve);
     $("kGrand").textContent = "¥" + money(total + reserve);
     $("footSum").textContent = "¥" + money(total);
-    $("footLabel").textContent = "合计（" + count + " 项）";
+
+    // 有筛选/搜索时把「筛出几条 / 一共几条」说清楚，否则底部合计看着像少了东西
+    var shown = elTbody.querySelectorAll("tr[data-id]").length;
+    var on = !!(filter.q || filter.prog || filter.cat);
+    $("footLabel").textContent = on
+      ? "筛选 " + shown + " / 共 " + count + " 项"
+      : "合计（" + count + " 项）";
 
     // per-row subtotal
     Array.prototype.forEach.call(elTbody.querySelectorAll("tr[data-id]"), function(tr){
@@ -1226,6 +1301,40 @@
   }
 
   /* ---------- 轮询同步 ---------- */
+  function findRow(id){
+    var trs = elTbody.querySelectorAll("tr[data-id]");
+    for (var i = 0; i < trs.length; i++){
+      if (trs[i].dataset.id === id) return trs[i];
+    }
+    return null;
+  }
+
+  // 这次同步里哪些行被别人动过（新增的或字段变了的）
+  function diffRows(oldRows, newRows){
+    var oldMap = {};
+    oldRows.forEach(function(r){ oldMap[r.id] = r; });
+    var out = [];
+    newRows.forEach(function(r){
+      var o = oldMap[r.id];
+      if (!o){ out.push(r.id); return; }
+      for (var k in r){
+        if (k === "id") continue;
+        if (String(r[k]) !== String(o[k])){ out.push(r.id); return; }
+      }
+    });
+    return out;
+  }
+
+  function flashRows(ids){
+    if (!ids || !ids.length) return;
+    ids.forEach(function(id){
+      var tr = findRow(id);
+      if (!tr) return;
+      tr.classList.add("flash");
+      setTimeout(function(){ tr.classList.remove("flash"); }, 2500);
+    });
+  }
+
   function poll(){
     if (saving || dirty.size || metaDirty || todoDirty || !token || document.hidden) return;
     api("GET", null, lastEtag).then(function(res){
@@ -1235,12 +1344,14 @@
       if (res.etag) lastEtag = res.etag;
       var d = res.json;
       if ((d.v || 0) > state.v){
+        var changed = diffRows(state.rows, d.rows || []);
         state.v = d.v; state.ts = d.ts; state.who = d.who; state.rate = d.rate; state.title = d.title;
         state.rows = (d.rows || []).map(function(r){ if (!r.id) r.id = uid(); return r; });
         state.todos = d.todos || [];
         $("rate").value = state.rate;
         render();
         renderTodos();
+        flashRows(changed);
         $("statWho").textContent = (state.who ? "最后保存：" + state.who + " · " : "") + String(state.ts).replace("T", " ");
         setStatus("saved", "已同步对方的修改");
         toast("已同步对方的修改");
@@ -1320,6 +1431,18 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s"){
       e.preventDefault(); clearTimeout(saveTimer); flush();
     }
+    // 焦点在输入框里时不抢（斜杠要能正常打出来）
+    var inField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName || "");
+    if (!inField && (e.key === "/" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k"))){
+      e.preventDefault();
+      $("q").focus(); $("q").select();
+      return;
+    }
+    // 搜索框里 Esc：有内容先清空，空了再退出
+    if (e.key === "Escape" && e.target === $("q")){
+      if ($("q").value){ $("q").value = ""; filter.q = ""; render(); }
+      else $("q").blur();
+    }
   });
 
   $("rate").addEventListener("input", function(){ metaDirty = true; recalc(); markDirty(null); });
@@ -1338,6 +1461,24 @@
 
   $("q").addEventListener("input", function(){ filter.q = this.value; render(); });
   $("fProg").addEventListener("change", function(){ filter.prog = this.value; render(); });
+
+  // 表头点一下升序、再点降序、第三下回到原始顺序
+  document.querySelector("thead").addEventListener("click", function(e){
+    var th = e.target.closest("th[data-k]");
+    if (!th) return;
+    var k = th.dataset.k;
+    if (sortBy !== k){ sortBy = k; sortDir = 1; }
+    else if (sortDir === 1){ sortDir = -1; }
+    else { sortBy = ""; sortDir = 1; }
+    render();
+  });
+
+  $("fSort").addEventListener("change", function(){
+    var v = this.value;
+    if (!v){ sortBy = ""; sortDir = 1; }
+    else { var p = v.split(":"); sortBy = p[0]; sortDir = parseInt(p[1], 10) || 1; }
+    render();
+  });
   $("catChips").addEventListener("click", function(e){
     var b = e.target.closest("[data-cat]");
     if (!b) return;
@@ -1413,6 +1554,15 @@
   initTodos();
   load();
   setInterval(poll, 8000);
+
+  // 光标默认落在搜索框，打开就能直接打字找东西。
+  // 手机上不这么干——一进页面就弹键盘，半屏表格直接被挡掉。
+  var coarse = window.matchMedia && window.matchMedia("(hover:none) and (pointer:coarse)").matches;
+  setTimeout(function(){
+    if (!$("gate").hidden){ $("gateKey").focus(); return; }   // 还在口令门就别抢
+    if (coarse) return;
+    try { $("q").focus({preventScroll:true}); } catch(e){ $("q").focus(); }
+  }, 220);
 
   // 手机切后台会节流定时器：切走前把脏改动立刻发出，切回来立刻拉一次。
   document.addEventListener("visibilitychange", function(){
