@@ -135,9 +135,14 @@
 </style>
 </head>
 <body>
-<div class="jc-float-nav" style="position:fixed;top:12px;right:14px;z-index:9999;display:flex;gap:8px">
-  <a href="../index.html" title="返回目录" style="display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:999px;font:13px/1.4 system-ui,'Microsoft YaHei',sans-serif;text-decoration:none;color:#374151;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.14);box-shadow:0 1px 4px rgba(0,0,0,.08)">目录</a>
-  <a href="../search.html" title="搜索笔记" style="display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:999px;font:13px/1.4 system-ui,'Microsoft YaHei',sans-serif;text-decoration:none;color:#374151;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.14);box-shadow:0 1px 4px rgba(0,0,0,.08)">搜索</a>
+<style>
+.jc-float-nav{position:fixed;top:12px;right:14px;z-index:9999;display:flex;align-items:center;background:rgba(255,255,255,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(15,23,42,.1);border-radius:999px;box-shadow:0 2px 12px rgba(15,23,42,.1);overflow:hidden}
+.jc-float-nav a{padding:7px 16px;font:600 13px/1.4 system-ui,"Microsoft YaHei",sans-serif;color:#334155;text-decoration:none;transition:background .15s,color .15s}
+.jc-float-nav a:hover{background:rgba(37,99,235,.09);color:#1d4ed8}
+.jc-float-nav .sep{width:1px;height:14px;background:rgba(15,23,42,.14);flex:none}
+</style>
+<div class="jc-float-nav">
+  <a href="../index.html">目录</a><span class="sep"></span><a href="../search.html">搜索</a>
 </div>
 <div class="wrap">
 
