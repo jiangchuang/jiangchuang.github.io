@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦 SQL 日志怎么读：把日志里的 ? 还原成真实参数 · 交互版</title>
+<style>
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 20px 60px;
+    background: #f3f4f6; color: #1f2937;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  header.hd { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 26px 30px; margin-bottom: 22px; }
+  header.hd h1 { margin: 0 0 6px; font-size: 23px; color: #111827; }
+  header.hd .sub { color: #4b5563; font-size: 14px; margin-bottom: 14px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-block; font-size: 12px; padding: 3px 11px; border-radius: 999px; border: 1px solid }
+  .b-ok { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+  .b-src { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+  .b-warn { background: #fffbeb; color: #b45309; border-color: #fde68b; }
+  .b-new { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
+  .chip { font-family: Consolas, "Courier New", monospace; font-size: 11.5px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+
+  section.card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 24px 28px 20px; margin-bottom: 26px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+  section.card h2 { margin: 0 0 4px; font-size: 19px; color: #111827; }
+  section.card .h2sub { color: #6b7280; font-size: 13px; margin-bottom: 14px; }
+  section.card h3 { margin: 20px 0 6px; font-size: 15.5px; color: #111827; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 5fr) minmax(360px, 7fr); gap: 20px; align-items: start; }
+  .steps { display: flex; flex-direction: column; gap: 12px; }
+  .step { background: #ffffff; border: 1px solid #e5e7eb; border-left: 5px solid #2563eb; border-radius: 0 12px 12px 0; padding: 14px 16px 12px; cursor: pointer; outline: none; transition: box-shadow .16s ease, border-color .16s ease; }
+  .step:hover, .step:focus-visible { box-shadow: 0 0 0 3px rgba(37,99,235,.14); }
+  .step.on { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37,99,235,.18); }
+  .step .no { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 700; font-size: 13px; margin-right: 9px; flex: none; }
+  .step .t { font-weight: 700; font-size: 15px; color: #111827; }
+  .step .d { font-size: 12.5px; color: #4b5563; margin-top: 5px; padding-left: 35px; }
+  .step .go { font-size: 11.5px; color: #1d4ed8; margin-top: 6px; padding-left: 35px; font-weight: 600; }
+
+  .panel { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.04); position: sticky; top: 16px; overflow: hidden; }
+  .panel-hd { display: flex; align-items: center; gap: 10px; padding: 14px 18px 12px; border-bottom: 1px solid #f1f3f6; background: #fbfcfe; }
+  .panel-hd .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; background: #2563eb; }
+  .panel-hd .tt { font-size: 15.5px; font-weight: 700; color: #111827; }
+  .panel-hd .pin { margin-left: auto; font-size: 11.5px; color: #b45309; border: 1px solid #fde68b; background: #fffbeb; border-radius: 999px; padding: 2px 10px; display: none; }
+  .panel.pinned .panel-hd .pin { display: inline-block; }
+  .panel-bd { padding: 14px 18px 18px; }
+  .detail { display: none; }
+  .detail.in { display: block; animation: fadeSlide .22s ease both; }
+  @keyframes fadeSlide { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .detail .goal { font-size: 13px; color: #374151; margin: 0 0 10px; }
+  .cmdbox { position: relative; margin: 0 0 10px; }
+  .cmdbox pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px 18px; font-size: 12.5px; line-height: 1.65; overflow-x: auto; font-family: Consolas, "Courier New", monospace; margin: 0; }
+  .cmdbox pre .st { color: #86efac; }
+  .cmdbox .cp { position: absolute; top: 8px; right: 8px; font-size: 11.5px; color: #cbd5e1; background: rgba(30,41,59,.85); border: 1px solid #475569; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+  .cmdbox .cp:hover { color: #fff; border-color: #94a3b8; }
+  #panel-default { padding: 30px 20px; text-align: center; color: #6b7280; font-size: 13.5px; }
+  #panel-default .big { font-size: 40px; margin-bottom: 8px; }
+
+  .note { background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 0 8px 8px 0; padding: 12px 18px; margin-top: 14px; font-size: 13.5px; }
+  .note b { color: #1e40af; }
+  .note.warn { border-left-color: #d97706; }
+  .note.warn b { color: #b45309; }
+  .transcript { font-size: 13px; color: #374151; white-space: pre-wrap; font-family: Consolas, "Courier New", monospace; line-height: 1.6; margin: 8px 0 0; }
+  .transcript .t { font-weight: 700; color: #111827; }
+
+  table.kv { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  table.kv th, table.kv td { border: 1px solid #e5e7eb; padding: 6px 12px; text-align: left; vertical-align: top; }
+  table.kv th { background: #f3f4f6; color: #374151; font-weight: 600; }
+  table.kv td.mono { font-family: Consolas, "Courier New", monospace; font-size: 12.5px; }
+  table.kv tr:nth-child(even) td { background: #fafbfc; }
+
+  .faq-item { border: 1px solid #e5e7eb; border-radius: 10px; margin-top: 10px; overflow: hidden; }
+  .faq-item .q { width: 100%; text-align: left; background: #f8fafc; border: none; padding: 12px 16px; font-size: 14px; font-weight: 700; color: #111827; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; }
+  .faq-item .q .arr { margin-left: auto; color: #64748b; transition: transform .16s ease; flex: none; }
+  .faq-item.open .q .arr { transform: rotate(180deg); }
+  .faq-item .a { display: none; padding: 4px 16px 14px; font-size: 13.5px; color: #374151; }
+  .faq-item.open .a { display: block; }
+  .faq-item .a p { margin: 8px 0; }
+  .faq-item .a ul { margin: 6px 0; padding-left: 20px; }
+  .faq-item .a li { margin: 5px 0; }
+
+  footer.ft { color: #6b7280; font-size: 12.5px; text-align: center; margin-top: 10px; }
+  @media (max-width: 980px) { .stage { grid-template-columns: 1fr; } .panel { position: static; } }
+  @media print { body { background: #fff; padding: 0; } .panel { position: static; } .detail { display: block !important; animation: none; } #panel-default { display: none; } .faq-item .a { display: block !important; } .cmdbox .cp { display: none; } }
+
+  section.card.cta { background: #fbfcfe; border-color: #dbe4f0; }
+  .cta-grid { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 26px; align-items: start; margin-top: 8px; }
+  .cta-qr { text-align: center; }
+  .cta-qr img { display: block; width: 176px; height: 176px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px; }
+  .cta-cap { font-size: 12px; color: #6b7280; margin-top: 9px; line-height: 1.55; }
+  .cta-item + .cta-item { margin-top: 16px; padding-top: 16px; border-top: 1px dashed #e5e7eb; }
+  .cta-item b { font-size: 14px; color: #111827; }
+  .cta-item p { margin: 5px 0 0; font-size: 13.5px; color: #374151; }
+  .cta-mail a { color: #1d4ed8; font-weight: 600; text-decoration: none; border-bottom: 1px solid #bfdbfe; }
+  .cta-fine { margin: 16px 0 0; font-size: 12px; color: #9ca3af; }
+  .cta-fine a { color: #6b7280; text-decoration: underline; }
+  @media (max-width: 640px) { .cta-grid { grid-template-columns: 1fr; gap: 18px; } }
+
+  .jc-float-nav{position:fixed;top:12px;right:14px;z-index:9999;display:flex;align-items:center;background:rgba(255,255,255,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(15,23,42,.1);border-radius:999px;box-shadow:0 2px 12px rgba(15,23,42,.1);overflow:hidden}
+  .jc-float-nav a{padding:7px 16px;font:600 13px/1.4 system-ui,"Microsoft YaHei",sans-serif;color:#334155;text-decoration:none;transition:background .15s,color .15s}
+  .jc-float-nav a:hover{background:rgba(37,99,235,.09);color:#1d4ed8}
+  .jc-float-nav .sep{width:1px;height:14px;background:rgba(15,23,42,.14);flex:none}
+</style>
+</head>
+<body>
+<div class="jc-float-nav">
+  <a href="../index.html">目录</a><span class="sep"></span><a href="../search.html">搜索</a>
+</div>
+<div class="wrap">
+
+  <header class="hd">
+    <h1>达梦 SQL 日志怎么读：把日志里的 <code>?</code> 还原成真实参数 · 交互版</h1>
+    <p class="sub">日志里全是 <code>where id = ?</code>，谁也复现不了现场。dmsqlq 把 <code>PARAMS</code> 行里的真实值填回去，
+      输出<b>能直接贴进 disql 跑</b>的语句，顺带出一份「先优化哪条 SQL」的报告。<b>单个可执行文件、不连数据库、不建表、不联网</b>。</p>
+    <div class="badges">
+      <span class="badge b-ok">本机实测 v2.37</span>
+      <span class="badge b-src">DM8 SQL 日志（dmsql_*.log）</span>
+      <span class="badge b-warn">不落库 · 零依赖</span>
+      <span class="badge b-new">4 步全程可复制</span>
+    </div>
+    <div class="chips">
+      <span class="chip">dmsqlq</span>
+      <span class="chip">PARAMS 还原</span>
+      <span class="chip">-s 报告</span>
+      <span class="chip">-o 可执行 SQL</span>
+      <span class="chip">-m 只看慢的</span>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>四条命令，从上不了手到能交付</h2>
+    <div class="h2sub">命令里的目录换成你日志所在的目录，其余照抄。点任一步，右侧就是命令和真实执行输出。</div>
+
+    <div class="stage">
+      <div class="steps">
+        <div class="step" data-k="1" data-title="第 1 步 · 找到日志" tabindex="0">
+          <div class="t"><span class="no">1</span>找到日志</div>
+          <div class="d">认准 dmsql_*.log</div>
+          <div class="go">点击查看 →</div>
+        </div>
+        <div class="step" data-k="2" data-title="第 2 步 · 出报告" tabindex="0">
+          <div class="t"><span class="no">2</span>出报告</div>
+          <div class="d">先扫一眼有没有问题</div>
+          <div class="go">点击查看 →</div>
+        </div>
+        <div class="step" data-k="3" data-title="第 3 步 · 还原参数" tabindex="0">
+          <div class="t"><span class="no">3</span>还原参数导出 SQL</div>
+          <div class="d">? 变回真实值，可直接执行</div>
+          <div class="go">点击查看 →</div>
+        </div>
+        <div class="step" data-k="4" data-title="第 4 步 · 只要慢的" tabindex="0">
+          <div class="t"><span class="no">4</span>只要慢的</div>
+          <div class="d">按耗时卡一道，出交付清单</div>
+          <div class="go">点击查看 →</div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel">
+        <div class="panel-hd">
+          <span class="dot"></span>
+          <span class="tt" id="panel-title">步骤明细</span>
+          <span class="pin">已固定</span>
+        </div>
+        <div class="panel-bd">
+          <div id="panel-default">
+            <p class="goal">左侧点一步，这里显示该步的命令和真实执行输出。点同一块可取消固定，按 Esc 也可。</p>
+            <div class="note">
+              <b>输出来源</b>：dmsqlq v2.37（go1.27.1 windows/amd64），命令与屏幕输出是本机实跑取的。
+              演示用的是一份合成样例日志；<b>性能与还原率数字</b>来自工具文档中的现网实测（1.03 GB 单文件、以及 14 个来源 13.9 GB 全量），页面里都标了样本。
+            </div>
+          </div>
+
+          <div class="detail" data-k="1">
+            <p class="goal">日志默认落在实例目录的 <code>log</code> 下，文件名形如 <code>dmsql_DMSERVER_20260910.log</code>：</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>ls /opt/dmdbms/data/DAMENG/log/dmsql_*.log</code></pre>
+            </div>
+            <div class="note">
+              <b>三个不要认错</b>：
+              <ul>
+                <li><code>dmsql_*.log</code> —— <b>要的就是这个</b>（SQL 日志）</li>
+                <li><code>dm_*.log</code> —— 实例事件日志，不是它</li>
+                <li><code>dmtrc_*.log</code> —— 跟踪日志，也不是它</li>
+              </ul>
+              机器上没有？说明 SQL 日志没开或没采到，看问题区第一条。
+            </div>
+          </div>
+
+          <div class="detail" data-k="2">
+            <p class="goal">一条命令，HTML 报告自动生成并用浏览器打开：</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>dmsqlq D:\dmsql_log -s</code></pre>
+            </div>
+            <div class="note">
+              <b>屏幕上长这样</b>（<code>-S</code> 是不出文件、只在屏幕扫一眼的版本）：
+              <pre class="transcript">dmsqlq 2.37 统计报告   2026-10-31 00:45:14
+────────────────────────────── 概览 ──────────────────────────────
+  ★ 头号问题：累计耗时最高的是一类语句（600 次 / 累计 18.03s，
+    占语句总耗时的 89.2%）—— 从它开始优化收益最大。
+  日志文件         1 个（0.2 MB）
+  SQL 事件         686 条
+  参数还原         600 成功 / 86 待还原  (87.46%)
+  扫描耗时         7ms → 36 MB/s
+  日志时段         2026-09-10 09:00:00 → 09:09:59（跨度 10.0 分钟）
+────────────── 优先优化推荐 Top2（按影响占比排序） ───────────────
+    1 [优先] 影响占比 89.2%  次数 600  平均 30ms  累计 18.03s
+      问题信号：SELECT * 取全字段（直接查基表）
+      建议动作：只取需要的列 —— 覆盖索引时才可能免回表
+      语句样例：SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000000' AND status = 0</pre>
+              注意它排的是<b>累计耗时占比</b>，不是「单次最慢」——一天只跑一次的慢查询不该排在高频慢查询前面。
+            </div>
+          </div>
+
+          <div class="detail" data-k="3">
+            <p class="goal">把 <code>?</code> 换成真实值，写成能直接执行的 .sql：</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>dmsqlq D:\dmsql_log -o out.sql</code></pre>
+            </div>
+            <div class="note">
+              <b>out.sql 里长这样</b>：
+              <pre class="transcript">-- 2026-09-10 09:00:00 · [SEL] · 0.1ms · SYSDBA, · trxid:3816438, · SAMPLE
+SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000000' AND status = 0;
+
+-- 2026-09-10 09:00:00 · [UPD] · 0.5ms · SYSDBA, · trxid:3816438, · SAMPLE · /*未找到匹配参数: 占位符2个*/
+update ACCOUNTS set BALANCE = BALANCE + ? where ACCT_ID = ?;</pre>
+              两条对照看就懂了：第一条参数填好了，第二条<b>工具明说了「没找到参数」</b>而不是假装还原成功 ——
+              这类行多半是采集侧没记下 PARAMS（见问题区）。
+            </div>
+          </div>
+
+          <div class="detail" data-k="4">
+            <p class="goal">只想看超过 1 秒的、按耗时倒序取最慢 20 条：</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>dmsqlq D:\dmsql_log -m 1000 -B 20 -o slow.sql</code></pre>
+            </div>
+            <div class="note">
+              <b>实际输出</b>（样例取最慢 3 条）：
+              <pre class="transcript">-- 2026-09-10 09:09:59 · [SEL] · 60ms · SYSDBA, · trxid:3816637, · SAMPLE
+SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000599' AND status = 5;
+
+-- 2026-09-10 09:09:58 · [SEL] · 59.9ms · SYSDBA, · trxid:3816637, · SAMPLE
+SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</pre>
+              要发给开发商当优化清单，加 <code>-e 交付_202609.xlsx</code> 直接出 Excel（按累计耗时降序标好优先级）。
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>现网实测：大到什么程度还扛得住</h2>
+    <div class="h2sub">数字来自工具仓库文档里的实测记录，样本与版本都列在下面，能自己复核。</div>
+    <table class="kv">
+      <tr><th style="width:230px">样本</th><th style="width:200px">实测结果</th><th>说明</th></tr>
+      <tr>
+        <td>单文件 <b>1.03 GB</b> 现网日志<br><span style="color:#6b7280">334 万条记录 / 92 万 SQL 事件</span></td>
+        <td class="mono">2.26 s<br>≈ 455 MB/s（单线程）</td>
+        <td>输出 46.8 万条可直接执行 SQL；参数还原成功率 <b>97.8%</b>。热数据单文件实测 549 MB/s</td>
+      </tr>
+      <tr>
+        <td>7 个日志 7.3 GB（冷盘）</td>
+        <td class="mono">-j 1 → 99 MB/s<br>-j 4 → 157 MB/s<br>-j 8 → 146 MB/s</td>
+        <td>并发甜点在 <b>4</b>；到 8 已经撞上磁盘读带宽，再加没用</td>
+      </tr>
+      <tr>
+        <td>13.9 GB 全量（14 个来源）</td>
+        <td class="mono">锁等待 1,446 次<br>最长 1.71 s</td>
+        <td>顺带给出被争抢最狠的对象（表 10175：1,156 次、占全部等待 80%），拿 table id 反查字典即可定位</td>
+      </tr>
+    </table>
+    <div class="note">
+      <b>一句话结论</b>：这个活是 <b>I/O 型的</b>，CPU 从来不是瓶颈 —— 否则单线程跑不到 549 MB/s。
+      所以「外面包一层 rg 会不会更快」在本任务上站不住：真正花钱的是磁盘读和 gzip 解压，不是匹配。
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>常见问题：只有卡住了才需要往下看</h2>
+
+    <div class="faq-item">
+      <button class="q"><span>日志里「锁等待 0 次」，是真的没锁竞争吗？</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p><b>大概率是没采集到，不是没发生。</b>工具会直接把这件事挑明：</p>
+        <pre class="transcript">  采集缺口   缺位号 29：本批日志无事务/锁事件行（TRX: / DLCK / LOCK_TID 全为 0）
+             → 「锁等待」「长事务」「TPS」是没采集到，不是没发生</pre>
+        <p>判据很硬：29 位号一旦开启，事务事件行必然大量出现，<b>不可能恰好是 0</b>。
+          要这一维度就在 <code>sqllog.ini</code> 的 <code>SQL_TRACE_MASK</code> 里打开 29 重采；
+          短期替代是在库上查 <code>V$TRXWAIT</code> / <code>V$LOCK</code>。</p>
+        <p>工具还会顺手做一份<b>采集配置体检</b>：缺 28 就没有参数行，缺 27 就没有原始语句，缺 23 就没有报错语句 ——
+          这类「查不出来」的问题，第一嫌疑永远是采集侧配置，不是解析器。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>为什么有的语句还原不出来，还专门标一行「未找到匹配参数」？</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p>因为<b>「没还原」和「还原错了」是两种完全不同的后果</b>：前者你知道要手工补，后者你会拿着一条假 SQL 去复现一个不存在的现场。
+          所以工具把还原不出来的语句原样保留 <code>?</code>，并在注释头里写明占位符个数，绝不静默编一个值进去。</p>
+        <p>常见原因：这条语句执行前日志里<b>根本没有对应的 PARAMS 行</b>（采集侧没记，位号 28）；
+          或者是日志被截断、跨文件的会话块不匹配。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>单个大日志，开 -j 30 会不会快很多？</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p>不会。并发只作用于<b>多个文件 / 压缩包内的多个条目</b>；单个大文件开满核也没用（实测 <code>-j 1</code> 与 <code>-j 30</code> 同速）。
+          在库服务器上跑建议 <code>-j 2~4</code>：解析只吃本机 CPU 和磁盘读，<b>留几核给数据库实例</b>比抢那几秒重要。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>和官方的 DMLOG 工具怎么选？</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p>先说清楚：DMLOG 是这条路上的<b>先行者</b>，从零到一把「SQL 日志能分析」这件事做成了，
+          后来者（包括 dmsqlq）都是站在它提供的思路和口径上往前走的。下面只讲<b>形态差异</b>，不是谁替代谁：</p>
+        <table class="kv">
+          <tr><th style="width:150px">维度</th><th>官方 DMLOG 8.183</th><th>dmsqlq</th></tr>
+          <tr>
+            <td>运行方式</td>
+            <td class="mono">需要 DM 分析库 + 32K 页 + dmlog.properties + JDBC</td>
+            <td class="mono">单二进制，dmsqlq .</td>
+          </tr>
+          <tr>
+            <td>结果落地</td>
+            <td>在被分析的库里 DROP/CREATE 6 张表</td>
+            <td>直接出 SQL 文本文件（不落库）</td>
+          </tr>
+          <tr>
+            <td>参数含 <code>?</code> 的语句</td>
+            <td>因「值里含 <code>?</code>」整条放弃（同一批现网日志实测还原率 10.9%）</td>
+            <td>继续还原（同批 97.8%）</td>
+          </tr>
+          <tr>
+            <td>值里带逗号</td>
+            <td>会静默切掉前缀仍标记成功</td>
+            <td>实测 14.9 万条含逗号/含引号的值全部完整</td>
+          </tr>
+        </table>
+        <p><b>怎么选</b>：要长期建库做趋势分析、有专门的 analys 库 → DMLOG 那套仍然合适；
+          要<b>临时拿一份现网日志、几分钟内出结论、且绝不能在生产库上建表</b>（尤其不能出现 <code>LOG_COMMIT</code> 同名被 DROP 的风险）→ 用不落库的这一支。</p>
+        <p><b>没做的事也说明白</b>：本次没有对 DMLOG 做计时实测，所以这里<b>不引用任何耗时对比</b>，只比有实测支撑的维度。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>它会不会改我的库 / 要不要装运行时？</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p>都不。单个可执行文件，<b>不连数据库、不建表、不装运行时、不联网</b>，只读日志文件写结果文件。
+          <code>dmsqlq install</code> 也只是把二进制放进用户级目录并修 PATH（不动 <code>/usr</code>、不碰其他账号），
+          <code>--remove</code> 整套撤销。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>交互模式怎么用？记不住参数</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p>直接敲 <code>dmsqlq</code> 不带参数就是向导，五问（日志在哪 / 要什么结果 / 时间范围 / 耗时下限 / 操作类型），
+          <b>每一步回车就是推荐值</b>，最后还会把等效命令行打印出来，下次照着敲就行：</p>
+        <pre class="transcript">① 日志在哪里？
+  * 1) D:\dmsql_log   （7 个日志/压缩包）
+    2) 手动输入其他路径…
+② 想要什么结果？  1) HTML 统计报告  2) 只在屏幕上看统计  3) 导出全部可执行 SQL  4) Excel 交付件
+...
+等效命令（以后可跳过向导直接用）：
+    dmsqlq D:\dmsql_log -s</pre>
+        <p>顺带一提：TAB 补全会在首次交互运行时自动装好，选项和路径都能补。</p>
+      </div>
+    </div>
+
+  </section>
+
+  <section class="card cta">
+    <h2>卡在哪一步了？</h2>
+    <div class="h2sub">把报错原文贴出来，比描述现象有用得多。</div>
+    <div class="cta-grid">
+      <div class="cta-qr">
+        <img src="../assets/wechat-qr.png" alt="微信二维码">
+        <div class="cta-cap">扫码加微信<br>备注「达梦」</div>
+      </div>
+      <div>
+        <div class="cta-item">
+          <b>贴什么最有帮助</b>
+          <p>① 完整报错或异常输出（含工具提示的「采集缺口」行）；<br>
+             ② 你执行的那条命令原文；<br>
+             ③ <code>dmsqlq --version</code> 的输出与操作系统 —— 版本不同，行为可能不同。</p>
+        </div>
+        <div class="cta-item">
+          <b>不要贴什么</b>
+          <p>生产库的真实日志全文、客户表结构、连接串与口令。定位问题不需要这些 —— 先用 <code>-m</code> / <code>-B</code> 把范围卡小。</p>
+        </div>
+        <p class="cta-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+        <p class="cta-fine">工具本体在 <a href="https://gitee.com/jiangchuang/DMSQLQ" target="_blank" rel="noopener">Gitee · DMSQLQ</a>；想让答案别人也能查到，在仓库提 issue。</p>
+      </div>
+    </div>
+  </section>
+
+  <p style="text-align:center;padding:6px 0 0">
+    <a href="../index.html" style="color:#2563eb;text-decoration:none;font-size:13.5px">← 返回指南索引</a>
+  </p>
+
+  <footer style="text-align:center;color:#94a3b8;font-size:12.5px;padding:28px 0 40px">
+    达梦 SQL 日志解析（dmsqlq）· 交互版 ｜ 本机实测 v2.37 ｜ 2026-10-31
+  <br><span>联系：<a href="mailto:jiang-chuang@qq.com" style="color:inherit;text-decoration:underline">jiang-chuang@qq.com</a></span>
+  <br><span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">渝ICP备2026027352号-1</a></span>
+  </footer>
+
+</div>
+<script>
+(function () {
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+  var details = Array.prototype.slice.call(document.querySelectorAll('.detail'));
+  var dflt = document.getElementById('panel-default');
+  var panel = document.getElementById('panel');
+  var title = document.getElementById('panel-title');
+  var pinned = null;
+
+  function show(k) {
+    var cur = null;
+    dflt.style.display = 'none';
+    details.forEach(function (d) { d.classList.toggle('in', d.dataset.k === k); });
+    steps.forEach(function (g) {
+      var on = (g.dataset.k === k);
+      g.classList.toggle('on', on);
+      if (on) { cur = g; }
+    });
+    title.textContent = (cur && cur.dataset.title) || '步骤明细';
+  }
+  function reset() {
+    dflt.style.display = '';
+    details.forEach(function (d) { d.classList.remove('in'); });
+    steps.forEach(function (g) { g.classList.remove('on'); });
+    title.textContent = '步骤明细';
+    panel.classList.remove('pinned');
+  }
+  steps.forEach(function (g) {
+    var k = g.dataset.k;
+    g.addEventListener('click', function () {
+      if (pinned === k) { pinned = null; panel.classList.remove('pinned'); reset(); }
+      else { pinned = k; panel.classList.add('pinned'); show(k); }
+    });
+    g.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); g.click(); }
+    });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && pinned) { pinned = null; panel.classList.remove('pinned'); reset(); }
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.cmdbox .cp'), function (btn) {
+    btn.addEventListener('click', function () {
+      var box = btn.closest('.cmdbox');
+      var code = box.querySelector('code');
+      var text = code ? code.innerText : '';
+      function ok() { btn.textContent = '已复制 ✓'; setTimeout(function () { btn.textContent = '复制'; }, 1600); }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) { btn.textContent = '复制失败'; }
+        document.body.removeChild(ta);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok, fallback);
+      } else { fallback(); }
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.faq-item .q'), function (q) {
+    q.addEventListener('click', function () { q.parentElement.classList.toggle('open'); });
+  });
+})();
+</script>
+</body>
+</html>
