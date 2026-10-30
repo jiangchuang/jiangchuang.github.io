@@ -2,7 +2,9 @@
 
 达梦现场最常用问题自助解答 —— 交互式操作指南，照着做就能做对。
 
-**在线访问：<https://www.jiangchuang.top/>**（渝ICP备2026027352号）
+**正式站：<https://www.jiangchuang.top/>**（渝ICP备2026027352号）
+
+**镜像：<https://jiangchuang.github.io>**
 
 ---
 
