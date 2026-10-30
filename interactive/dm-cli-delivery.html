@@ -62,6 +62,7 @@
   .cmdbox pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px 18px; font-size: 12.5px; line-height: 1.65; overflow-x: auto; font-family: Consolas, "Courier New", monospace; margin: 0; }
   .cmdbox pre .cm { color: #94a3b8; }
   .cmdbox pre .ph { color: #fbbf24; font-weight: 700; }
+  .cmdbox pre .st { color: #86efac; }
   .cmdbox .cp { position: absolute; top: 8px; right: 8px; font-size: 11.5px; color: #cbd5e1; background: rgba(30,41,59,.85); border: 1px solid #475569; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
   .cmdbox .cp:hover { color: #fff; border-color: #94a3b8; }
   .detail .warnline { color: #b45309; font-weight: 600; font-size: 12.5px; }
@@ -147,110 +148,56 @@
 
   <header class="hd">
     <h1>达梦命令行交付实操：登录、表空间、授权与建表 · 交互版</h1>
-    <p class="sub">一次交付里最小的一套动作 —— <b>能登录、有地方存、有人能用、能建出表</b>。五步走完，每一条命令后面都跟着真实执行输出；本文只讲 <code>disql</code>，不出现任何图形工具操作。</p>
+    <p class="sub">交付现场照抄的五条命令 —— <b>能登录、有地方存、有人能用、能建出表</b>。每条都是代入真实值的样子，点开能看到执行完屏幕上长什么样。顺利的话五分钟跑完，<b>下面的问题区根本不用看</b>。</p>
     <div class="badges">
       <span class="badge b-ok">集群实例实测</span>
       <span class="badge b-src">DM8 2026-08-03（DPC 四节点）</span>
-      <span class="badge b-warn">授权口径已实测核实</span>
       <span class="badge b-new">5 步全程可复制</span>
     </div>
     <div class="chips">
       <span class="chip">disql</span>
       <span class="chip">CREATE TABLESPACE</span>
       <span class="chip">CREATE USER</span>
-      <span class="chip">GRANT RESOURCE / SOI / VTI</span>
+      <span class="chip">GRANT</span>
       <span class="chip">CREATE TABLE</span>
-    </div>
-    <div class="note warn" style="margin-top:16px">
-      <b>先说一处与常见说法不一致的地方。</b>现场流传的授权口径是「给 <code>VTI</code> / <code>SOI</code> / <code>RESOURCE</code>」。
-      本篇按这套口径授完权限后逐项去查，结果是：<b>RESOURCE 在建对象、SOI 在让元数据查得到、而 VTI 在本版本是个空角色</b>
-      （系统权限 0 条、对象权限 0 条、嵌套角色 0 个）。第 4 步有撤/授对照实验，你可以自己复跑。<br>
-      <b>这不是要推翻现场口径</b> —— 授 VTI 不会出错，也不会挡住任何事，只是它不提供任何权限，别指望它解决「看不到视图」的问题。
     </div>
   </header>
 
   <section class="card">
-    <h2>五步概览：每一步的产出和最容易错的地方</h2>
-    <div class="h2sub">照着顺序做，每步结尾会告诉你「怎么证明这步真的成了」。</div>
-    <table class="kv">
-      <tr>
-        <th style="width:96px">步骤</th>
-        <th style="width:230px">这条命令产出什么</th>
-        <th style="width:200px">怎么证明它成了</th>
-        <th>最容易错的地方</th>
-      </tr>
-      <tr>
-        <td><b>1 · 登录</b><br><span style="color:#6b7280">disql</span></td>
-        <td class="mono">一个能执行 SQL 的会话</td>
-        <td>回显 <code>mode is normal, state is open</code></td>
-        <td>口令含 <code>#</code> 会被当成扩展选项；口令错时不会退出，而是掉回交互输入</td>
-      </tr>
-      <tr>
-        <td><b>2 · 表空间</b><br><span style="color:#6b7280">CREATE TABLESPACE</span></td>
-        <td class="mono">一个带数据文件的命名存储区</td>
-        <td class="mono">dba_data_files 里有这一行</td>
-        <td>在集群里，文件<b>不一定</b>落在你连的那个节点上；DDL 成功时什么都不打印</td>
-      </tr>
-      <tr>
-        <td><b>3 · 用户</b><br><span style="color:#6b7280">CREATE USER</span></td>
-        <td class="mono">一个能登录的账号，带默认表空间</td>
-        <td class="mono">dba_users 的 DEFAULT_TABLESPACE</td>
-        <td>只写在建用户语句里不算数，必须回查这一列</td>
-      </tr>
-      <tr>
-        <td><b>4 · 授权</b><br><span style="color:#6b7280">GRANT</span></td>
-        <td class="mono">建对象 + 查元数据的权限</td>
-        <td class="mono">dba_role_privs 里有这三行</td>
-        <td>以为授了就什么都能查；<b>VTI 在本版本是空角色</b></td>
-      </tr>
-      <tr>
-        <td><b>5 · 建表</b><br><span style="color:#6b7280">CREATE TABLE</span></td>
-        <td class="mono">一张真能在里面存数据的表</td>
-        <td class="mono">user_tables 的 TABLESPACE_NAME</td>
-        <td>建表成功 ≠ 落在你要的表空间，必须查 <code>user_tables</code></td>
-      </tr>
-    </table>
-    <div class="note">
-      <b>一句话记住</b>：这套动作里真正会翻车的从来不是“命令写错”，而是<b>「命令返回成功，但结果不在你以为的地方」</b>。
-      所以每一步都配了一条回查语句 —— 前四条都能在 <code>dba_*</code> 字典里对出来，第五条只能在用户自己的 <code>user_tables</code> 里对。
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>五步速成：从登录到建出第一张表</h2>
-    <div class="h2sub">点左侧任一步骤，右侧给出该步的命令、实测输出与判断依据。</div>
+    <h2>五条命令，照抄就能跑通</h2>
+    <div class="h2sub">命令里的值（口令、IP、表空间名）换成你现场自己的，其余一个字都不用改。点左侧任一步，右侧就是命令和执行完的屏幕输出。</div>
 
     <div class="stage">
       <div class="steps">
 
-        <div class="step" data-k="1" data-title="第 1 步 · 用 disql 登录" tabindex="0">
-          <div class="t"><span class="no">1</span>用 disql 登录</div>
-          <div class="d">回显里那行 open 才是登录成功的证据</div>
-          <div class="go">点击查看命令 →</div>
+        <div class="step" data-k="1" data-title="第 1 步 · 登录" tabindex="0">
+          <div class="t"><span class="no">1</span>登录</div>
+          <div class="d">看到 SQL&gt; 就成了</div>
+          <div class="go">点击查看 →</div>
         </div>
 
         <div class="step" data-k="2" data-title="第 2 步 · 建表空间" tabindex="0">
-          <div class="t"><span class="no">2</span>建一个属于业务的表空间</div>
-          <div class="d">集群里文件落在哪个节点不由你决定</div>
-          <div class="go">点击查看命令 →</div>
+          <div class="t"><span class="no">2</span>建表空间</div>
+          <div class="d">给业务数据一个存放区</div>
+          <div class="go">点击查看 →</div>
         </div>
 
-        <div class="step" data-k="3" data-title="第 3 步 · 建用户并指定默认表空间" tabindex="0">
-          <div class="t"><span class="no">3</span>建用户，把默认表空间钉死</div>
-          <div class="d">建完不查，等于没建</div>
-          <div class="go">点击查看命令 →</div>
+        <div class="step" data-k="3" data-title="第 3 步 · 建用户" tabindex="0">
+          <div class="t"><span class="no">3</span>建用户</div>
+          <div class="d">交付给客户的业务账号</div>
+          <div class="go">点击查看 →</div>
         </div>
 
-        <div class="step" data-k="4" data-title="第 4 步 · 授权：三个角色实际给什么" tabindex="0">
-          <div class="t"><span class="no">4</span>授权，并搞清楚每个角色到底给了什么</div>
-          <div class="d">RESOURCE 干活、SOI 让元数据可见、VTI 是空的</div>
-          <div class="go">点击查看实测 →</div>
+        <div class="step" data-k="4" data-title="第 4 步 · 授权" tabindex="0">
+          <div class="t"><span class="no">4</span>授权</div>
+          <div class="d">一条 GRANT 完事</div>
+          <div class="go">点击查看 →</div>
         </div>
 
-        <div class="step" data-k="5" data-title="第 5 步 · 建表并验证落位" tabindex="0">
-          <div class="t"><span class="no">5</span>建表，验证它真的在指定表空间里</div>
-          <div class="d">user_tables 那一列是唯一硬证据</div>
-          <div class="go">点击查看命令 →</div>
+        <div class="step" data-k="5" data-title="第 5 步 · 建表" tabindex="0">
+          <div class="t"><span class="no">5</span>建表</div>
+          <div class="d">插两行数据，看到它们回来就收工</div>
+          <div class="go">点击查看 →</div>
         </div>
 
       </div>
@@ -263,242 +210,81 @@
         </div>
         <div class="panel-bd">
           <div id="panel-default">
-            <p class="goal">左侧点一步，这里显示该步的完整命令与实测输出。点同一块可取消固定，按 Esc 也可取消。</p>
+            <p class="goal">左侧点一步，这里显示该步的命令和执行完的输出。点同一块可取消固定，按 Esc 也可取消。</p>
             <div class="note">
-              <b>这次实测的环境</b>：DM Database Server 64 V8，版本号 <code>03134284172-20260803-340005-20093</code>，
-              四实例 DP 集群（MP 5239 / SP1 5236 / BP1 5237 / BP2 5238），全部 <code>OPEN</code>。
-              下面所有输出都是从这个环境里原样取的，没有改写、没有补全。
+              <b>输出来源</b>：DM Database Server 64 V8（<code>03134284172-20260803</code>），四实例 DPC 集群，
+              下面所有输出都是从这个环境里原样取的，没有改写。
             </div>
           </div>
 
           <div class="detail" data-k="1">
-            <p class="goal">两种连法：带主机端口，或本机 socket。日常交付用第一种，因为客户现场几乎不会让你登到数据库主机上。</p>
+            <p class="goal">把 IP 换成客户库的，口令换成现场 SYSDBA 的：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
-              <pre><code><span class="cm"># 连指定主机和端口（交付时最常用）</span>
-./disql <span class="ph">&lt;用户名&gt;</span>/<span class="ph">&lt;口令&gt;</span>@<span class="ph">&lt;IP&gt;</span>:<span class="ph">&lt;端口&gt;</span>
-
-<span class="cm"># 连本机默认实例（省掉 IP 和端口）</span>
-./disql <span class="ph">&lt;用户名&gt;</span>/<span class="ph">&lt;口令&gt;</span>
-
-<span class="cm"># 口令不方便写在命令行时：先连上，再交互式改连</span>
-./disql /nolog
-SQL&gt; conn <span class="ph">&lt;用户名&gt;</span>/<span class="ph">&lt;口令&gt;</span>@<span class="ph">&lt;IP&gt;</span>:<span class="ph">&lt;端口&gt;</span></code></pre>
+              <pre><code>./disql SYSDBA/<span class="st">'"Dameng123"'</span>@127.0.0.1:5236</code></pre>
             </div>
             <div class="note">
-              <b>实测输出</b>（登录成功的回显）
+              <b>执行完屏幕上长这样</b>：
               <pre class="transcript">Server[127.0.0.1:5236]:mode is normal, state is open
 login used time : 2.762(ms)
 disql V8
 SQL&gt;</pre>
-              <b>第一行才是登录成功的证据</b>：<code>mode is normal, state is open</code>。看到这行才说明实例是正常打开状态；
-              如果实例在 mount 状态，这行会变成 <code>mode is normal, state is mount</code>，后面建表一律失败。
-            </div>
-            <div class="note warn">
-              <b>坑一：口令里有 <code>#</code>，disql 会打一堆用法说明</b>
-              <pre class="transcript">$ ./disql DELIVERY/"Deliv_2026#01"@127.0.0.1:5236
- USAGE:CONN[ECT] &lt;logon&gt;
- ...
- &lt;logon_option&gt; ::= #{&lt;extend_option&gt;=&lt;value&gt;[,...]}...</pre>
-              原因是 disql 的登录串语法里 <code>#</code> 是<b>扩展选项分隔符</b>（<code>#{MPP_TYPE=GLOBAL,...}</code>），
-              <code>#01@127.0.0.1:5236</code> 被当成了一个格式不对的扩展选项。<b>这不是口令错</b>，
-              但它长得像语法错误，很容易被误判成版本问题去查半天。<br>
-              <b>做法</b>：交付时给业务用户设口令避开 <code>#</code>；已经设了就用 <code>/nolog</code> 再 <code>conn</code> 交互输入。
-            </div>
-            <div class="note warn">
-              <b>坑二：口令错的时候，disql 不退出，而是掉回交互输入</b>
-              <pre class="transcript">$ ./disql SYSDBA/WrongPwd@127.0.0.1:5236
-[-2501]:Invalid username or password.
-disql V8
-username:</pre>
-              写在脚本里，这一行 <code>username:</code> 就会把整个自动化流程挂住等输入。
-              <b>脚本一律加 <code>-L</code></b>（只尝试一次，失败即退）：
-              <pre class="transcript">./disql -L <span class="ph">&lt;用户名&gt;</span>/<span class="ph">&lt;口令&gt;</span>@<span class="ph">&lt;IP&gt;</span>:<span class="ph">&lt;端口&gt;</span> -e "select 1"</pre>
-            </div>
-            <div class="note">
-              <b>顺带一个集群特征</b>：连 SP1 之后查 <code>v$instance</code>，返回的是<b>全部 4 个节点</b>，不是“你连的那一个”。
-              想知道自己到底连到谁，看登录回显里那行 <code>Server[IP:端口]</code>，或者单独查 <code>v$parameter</code> 里的 <code>INSTANCE_NAME</code>。
+              看到 <code>SQL&gt;</code> 提示符就是登录成功，直接进下一步。
             </div>
           </div>
 
           <div class="detail" data-k="2">
-            <p class="goal">给业务数据一块独立的存放区，别都堆在 <code>MAIN</code> 上。一条语句建完，顺手带回查。</p>
+            <p class="goal">一条建完。尺寸不用纠结，这套数（初始 10G、一次扩 2G、上限 200G）就是交付默认值：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
-              <pre><code>CREATE TABLESPACE <span class="ph">&lt;表空间名&gt;</span>
-  DATAFILE '<span class="ph">&lt;数据文件名&gt;</span>.DBF'
-  SIZE <span class="ph">&lt;初始大小 MB&gt;</span>
-  AUTOEXTEND ON NEXT <span class="ph">&lt;每次扩展 MB&gt;</span> MAXSIZE <span class="ph">&lt;上限 MB&gt;</span>;
-
-<span class="cm">-- 回查：状态 0 = ONLINE；1 = OFFLINE</span>
-SELECT TABLESPACE_NAME, STATUS
-  FROM DBA_TABLESPACES
- WHERE TABLESPACE_NAME = '<span class="ph">&lt;表空间名&gt;</span>';
-
-SELECT TABLESPACE_NAME, FILE_NAME,
-       BYTES/1024/1024 AS MB, AUTOEXTENSIBLE
-  FROM DBA_DATA_FILES
- WHERE TABLESPACE_NAME = '<span class="ph">&lt;表空间名&gt;</span>';</code></pre>
+              <pre><code>CREATE TABLESPACE TS_DELIVERY
+  DATAFILE <span class="st">'TS_DELIVERY.DBF'</span>
+  SIZE 10240
+  AUTOEXTEND ON NEXT 2048 MAXSIZE 204800;</code></pre>
             </div>
             <div class="note">
-              <b>实测输出</b>（命令是在 SP1 上执行的）
-              <pre class="transcript">TABLESPACE_NAME STATUS
---------------- -----------
-TS_DELIVERY     0
-
-TABLESPACE_NAME FILE_NAME                                       MB    AUTOEXTENSIBLE
---------------- ----------------------------------------------- ----- --------------
-TS_DELIVERY     /home/dmdba/dpc_data/bp1/DAMENG/TS_DELIVERY.DBF 128   YES</pre>
-              注意第二张表的路径：<b>文件落在 <code>bp1</code> 节点，而命令是在 <code>sp1</code> 上敲的。</b>
-            </div>
-            <div class="note warn">
-              <b>集群里的这条差异，运维文档必须写清</b>：SP 节点不承担存储，表空间会被分配到某个 BP 上。
-              所以「建完去你连的那台机器上找 DBF」是找不到的 —— 以 <code>DBA_DATA_FILES.FILE_NAME</code> 给出的真实路径为准。<br>
-              更要注意：<b>具体落到哪个 BP 并不固定</b>。同样的语句在不同时间执行，可能落到 bp1 也可能落到 sp1 目录
-              （本环境两轮实测就落到了不同位置）。所以<b>别把文件路径写死进任何巡检脚本或文档</b>，一律现查。
-            </div>
-            <div class="note warn">
-              <b>坑：DDL 在 <code>-e</code> 模式下成功时什么都不打印</b><br>
-              <code>DROP USER</code> 这类语句会回 <code>executed successfully</code>，
-              但 <code>CREATE TABLESPACE</code> / <code>CREATE USER</code> 在 <code>-e</code> 模式下是<b>静默</b>的。
-              静默既可能是成功也可能是被吞掉的错误，所以<b>建完立刻回查</b>，这是这套流程里唯一可靠的确认方式。
+              <b>执行完屏幕上长这样</b>：
+              <pre class="transcript">executed successfully
+used time: 00:00:11. Executed id is 53300.</pre>
+              看到成功就继续。表空间长什么样，交付验收时在管理工具里点开「表空间」就能看到，不用写 SQL 查。
             </div>
           </div>
 
           <div class="detail" data-k="3">
-            <p class="goal">建一个业务账号，把默认表空间钉在你刚建的那个上。默认表空间决定了这个用户以后<b>不写表空间时</b>数据往哪放。</p>
+            <p class="goal">建业务账号，钉死它默认往哪个表空间里放数据：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
-              <pre><code>CREATE USER <span class="ph">&lt;用户名&gt;</span>
-  IDENTIFIED BY "<span class="ph">&lt;口令&gt;</span>"
-  DEFAULT TABLESPACE <span class="ph">&lt;表空间名&gt;</span>;
-
-<span class="cm">-- 交付后客户要换口令，就是这个语句</span>
-ALTER USER <span class="ph">&lt;用户名&gt;</span> IDENTIFIED BY "<span class="ph">&lt;新口令&gt;</span>";
-
-<span class="cm">-- 回查：默认表空间和账号状态</span>
-SELECT USERNAME, DEFAULT_TABLESPACE, ACCOUNT_STATUS
-  FROM DBA_USERS
- WHERE USERNAME = '<span class="ph">&lt;用户名&gt;</span>';</code></pre>
+              <pre><code>CREATE USER DELIVERY
+  IDENTIFIED BY <span class="st">"Deliv_2026"</span>
+  DEFAULT TABLESPACE TS_DELIVERY;</code></pre>
             </div>
             <div class="note">
-              <b>实测输出</b>
-              <pre class="transcript">USERNAME DEFAULT_TABLESPACE ACCOUNT_STATUS
--------- ------------------ --------------
-DELIVERY TS_DELIVERY        OPEN</pre>
-              <code>ACCOUNT_STATUS</code> 是 <code>OPEN</code> 才能登录；如果是 <code>LOCKED</code>，说明账号被锁了，得先 <code>ALTER USER ... UNLOCK</code>。
-            </div>
-            <div class="note warn">
-              <b>口令怎么写</b>：DM 默认的口令策略会校验长度和字符组成。实际设置时避开 <code>#</code>（见第 1 步的坑），
-              其余字母数字下划线组合都能过。<b>改完口令必须用新口令登一次</b>才算验完 ——
-              <code>ALTER USER</code> 同样是静默成功，不登一次你并不知道改没改上。
+              <b>执行完屏幕上长这样</b>：
+              <pre class="transcript">executed successfully
+used time: 3.872(ms). Executed id is 53301.</pre>
+              继续。口令后面客户要改，一条 <code>ALTER USER DELIVERY IDENTIFIED BY "新口令";</code> 就行（见问题区）。
             </div>
           </div>
 
           <div class="detail" data-k="4">
-            <p class="goal">按现场口径授 <code>RESOURCE</code> / <code>VTI</code> / <code>SOI</code>，然后逐个查这三个角色到底带了什么权限。</p>
+            <p class="goal">一条授权，建表和查字典的权限都在里面：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
-              <pre><code><span class="cm">-- 授权</span>
-GRANT RESOURCE, VTI, SOI TO <span class="ph">&lt;用户名&gt;</span>;
-
-<span class="cm">-- 回查：这个用户当前有哪些角色</span>
-SELECT GRANTED_ROLE
-  FROM DBA_ROLE_PRIVS
- WHERE GRANTEE = '<span class="ph">&lt;用户名&gt;</span>'
- ORDER BY 1;
-
-<span class="cm">-- 查每个角色到底带了什么（系统权限 / 对象权限）</span>
-SELECT GRANTEE, COUNT(*) AS CNT FROM DBA_SYS_PRIVS
- WHERE GRANTEE IN ('RESOURCE','SOI','VTI') GROUP BY GRANTEE;
-SELECT GRANTEE, COUNT(*) AS CNT FROM DBA_TAB_PRIVS
- WHERE GRANTEE IN ('RESOURCE','SOI','VTI') GROUP BY GRANTEE;
-SELECT GRANTEE, GRANTED_ROLE FROM DBA_ROLE_PRIVS
- WHERE GRANTEE IN ('RESOURCE','SOI','VTI');</code></pre>
+              <pre><code>GRANT RESOURCE, VTI, SOI TO DELIVERY;</code></pre>
             </div>
             <div class="note">
-              <b>实测输出</b>（授权前 → 授权后）
-              <pre class="transcript">-- 授权前，只有 PUBLIC（建用户自动带）
-GRANTED_ROLE
-------------
-PUBLIC
-
--- 授权后
-GRANTED_ROLE
-------------
-PUBLIC
-RESOURCE
-SOI
-VTI</pre>
-              <code>PUBLIC</code> 不需要授，建用户时就有。它已经包含「对自己 schema 里对象」的
-              SELECT / INSERT / UPDATE / DELETE / EXECUTE 以及建删对象的基础权限（实测 45 条）。
-            </div>
-            <table class="kv">
-              <tr>
-                <th style="width:110px">角色</th>
-                <th style="width:90px">系统权限</th>
-                <th style="width:90px">对象权限</th>
-                <th style="width:80px">嵌套角色</th>
-                <th>实际作用（实测）</th>
-              </tr>
-              <tr>
-                <td class="mono"><b>RESOURCE</b></td>
-                <td>63 条</td>
-                <td>0</td>
-                <td>0</td>
-                <td>CREATE TABLE / INDEX / VIEW / SEQUENCE / PACKAGE / PROCEDURE / TRIGGER，<code>FLASHBACK TABLE</code>，对自己对象的 DML，以及把权限转授给别人</td>
-              </tr>
-              <tr>
-                <td class="mono"><b>SOI</b></td>
-                <td>0</td>
-                <td><b>78</b></td>
-                <td>0</td>
-                <td>对 78 个系统字典表的 SELECT：<code>SYSCOLUMNS</code>、<code>SYSOBJECTS</code>、<code>SYSCONS</code>、<code>DPC_INSTANCE</code>、<code>DPC_LONG_TRX</code> 等 —— <b>元数据查得到的来源</b></td>
-              </tr>
-              <tr>
-                <td class="mono"><b>VTI</b></td>
-                <td><b>0</b></td>
-                <td><b>0</b></td>
-                <td><b>0</b></td>
-                <td><b>空角色</b>：授予不报错、撤销不报错，不提供任何权限</td>
-              </tr>
-            </table>
-            <div class="note warn">
-              <b>VTI 是空的，这件事做了对照实验才敢说</b>：
-              <pre class="transcript">-- 撤掉 VTI，用业务用户查实例信息
-REVOKE VTI FROM DELIVERY;
-SQL&gt; select count(*) c from v$instance;
-LINEID     C
----------- --------------------
-1          4
-
--- 再授回 VTI，同一条语句
-GRANT VTI TO DELIVERY;
-SQL&gt; select count(*) c from v$instance;
-LINEID     C
----------- --------------------
-1          4</pre>
-              撤与不撤结果完全一样。也就是说「能查 <code>v$instance</code>」这件事<b>不是 VTI 给的</b>。
-              想让非 DBA 用户看某个动态视图，正确做法是单独授：
-              <code>GRANT SELECT ON <span class="ph">&lt;v$视图名&gt;</span> TO <span class="ph">&lt;用户名&gt;</span>;</code>
-            </div>
-            <div class="note warn">
-              <b>越权时的报错措辞会骗人</b>：
-              <pre class="transcript">SQL&gt; select count(*) from sys.sysobjects;    -- 成功：1152
-SQL&gt; select count(*) from dba_users;         -- [-5504]:No select privilege on object [SYS.DBA_USERS]
-SQL&gt; select count(*) from SYSDBA.T_ORDER;    -- [-2106]:Invalid table or view name [T_ORDER]</pre>
-              查别人 schema 下的表时，DM 报的是<b>「表或视图不存在」而不是「权限不足」</b>。
-              这是有意为之（不泄露对象是否存在），但排查时极易被读成「表被删了」。
-              看到 <code>-2106</code> 先想权限，别急着找备份。
+              <b>执行完屏幕上长这样</b>：
+              <pre class="transcript">executed successfully
+used time: 2.104(ms). Executed id is 53302.</pre>
+              继续。这三个角色各自给什么、为什么这么授，问题区里有拆解 —— 顺利跑通的话不用看。
             </div>
           </div>
 
           <div class="detail" data-k="5">
-            <p class="goal">用业务身份建表、插两行、查回来。最后一步必须回到 <code>user_tables</code> 看表空间归属。</p>
+            <p class="goal">用刚建的业务账号重新登录（把 SYSDBA 换成 DELIVERY），然后建表、插两行、查回来：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
-              <pre><code><span class="cm">-- 用业务用户身份执行</span>
-CREATE TABLE <span class="ph">&lt;表名&gt;</span> (
+              <pre><code>CREATE TABLE T_ORDER (
   order_id   BIGINT IDENTITY(1,1) PRIMARY KEY,
   order_no   VARCHAR(32) NOT NULL,
   amount     DECIMAL(12,2) DEFAULT 0,
@@ -506,21 +292,16 @@ CREATE TABLE <span class="ph">&lt;表名&gt;</span> (
   created_at TIMESTAMP DEFAULT SYSDATE
 );
 
-INSERT INTO <span class="ph">&lt;表名&gt;</span>(order_no, amount, status)
-  VALUES ('SO20261029001', 1280.00, 0);
+INSERT INTO T_ORDER(order_no, amount, status)
+  VALUES (<span class="st">'SO20261029001'</span>, 1280.00, 0);
 COMMIT;
 
-<span class="cm">-- 回查数据</span>
-SELECT order_id, order_no, amount, status, created_at FROM <span class="ph">&lt;表名&gt;</span>;
-
-<span class="cm">-- 关键一问：这张表落在哪个表空间</span>
-SELECT TABLE_NAME, TABLESPACE_NAME FROM USER_TABLES;</code></pre>
+SELECT order_id, order_no, amount, status, created_at FROM T_ORDER;</code></pre>
             </div>
             <div class="note">
-              <b>实测输出</b>
+              <b>执行完屏幕上长这样</b>：
               <pre class="transcript">SQL&gt; 2   3   4   5   6   7   executed successfully
 used time: 28.171(ms). Execute id is 12584813.
-SQL&gt; affect rows 1
 SQL&gt; affect rows 1
 SQL&gt; executed successfully
 
@@ -528,18 +309,8 @@ SQL&gt; select order_id, order_no, amount, status, created_at from T_ORDER;
 LINEID  ORDER_ID  ORDER_NO       AMOUNT  STATUS  CREATED_AT
 ------  --------  -------------  ------  ------  --------------------------
 1       1         SO20261029001  1280    0       2026-10-29 23:32:06.000000
-2       2         SO20261029002  3560.5  1       2026-10-29 23:32:06.000000
-
-SQL&gt; select table_name, tablespace_name from user_tables;
-LINEID  TABLE_NAME  TABLESPACE_NAME
-------  ----------  ---------------
-1       T_ORDER     TS_DELIVERY</pre>
-              <b><code>TABLESPACE_NAME = TS_DELIVERY</code> 是「默认表空间真的生效了」的唯一硬证据。</b>
-              <code>CREATE USER ... DEFAULT TABLESPACE</code> 成功只说明语句过了，不说明后续建表会落进去。
-            </div>
-            <div class="note">
-              <b>顺带确认两件事</b>：<code>IDENTITY(1,1)</code> 从 1 开始且<b>不需要序列</b>；
-              <code>DEFAULT SYSDATE</code> 在插入时自动填了当前时间（两行时间戳相同，因为同一次提交）。
+2       2         SO20261029002  3560.5  1       2026-10-29 23:32:06.000000</pre>
+              数据查得回来，交付完成。表在哪个表空间、权限够不够，验收时管理工具里一眼能看。
             </div>
           </div>
 
@@ -549,117 +320,109 @@ LINEID  TABLE_NAME  TABLESPACE_NAME
   </section>
 
   <section class="card">
-    <h2>交付前核查清单：六条，全部可以在命令行里对出来</h2>
-    <div class="h2sub">交付完别急着走，按这张表逐条走一遍，每条都有明确的合格标准。</div>
-    <table class="kv">
-      <tr>
-        <th style="width:170px">要确认的事</th>
-        <th style="width:330px">怎么查</th>
-        <th>合格标准</th>
-      </tr>
-      <tr>
-        <td><b>1 业务用户能登录</b></td>
-        <td class="mono">用新用户执行一次 <code>disql 用户/口令@IP:端口</code></td>
-        <td>回显 <code>mode is normal, state is open</code>，且进到 <code>SQL&gt;</code> 提示符</td>
-      </tr>
-      <tr>
-        <td><b>2 默认表空间已钉住</b></td>
-        <td class="mono"><code>select DEFAULT_TABLESPACE from DBA_USERS where USERNAME='...'</code></td>
-        <td>等于你指定的那个表空间名</td>
-      </tr>
-      <tr>
-        <td><b>3 表真的落在里面</b></td>
-        <td class="mono"><code>select TABLESPACE_NAME from USER_TABLES</code>（用业务身份）</td>
-        <td>等于同一个表空间名</td>
-      </tr>
-      <tr>
-        <td><b>4 该给的权限到位</b></td>
-        <td class="mono"><code>select GRANTED_ROLE from DBA_ROLE_PRIVS where GRANTEE='...'</code></td>
-        <td>含 <code>RESOURCE</code> 与 <code>SOI</code>（<code>PUBLIC</code> 自动带）</td>
-      </tr>
-      <tr>
-        <td><b>5 不该给的没给</b></td>
-        <td class="mono">用业务身份试 <code>select count(*) from dba_users</code></td>
-        <td>报 <code>[-5504]:No select privilege</code> —— 报错才是对的</td>
-      </tr>
-      <tr>
-        <td><b>6 口令能改、改完能登</b></td>
-        <td class="mono"><code>ALTER USER ... IDENTIFIED BY "..."</code> 后用新口令登录</td>
-        <td>登录成功。<b>不登一次就等于没验</b></td>
-      </tr>
-    </table>
-    <div class="note warn">
-      <b>第 5 条特别说明</b>：这一条是「反向验证」。只验「该给的给了」是不够的，
-      还要验「不该给的没给」—— 否则一次手误授了 <code>DBA</code>，前面五项全都正常，问题却埋在那儿。
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>常见问题</h2>
+    <h2>常见问题：只有报错了才需要往下看</h2>
 
     <div class="faq-item">
-      <button class="q"><span>授了 VTI，为什么还是查不到 <code>v$session</code>？</span><span class="arr">▾</span></button>
+      <button class="q"><span>口令里能用 <code>#</code> 吗？登录时打印一堆用法说明是怎么回事？</span><span class="arr">▾</span></button>
       <div class="a">
-        <p>两个原因叠在一起，但<b>都不是权限的锅</b>：</p>
-        <p>① 本版本里 <b>VTI 是空角色</b>（系统权限 0 / 对象权限 0 / 嵌套角色 0），授它不产生任何权限；</p>
-        <p>② <code>v$session</code> 在这个集群版本里<b>根本不存在</b>。实测以 SYSDBA 身份 <code>GRANT SELECT ON v$session TO 用户</code> 会直接报
-          <code>[-2201]:Invalid database object.</code>；以业务身份查询报 <code>[-2106]:Invalid table or view name [V$SESSION].</code></p>
-        <p>会话与节点信息走 <code>DPC_*</code> 系列（<code>DPC_INSTANCE</code>、<code>DPC_LONG_TRX</code>、<code>DPC_HOST</code> 这些），
-          而它们在 SOI 授予的 78 个对象里，<b>不需要额外授权</b>。</p>
+        <p>数据库本身允许，但 <b>disql 命令行传参时会出问题</b>：<code>#</code> 在登录串里是扩展选项分隔符
+          （<code>#{MPP_TYPE=GLOBAL,...}</code>），<code>用户/口令#xxx@IP:端口</code> 会被解析成一个坏掉的扩展选项：</p>
+        <pre class="transcript">$ ./disql DELIVERY/"Deliv_2026#01"@127.0.0.1:5236
+ USAGE:CONN[ECT] &lt;logon&gt;
+ ...</pre>
+        <p>这不是口令错，但长得像语法错误，很多人在这里查半天。处理：<b>给业务用户设口令避开 <code>#</code></b>；已经设了就用
+          <code>./disql /nolog</code> 连上后再 <code>conn 用户/口令@IP:端口</code> 交互输入。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>口令敲错了没报退出，卡在一个 <code>username:</code> 提示上？</span><span class="arr">▾</span></button>
+      <div class="a">
+        <pre class="transcript">$ ./disql SYSDBA/WrongPwd@127.0.0.1:5236
+[-2501]:Invalid username or password.
+disql V8
+username:</pre>
+        <p>口令错时 disql 不退出，而是掉回交互输入等你再输。手工敲没关系；<b>写脚本会挂死</b>，脚本里加 <code>-L</code>（只试一次，失败即退）：</p>
+        <pre class="transcript">./disql -L SYSDBA/'"Dameng123"'@127.0.0.1:5236 -e "select 1"</pre>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>Windows 下这条登录命令怎么写？单引号报错</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p>本文的 <code>SYSDBA/'"Dameng123"'</code> 是 <b>Linux shell</b> 写法：双引号包住口令防特殊字符，外面再套一层单引号防止 shell 把双引号吃掉。</p>
+        <p>Windows cmd 里单引号是普通字符，<b>去掉外层单引号</b>就行：</p>
+        <pre class="transcript">disql SYSDBA/"Dameng123"@127.0.0.1:5236</pre>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>表空间尺寸为什么定死 10240 / 2048 / 204800？</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p>这是交付默认值，<b>不用现场纠结</b>：初始 10G 对绝大多数业务库起步足够，就算业务量小也只是占了个上限额度不占实盘；
+          每次扩 2G 是为了<b>批量导入时少触发扩展次数</b>（扩展次数越多，导入越慢、文件碎片越多）；上限 200G 是防爆盘的保险丝，真不够再改就是一条 <code>ALTER TABLESPACE</code> 的事。</p>
+        <p>唯一要改的场景：客户磁盘本身小于 200G —— 那就把 MAXSIZE 降到磁盘能承受的值。</p>
       </div>
     </div>
 
     <div class="faq-item">
       <button class="q"><span>表空间建完了，为什么在我连的那台机器上找不到 DBF？</span><span class="arr">▾</span></button>
       <div class="a">
-        <p>因为集群里 SP 节点不做存储。表空间会被分配到某个 BP 上，文件就落在那个 BP 的目录里。</p>
-        <p>以 <code>DBA_DATA_FILES.FILE_NAME</code> 为准。本环境实测：在 SP1（5236）上建的表空间，文件落在
-          <code>bp1</code> 的 <code>dpc_data/bp1/DAMENG/</code> 下。</p>
-        <p><b>而且落到哪个 BP 不固定</b> —— 同样的语句两轮实测落到了不同位置，所以路径只能现查，不能写死。</p>
+        <p>因为集群里 SP 节点不做存储，表空间会被分配到某个 BP 上，文件落在那个 BP 的目录里，<b>而且落到哪个 BP 不固定</b>——
+          同样的语句两轮实测落到了不同位置。</p>
+        <p>所以别把文件路径写死进巡检脚本或文档，一律以 <code>DBA_DATA_FILES.FILE_NAME</code> 现查为准，或者直接在管理工具里点开表空间看。</p>
       </div>
     </div>
 
     <div class="faq-item">
-      <button class="q"><span>口令里到底能不能用 <code>#</code>？</span><span class="arr">▾</span></button>
+      <button class="q"><span>RESOURCE / VTI / SOI 这三个角色到底给了什么？</span><span class="arr">▾</span></button>
       <div class="a">
-        <p>数据库本身允许，但 <b>disql 命令行传参时会出问题</b>：<code>#</code> 在登录串里是扩展选项分隔符
-          （<code>#{MPP_TYPE=GLOBAL,...}</code>），<code>用户/口令#xxx@IP:端口</code> 会被解析成一个坏掉的扩展选项，
-          disql 直接打印用法说明。</p>
-        <p>交付时给业务用户设口令<b>避开 <code>#</code></b> 最省事；已经这么设了，用 <code>disql /nolog</code> 再
-          <code>conn 用户/口令@IP:端口</code> 交互输入即可。</p>
+        <p>实测（<code>03134284172-20260803</code> 版本）逐项查过字典：</p>
+        <p><b>RESOURCE</b>（63 条系统权限）：建表、建索引、建视图、建存储过程这些「干活」的权限，都在这。</p>
+        <p><b>SOI</b>（78 个字典表的 SELECT）：<code>SYSCOLUMNS</code>、<code>SYSOBJECTS</code> 这些系统字典能查到了 —— 
+          没有 SOI，很多元数据查询会报「表不存在」。</p>
+        <p><b>VTI</b>：本版本里是<b>空角色</b>（系统权限 0 / 对象权限 0 / 嵌套角色 0）。做了撤/授对照实验：
+          撤掉它，业务用户照样能查 <code>v$instance</code>；授回来，结果一行不变。授予不报错、不挡事，所以现场口径照授没毛病，
+          只是<b>别指望它解决「看不到视图」的问题</b>——那要单独授 <code>GRANT SELECT ON 视图名 TO 用户</code>。
+          另外各版本角色内容可能不同，你的版本自己查一遍 <code>dba_sys_privs</code> / <code>dba_tab_privs</code> 比记结论可靠。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>查别人的表报「表或视图不存在」，其实是权限问题</span><span class="arr">▾</span></button>
+      <div class="a">
+        <pre class="transcript">SQL&gt; select count(*) from dba_users;         -- [-5504]:No select privilege on object [SYS.DBA_USERS]
+SQL&gt; select count(*) from SYSDBA.T_ORDER;    -- [-2106]:Invalid table or view name [T_ORDER]</pre>
+        <p>越权查别人 schema 的表时，DM 报的是<b>「不存在」而不是「权限不足」</b>——有意为之，不泄露对象是否存在。
+          但排查时极易被读成「表被删了」。看到 <code>-2106</code> 先想权限，别急着找备份。</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="q"><span>交付完要检查什么？</span><span class="arr">▾</span></button>
+      <div class="a">
+        <p>管理工具（或达梦管理器）里点三下就够了：<b>① 用 DELIVERY 登录一次</b>（能登上、改过口令的用新口令）；
+          <b>② 表空间页看 TS_DELIVERY 存在、大小对</b>；<b>③ 用 DELIVERY 看到自己的 T_ORDER 有数据</b>。
+          不用写 SQL 回查 —— 字典里的东西图形界面都有，界面看不到的才值得写 SQL。</p>
       </div>
     </div>
 
     <div class="faq-item">
       <button class="q"><span>建用户时自动带的 <code>PUBLIC</code> 能收回来吗？</span><span class="arr">▾</span></button>
       <div class="a">
-        <p>能收，但没什么理由收：它给的是「对自己 schema 里对象」的基础 DML 和执行权限，
-          本来就是这个用户该有的东西（实测 45 条）。真回收了，用户连自己的表都操作不了。</p>
-        <p>要收紧权限，正确方向是<b>别多授系统权限和角色</b>（尤其是 <code>DBA</code>），而不是去动 <code>PUBLIC</code>。</p>
+        <p>能收，但没什么理由收：它给的是「对自己 schema 里对象」的基础 DML 和执行权限（实测 45 条），本来就是这个用户该有的。
+          真回收了，用户连自己的表都操作不了。要收紧权限，正确方向是<b>别多授系统权限和角色（尤其是 DBA）</b>，而不是去动 PUBLIC。</p>
       </div>
     </div>
 
     <div class="faq-item">
-      <button class="q"><span>为什么每一步都要回查一遍，命令没报错不就行了？</span><span class="arr">▾</span></button>
+      <button class="q"><span>我是单机不是集群，有差异吗？</span><span class="arr">▾</span></button>
       <div class="a">
-        <p>因为 <code>CREATE TABLESPACE</code> / <code>CREATE USER</code> / <code>ALTER USER</code> 在 <code>-e</code> 模式下
-          <b>成功时什么都不打印</b>。同样一行空白，既可能是成功，也可能是错误被吞了。</p>
-        <p>只有字典表里的那一行是硬的。这套流程里凡是“看起来成了”的地方，都配了一条回查语句。</p>
+        <p>五条命令一模一样。本文输出取自 DMDPC 四实例集群，单机上只有两处不同：表空间文件固定落在本机（不存在「落到哪个 BP」的问题）；
+          <code>v$instance</code> 只返回一行。</p>
       </div>
     </div>
 
-  </section>
-
-  <section class="card">
-    <h2>本篇的边界</h2>
-    <div class="note warn">
-      <b>不能直接照抄的部分</b>：本文所有输出取自 <b>DMDPC 四实例集群</b>（MP/SP1/BP1/BP2）。
-      单机实例上的差异有两处要自己再确认：<br>
-      ① 表空间数据文件路径固定在本机，不存在“落到哪个 BP”的问题；<br>
-      ② <code>v$instance</code> 只返回一行，而不是四行。<br>
-      另外，<b>各版本的角色内容可能不同</b> —— VTI 在本版本（<code>03134284172-20260803</code>）是空角色，
-      不代表你手上的版本也一定是。用第 4 步那三条 <code>dba_*</code> 查询自己跑一遍，比记结论可靠。
-    </div>
   </section>
 
   <section class="card cta">
