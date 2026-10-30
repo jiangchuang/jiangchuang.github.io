@@ -131,7 +131,7 @@ ALTER DATABASE ARCHIVELOG CURRENT;</code></pre>
 <blockquote><p>不切的后果（实测踩到过）：RECOVER 会报 <code>recover successfully</code>，看起来一切正常，但恢复库里查出来还是备份时的 200 行，备份后的 50 行一行都没有。报"成功"不等于恢复到位，必须靠第 8 步的数据校验来确认。</p></blockquote>
 <h3>第 6 步：建恢复库，把全备还原进去</h3>
 <pre class="code"><code class="lang-shell"># 1) 用 dminit 建一个空库（端口避开生产库的 5236）
-./dminit path=&lt;恢复库目录&gt; DB_NAME=DAMENG INSTANCE_NAME=DR01 PORT_NUM=5237 \
+./dminit path=&lt;恢复库目录&gt; DB_NAME=DAMENG INSTANCE_NAME=RCV01 PORT_NUM=5237 \
           SYSDBA_PWD=&lt;口令&gt; SYSAUDITOR_PWD=&lt;口令&gt;
 
 # 2) 把全备还原到恢复库（dmrman 必须用 CTLFILE 传命令）
@@ -155,7 +155,7 @@ echo "RECOVER DATABASE '&lt;恢复库&gt;/DAMENG/dm.ini' UPDATE DB_MAGIC" &gt; d
 SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MAX(ID) AS MAX_ID
   FROM &lt;模式名&gt;.&lt;表名&gt;;</code></pre>
 <blockquote><p>实测输出：<code>recover successfully!</code>（1.101 秒），校验结果 <code>CNT=250 / SUM=281375 / MIN_ID=1 / MAX_ID=250</code> —— 与误删前的生产库完全一致，备份后新增的 50 行全部回来了。</p></blockquote>
-<blockquote><p>不执行 <code>UPDATE DB_MAGIC</code>，恢复库启动会报：<code>[FATAL] Instance DR01 startup failed, execute 'recover database ... update db_magic' in dmrman</code>。</p></blockquote>
+<blockquote><p>不执行 <code>UPDATE DB_MAGIC</code>，恢复库启动会报：<code>[FATAL] Instance RCV01 startup failed, execute 'recover database ... update db_magic' in dmrman</code>。</p></blockquote>
 <h3>第 9 步：dexp 导出，dimp 导回生产库</h3>
 <pre class="code"><code class="lang-shell"># 1) 从恢复库导出目标表（FILE 必须给全路径）
 ./dexp USERID=SYSDBA/&lt;口令&gt;@localhost:5237 \

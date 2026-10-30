@@ -164,11 +164,11 @@
 
   <section class="card">
     <h2>操作视频演示</h2>
-    <div class="h2sub">同一套命令、同一份输出，画面与下方步骤卡一一对应。</div>
+    <div class="h2sub">全程在<b>测试环境</b>里做，生产库只在最后一步被写入一次。画面与下方步骤卡一一对应。</div>
     <div class="video-box">
       <video controls playsinline preload="metadata" src="dm-backup-recover.mp4"></video>
     </div>
-    <p class="video-note">视频为命令行实录渲染；所有输出取自单机测试库（192.168.31.14 / DM01:5236、恢复库 DR01:5237）真实执行结果。</p>
+    <p class="video-note">视频为命令行动画演示（1 分钟版，只要主线）；完整命令与实测输出看下方步骤卡。</p>
   </section>
 
   <section class="card">
@@ -430,7 +430,7 @@ ALTER DATABASE ARCHIVELOG CURRENT;</code></pre>
             <div class="cmdbox">
               <button class="cp">复制</button>
               <pre><code><span class="cm">-- 1) 用 dminit 建一个空库（端口避开生产库的 5236）</span>
-./dminit path=<span class="ph">&lt;恢复库目录&gt;</span> DB_NAME=DAMENG INSTANCE_NAME=DR01 PORT_NUM=5237 \
+./dminit path=<span class="ph">&lt;恢复库目录&gt;</span> DB_NAME=DAMENG INSTANCE_NAME=RCV01 PORT_NUM=5237 \
           SYSDBA_PWD=<span class="ph">&lt;口令&gt;</span> SYSAUDITOR_PWD=<span class="ph">&lt;口令&gt;</span>
 
 <span class="cm">-- 2) 把全备还原到恢复库（dmrman 必须用 CTLFILE 传命令）</span>
@@ -495,7 +495,7 @@ LINEID     CNT                  SUM_AMT MIN_ID      MAX_ID
               <b>250 行 / SUM=281375</b> —— 与误删前的生产库完全一致，备份后新增的 50 行全部回来了。
             </div>
             <div class="note warn">
-              <b>不做这一步的现象</b>：实例启动失败，日志里只有一句 <code>[FATAL] Instance DR01 startup failed, execute 'recover database ... update db_magic' in dmrman.</code> 找不到别的原因时，先看是不是漏了它。
+              <b>不做这一步的现象</b>：实例启动失败，日志里只有一句 <code>[FATAL] Instance RCV01 startup failed, execute 'recover database ... update db_magic' in dmrman.</code> 找不到别的原因时，先看是不是漏了它。
             </div>
           </div>
 
@@ -596,7 +596,7 @@ LINEID     CNT                  SUM_AMT MIN_ID      MAX_ID
     <div class="faq-item">
       <button class="q">这套流程在 DPC 集群 / 主备环境上能直接照抄吗？<span class="arr">▾</span></button>
       <div class="a">
-        <p><b>不能直接照抄。</b>本篇所有输出取自<b>单机实例</b>（DM01，192.168.31.14:5236；恢复库 DR01:5237）。集群环境下每个节点的归档、备份集来源、以及恢复到哪个节点上启动，都需要单独实测确认。</p>
+        <p><b>不能直接照抄。</b>本篇所有输出取自<b>独立测试实例</b>（主库与恢复库都是单机环境，端口 5236 / 5237）。集群环境下每个节点的归档、备份集来源、以及恢复到哪个节点上启动，都需要单独实测确认。</p>
         <p>按以往经验，DPC 里实例级参数的查询要落到 MP 上做（BP 节点查部分 <code>DPC_*</code> 视图会报 <code>[-3818]</code>）。这块等实测完再单独出一篇，不要在集群上按单机的直觉操作。</p>
       </div>
     </div>

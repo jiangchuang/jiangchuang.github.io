@@ -218,7 +218,18 @@
           </div>
 
           <div class="detail" data-k="1">
-            <p class="goal">把 IP 换成客户库的，口令换成现场 SYSDBA 的：</p>
+            <p class="goal">先找到 disql —— 它就在数据库安装目录的 bin 里：</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>cd /opt/dmdbms/bin</code></pre>
+            </div>
+            <p class="goal">Linux 默认装在 <code>/opt/dmdbms</code>，Windows 默认在 <code>D:\dmdbms\bin</code>。
+              不在这也没事，一条命令搜出来：</p>
+            <div class="cmdbox">
+              <button class="cp">复制</button>
+              <pre><code>find / -name disql 2&gt;/dev/null</code></pre>
+            </div>
+            <p class="goal">看到它了，把 IP 换成客户库的，口令换成现场 SYSDBA 的：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
               <pre><code>./disql SYSDBA/<span class="st">'"Dameng123"'</span>@127.0.0.1:5236</code></pre>
@@ -237,8 +248,8 @@ SQL&gt;</pre>
             <p class="goal">一条建完。尺寸不用纠结，这套数（初始 10G、一次扩 2G、上限 200G）就是交付默认值：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
-              <pre><code>CREATE TABLESPACE TS_DELIVERY
-  DATAFILE <span class="st">'TS_DELIVERY.DBF'</span>
+              <pre><code>CREATE TABLESPACE TS_TEST
+  DATAFILE <span class="st">'TS_TEST.DBF'</span>
   SIZE 10240
   AUTOEXTEND ON NEXT 2048 MAXSIZE 204800;</code></pre>
             </div>
@@ -256,7 +267,7 @@ used time: 00:00:11. Executed id is 53300.</pre>
               <button class="cp">复制</button>
               <pre><code>CREATE USER TEST
   IDENTIFIED BY <span class="st">"Deliv_2026"</span>
-  DEFAULT TABLESPACE TS_DELIVERY;</code></pre>
+  DEFAULT TABLESPACE TS_TEST;</code></pre>
             </div>
             <div class="note">
               <b>执行完屏幕上长这样</b>：
@@ -402,7 +413,7 @@ SQL&gt; select count(*) from SYSDBA.T_ORDER;    -- [-2106]:Invalid table or view
       <button class="q"><span>交付完要检查什么？</span><span class="arr">▾</span></button>
       <div class="a">
         <p>管理工具（或达梦管理器）里点三下就够了：<b>① 用 TEST 登录一次</b>（能登上、改过口令的用新口令）；
-          <b>② 表空间页看 TS_DELIVERY 存在、大小对</b>；<b>③ 用 TEST 看到自己的 T_ORDER 有数据</b>。
+          <b>② 表空间页看 TS_TEST 存在、大小对</b>；<b>③ 用 TEST 看到自己的 T_ORDER 有数据</b>。
           不用写 SQL 回查 —— 字典里的东西图形界面都有，界面看不到的才值得写 SQL。</p>
       </div>
     </div>
