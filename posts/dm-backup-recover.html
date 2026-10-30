@@ -173,7 +173,7 @@ SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MIN(ID) AS MIN_ID, MAX(ID) AS MAX_I
 <blockquote><p>实测输出：<code>total export 250 rows, size 5.266 KB</code>，导入后 <code>import table ORDERS, has coped with 250 rows</code>，生产库校验 <code>CNT=250 / SUM=281375 / MIN_ID=1 / MAX_ID=250</code>，与误删前完全一致。</p></blockquote>
 <blockquote><p><code>dexp</code> / <code>dimp</code> 的 <code>FILE</code> 必须给<strong>全路径</strong>，只给文件名会在当前工作目录里找。</p></blockquote>
 <h2>另一条快路：回收站闪回（前提是它恰好开着）</h2>
-<blockquote><p>如果目标实例开了回收站，误删的表可以直接闪回，不用走上面这一整套备份恢复流程。前提是 <code>RECYCLEBIN=1</code>，详见另一篇<a href="../interactive/recover-dropped-table.html">误删表（DROP TABLE）恢复交互版</a>。</p></blockquote>
+<blockquote><p>如果目标实例开了回收站，误删的表可以直接闪回，不用走上面这一整套备份恢复流程。前提是 <code>RECYCLEBIN=1</code>，直接 <code>SHOW RECYCLEBIN</code> 找到原表名后 <code>FLASHBACK TABLE 原表名 TO BEFORE DROP</code>。</p></blockquote>
 </div>
   <section class="contact">
   <div class="contact-qr">
@@ -189,7 +189,6 @@ SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MIN(ID) AS MIN_ID, MAX(ID) AS MAX_I
 </section>
   <div class="art-foot">
     <a href="../index.html">← 返回目录</a>
-    <a href="../interactive/recover-dropped-table.html">达梦误删表（DROP TABLE）恢复 · 交互版 →</a>
   </div>
 </main>
 <footer>

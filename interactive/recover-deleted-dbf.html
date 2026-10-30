@@ -149,6 +149,10 @@ section.card .note pre.transcript { white-space: pre; }
 </style>
 </head>
 <body>
+<div class="jc-float-nav" style="position:fixed;top:12px;right:14px;z-index:9999;display:flex;gap:8px">
+  <a href="../index.html" title="返回目录" style="display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:999px;font:13px/1.4 system-ui,'Microsoft YaHei',sans-serif;text-decoration:none;color:#374151;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.14);box-shadow:0 1px 4px rgba(0,0,0,.08)">目录</a>
+  <a href="../search.html" title="搜索笔记" style="display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:999px;font:13px/1.4 system-ui,'Microsoft YaHei',sans-serif;text-decoration:none;color:#374151;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.14);box-shadow:0 1px 4px rgba(0,0,0,.08)">搜索</a>
+</div>
 <div class="wrap">
 
   <header class="hd">
@@ -171,7 +175,6 @@ section.card .note pre.transcript { white-space: pre; }
       靠的是<b>进程还持有文件句柄</b> —— 命门是<b>实例千万不能重启</b>，重启后句柄失效、文件彻底找不回。<br>
       如果你执行的是 <code>DROP TABLE</code>（SQL 层删表、数据文件还在），请走
       <a href="dm-backup-recover.html" style="color:#b45309"><b>《达梦利用备份恢复误删表 · 交互版》</b></a>
-      或 <a href="recover-dropped-table.html" style="color:#b45309"><b>《误删表（DROP TABLE）后的恢复 · 回收站闪回》</b></a>。
       <b>两类事故的前提完全相反，走错页面会耽误抢救时机。</b>
     </div>
   </header>
