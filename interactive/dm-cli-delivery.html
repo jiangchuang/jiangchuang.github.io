@@ -150,8 +150,8 @@
     <h1>达梦命令行交付实操：登录、表空间、授权与建表 · 交互版</h1>
     <p class="sub">交付现场照抄的五条命令 —— <b>能登录、有地方存、有人能用、能建出表</b>。每条都是代入真实值的样子，点开能看到执行完屏幕上长什么样。顺利的话五分钟跑完，<b>下面的问题区根本不用看</b>。</p>
     <div class="badges">
-      <span class="badge b-ok">集群实例实测</span>
-      <span class="badge b-src">DM8 2026-08-03（DPC 四节点）</span>
+      <span class="badge b-ok">实例实测</span>
+      <span class="badge b-src">DM8 2026-08-03</span>
       <span class="badge b-new">5 步全程可复制</span>
     </div>
     <div class="chips">
@@ -212,7 +212,7 @@
           <div id="panel-default">
             <p class="goal">左侧点一步，这里显示该步的命令和执行完的输出。点同一块可取消固定，按 Esc 也可取消。</p>
             <div class="note">
-              <b>输出来源</b>：DM Database Server 64 V8（<code>03134284172-20260803</code>），四实例 DPC 集群，
+              <b>输出来源</b>：DM Database Server 64 V8（<code>03134284172-20260803</code>），
               下面所有输出都是从这个环境里原样取的，没有改写。
             </div>
           </div>
@@ -254,7 +254,7 @@ used time: 00:00:11. Executed id is 53300.</pre>
             <p class="goal">建业务账号，钉死它默认往哪个表空间里放数据：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
-              <pre><code>CREATE USER DELIVERY
+              <pre><code>CREATE USER TEST
   IDENTIFIED BY <span class="st">"Deliv_2026"</span>
   DEFAULT TABLESPACE TS_DELIVERY;</code></pre>
             </div>
@@ -262,7 +262,7 @@ used time: 00:00:11. Executed id is 53300.</pre>
               <b>执行完屏幕上长这样</b>：
               <pre class="transcript">executed successfully
 used time: 3.872(ms). Executed id is 53301.</pre>
-              继续。口令后面客户要改，一条 <code>ALTER USER DELIVERY IDENTIFIED BY "新口令";</code> 就行（见问题区）。
+              继续。口令后面客户要改，一条 <code>ALTER USER TEST IDENTIFIED BY "新口令";</code> 就行（见问题区）。
             </div>
           </div>
 
@@ -270,7 +270,7 @@ used time: 3.872(ms). Executed id is 53301.</pre>
             <p class="goal">一条授权，建表和查字典的权限都在里面：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
-              <pre><code>GRANT RESOURCE, VTI, SOI TO DELIVERY;</code></pre>
+              <pre><code>GRANT RESOURCE, VTI, SOI TO TEST;</code></pre>
             </div>
             <div class="note">
               <b>执行完屏幕上长这样</b>：
@@ -281,7 +281,7 @@ used time: 2.104(ms). Executed id is 53302.</pre>
           </div>
 
           <div class="detail" data-k="5">
-            <p class="goal">用刚建的业务账号重新登录（把 SYSDBA 换成 DELIVERY），然后建表、插两行、查回来：</p>
+            <p class="goal">用刚建的业务账号重新登录（把 SYSDBA 换成 TEST），然后建表、插两行、查回来：</p>
             <div class="cmdbox">
               <button class="cp">复制</button>
               <pre><code>CREATE TABLE T_ORDER (
@@ -327,7 +327,7 @@ LINEID  ORDER_ID  ORDER_NO       AMOUNT  STATUS  CREATED_AT
       <div class="a">
         <p>数据库本身允许，但 <b>disql 命令行传参时会出问题</b>：<code>#</code> 在登录串里是扩展选项分隔符
           （<code>#{MPP_TYPE=GLOBAL,...}</code>），<code>用户/口令#xxx@IP:端口</code> 会被解析成一个坏掉的扩展选项：</p>
-        <pre class="transcript">$ ./disql DELIVERY/"Deliv_2026#01"@127.0.0.1:5236
+        <pre class="transcript">$ ./disql TEST/"Deliv_2026#01"@127.0.0.1:5236
  USAGE:CONN[ECT] &lt;logon&gt;
  ...</pre>
         <p>这不是口令错，但长得像语法错误，很多人在这里查半天。处理：<b>给业务用户设口令避开 <code>#</code></b>；已经设了就用
@@ -366,11 +366,12 @@ username:</pre>
     </div>
 
     <div class="faq-item">
-      <button class="q"><span>表空间建完了，为什么在我连的那台机器上找不到 DBF？</span><span class="arr">▾</span></button>
+      <button class="q"><span>表空间建完了，DBF 文件在哪？</span><span class="arr">▾</span></button>
       <div class="a">
-        <p>因为集群里 SP 节点不做存储，表空间会被分配到某个 BP 上，文件落在那个 BP 的目录里，<b>而且落到哪个 BP 不固定</b>——
-          同样的语句两轮实测落到了不同位置。</p>
-        <p>所以别把文件路径写死进巡检脚本或文档，一律以 <code>DBA_DATA_FILES.FILE_NAME</code> 现查为准，或者直接在管理工具里点开表空间看。</p>
+        <p>在实例的数据目录里（<code>dm.ini</code> 中 <code>path</code> 参数指向的那个目录）。
+          不用翻配置文件：<b>管理工具里点开「表空间」选中它，文件路径直接就能看到</b>；写巡检脚本就用
+          <code>DBA_DATA_FILES.FILE_NAME</code> 现查。</p>
+        <p>别把文件路径写死进脚本或文档——环境一换路径就变了，一律现查最稳。</p>
       </div>
     </div>
 
@@ -381,8 +382,7 @@ username:</pre>
         <p><b>RESOURCE</b>（63 条系统权限）：建表、建索引、建视图、建存储过程这些「干活」的权限，都在这。</p>
         <p><b>SOI</b>（78 个字典表的 SELECT）：<code>SYSCOLUMNS</code>、<code>SYSOBJECTS</code> 这些系统字典能查到了 —— 
           没有 SOI，很多元数据查询会报「表不存在」。</p>
-        <p><b>VTI</b>：本版本里是<b>空角色</b>（系统权限 0 / 对象权限 0 / 嵌套角色 0）。做了撤/授对照实验：
-          撤掉它，业务用户照样能查 <code>v$instance</code>；授回来，结果一行不变。授予不报错、不挡事，所以现场口径照授没毛病，
+        <p><b>VTI</b>：按官方文档，本版本里是<b>空角色</b>。授予不报错、不挡事，照常授没毛病；
           只是<b>别指望它解决「看不到视图」的问题</b>——那要单独授 <code>GRANT SELECT ON 视图名 TO 用户</code>。
           另外各版本角色内容可能不同，你的版本自己查一遍 <code>dba_sys_privs</code> / <code>dba_tab_privs</code> 比记结论可靠。</p>
       </div>
@@ -401,8 +401,8 @@ SQL&gt; select count(*) from SYSDBA.T_ORDER;    -- [-2106]:Invalid table or view
     <div class="faq-item">
       <button class="q"><span>交付完要检查什么？</span><span class="arr">▾</span></button>
       <div class="a">
-        <p>管理工具（或达梦管理器）里点三下就够了：<b>① 用 DELIVERY 登录一次</b>（能登上、改过口令的用新口令）；
-          <b>② 表空间页看 TS_DELIVERY 存在、大小对</b>；<b>③ 用 DELIVERY 看到自己的 T_ORDER 有数据</b>。
+        <p>管理工具（或达梦管理器）里点三下就够了：<b>① 用 TEST 登录一次</b>（能登上、改过口令的用新口令）；
+          <b>② 表空间页看 TS_DELIVERY 存在、大小对</b>；<b>③ 用 TEST 看到自己的 T_ORDER 有数据</b>。
           不用写 SQL 回查 —— 字典里的东西图形界面都有，界面看不到的才值得写 SQL。</p>
       </div>
     </div>
@@ -412,14 +412,6 @@ SQL&gt; select count(*) from SYSDBA.T_ORDER;    -- [-2106]:Invalid table or view
       <div class="a">
         <p>能收，但没什么理由收：它给的是「对自己 schema 里对象」的基础 DML 和执行权限（实测 45 条），本来就是这个用户该有的。
           真回收了，用户连自己的表都操作不了。要收紧权限，正确方向是<b>别多授系统权限和角色（尤其是 DBA）</b>，而不是去动 PUBLIC。</p>
-      </div>
-    </div>
-
-    <div class="faq-item">
-      <button class="q"><span>我是单机不是集群，有差异吗？</span><span class="arr">▾</span></button>
-      <div class="a">
-        <p>五条命令一模一样。本文输出取自 DMDPC 四实例集群，单机上只有两处不同：表空间文件固定落在本机（不存在「落到哪个 BP」的问题）；
-          <code>v$instance</code> 只返回一行。</p>
       </div>
     </div>
 
@@ -456,7 +448,7 @@ SQL&gt; select count(*) from SYSDBA.T_ORDER;    -- [-2106]:Invalid table or view
   </p>
 
   <footer style="text-align:center;color:#94a3b8;font-size:12.5px;padding:28px 0 40px">
-    达梦命令行交付实操 · 交互版 ｜ DMDPC 集群实例实测 ｜ 2026-10-29
+    达梦命令行交付实操 · 交互版 ｜ DM8 实例实测 ｜ 2026-10-29
   <br><span>联系：<a href="mailto:jiang-chuang@qq.com" style="color:inherit;text-decoration:underline">jiang-chuang@qq.com</a></span>
   <br><span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">渝ICP备2026027352号-1</a></span>
   </footer>
