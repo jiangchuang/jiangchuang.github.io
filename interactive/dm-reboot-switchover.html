@@ -43,6 +43,15 @@
   .step .t { font-weight: 700; font-size: 15px; color: #111827; }
   .step .d { font-size: 12.5px; color: #4b5563; margin-top: 5px; padding-left: 35px; }
   .step .go { font-size: 11.5px; color: #1d4ed8; margin-top: 6px; padding-left: 35px; font-weight: 600; }
+  /* 可选步骤：琥珀色区别于主线，避免被当成必经的一步 */
+  .step.opt { border-left-color: #f59e0b; }
+  .step.opt .no { background: #f59e0b; }
+  .step.opt:hover, .step.opt:focus-visible { box-shadow: 0 0 0 3px rgba(245,158,11,.16); }
+  .step.opt.on { border-color: #fcd34d; box-shadow: 0 0 0 3px rgba(245,158,11,.22); }
+  .step .tagopt { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 999px; padding: 1px 8px; margin-left: 8px; vertical-align: 2px; }
+  .branch { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 0 10px 10px 0; padding: 12px 15px; margin: 14px 0; font-size: 13.5px; line-height: 1.8; color: #78350f; }
+  .branch b { color: #92400e; }
+  .branch .chip { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
 
   .panel { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.04); position: sticky; top: 16px; overflow: hidden; }
   .panel-hd { display: flex; align-items: center; gap: 10px; padding: 14px 18px 12px; border-bottom: 1px solid #f1f3f6; background: #fbfcfe; }
@@ -141,7 +150,7 @@
 
 <header class="hd">
   <h1>达梦主备集群：重启与主备切换 · 交互版</h1>
-  <div class="sub">DM8 数据守护（主备）· 8 步速成 · 命令可直接复制</div>
+  <div class="sub">DM8 数据守护（主备）· 重启 6 步 + 切换 1 步（可选）· 命令可直接复制</div>
   <div class="badges">
     <span class="badge b-new">点击左侧步骤卡 → 右侧展开命令</span>
     <span class="badge b-src">依据《DM8 数据守护与读写分离集群手册》· 真实环境实测</span>
@@ -161,9 +170,10 @@
 </section>
 
 <!-- ==================== 速成舞台 ==================== -->
-<section class="card">
-  <h2>八步速成：先把活干完</h2>
-  <div class="h2sub">点击任一步骤卡片，右侧展开该步的详细命令（均可一键复制）；<b>&lt;尖括号&gt;</b> 内为占位符，按你的环境替换。演示环境：主库 <b>DB1</b> ＠192.168.16.135（PRIMARY）/ 备库 <b>DB2</b> ＠192.168.16.136（STANDBY）/ 守护组 GRP1（OGUID 102314271）/ SQL 端口 5666 / 软件目录 /home/dmdba/dmdbms / 数据目录 /dmdata/DAMENG / 监视器配置 /dmdata/dmmon/DAMENG。</div>
+<section class="card" id="stage">
+  <h2>六步重启 · 切换可选 · 终验收尾</h2>
+  <div class="h2sub">点击任一步骤卡片，右侧展开该步的详细命令（均可一键复制）；<b>&lt;尖括号&gt;</b> 内为占位符，按你的环境替换。演示环境：主库 <b>DB1</b> ＠192.168.16.135（PRIMARY）/ 备库 <b>DB2</b> ＠192.168.16.136（STANDBY）/ 守护组 GRP1（OGUID 102314271）/ SQL 端口 5666 / 软件目录 /home/dmdba/dmdbms / 数据目录 /dmdata/DAMENG / 监视器配置 /dmdata/dmmon/DAMENG。<br>
+    <b>流程在第 6 步之后分叉</b>：只重启 → <b>1→6</b> 做完直接跳 <b>第 8 步</b> 终验；本次维护还要做<b>主备角色互换</b>，才走 <b>第 7 步（可选）</b>。</div>
 
   <div class="stage">
     <div class="steps">
@@ -197,14 +207,14 @@
         <div class="d">注意：是 startup 不是 start（实测坑）</div>
         <div class="go">查看命令 →</div>
       </div>
-      <div class="step" data-k="s7" data-name="步骤 7 · switchover：计划内主备切换" tabindex="0" role="button" aria-label="7 switchover 计划内切换">
-        <span class="no">7</span><span class="t">switchover 计划内切换</span>
-        <div class="d">主备都健康时角色互换，YES 二次确认</div>
+      <div class="step opt" data-k="s7" data-name="步骤 7 · switchover：计划内主备切换（可选）" tabindex="0" role="button" aria-label="7 switchover 计划内切换，可选步骤">
+        <span class="no">7</span><span class="t">switchover 计划内切换</span><span class="tagopt">可选</span>
+        <div class="d">仅当本次维护要主备角色互换才做；纯重启可跳过，直接到第 8 步</div>
         <div class="go">查看命令 →</div>
       </div>
       <div class="step" data-k="s8" data-name="步骤 8 · show：终验" tabindex="0" role="button" aria-label="8 show 终验收尾">
         <span class="no">8</span><span class="t">show 终验收尾</span>
-        <div class="d">角色按预期互换，FLSN/CLSN 重新趋平</div>
+        <div class="d">只重启 → 角色不变；做过切换 → 角色已互换</div>
         <div class="go">查看命令 →</div>
       </div>
     </div>
@@ -393,10 +403,18 @@ startup group
             <li class="warnline"><b>命令不对称</b>：停是 <span class="chip">stop group</span>，起是 <span class="chip">startup group</span>——写成 <span class="chip">start group</span> 会被监视器直接拒绝（<span class="chip">输入命令非法</span>）。</li>
             <li>只有不走监视器、改用操作系统服务分别启停 dmwatcher/dmserver 时，才需要自己把关启动顺序。</li>
           </ul>
+          <div class="branch">
+            <b>重启到这里就结束了。</b>只想重启的话：<span class="chip">startup group</span> 返回「启动组(GRP1)中的所有实例成功」、两个实例重新 OPEN 之后，集群已回到原状——<b>主备角色没有任何变化</b>。直接跳到 <b>第 8 步</b> 做终验即可，<b>第 7 步不用做</b>。<br>
+            只有本次维护窗口<b>还要做主备角色互换</b>（换机下线、验证切换能力、把业务挪到另一台、切换演练）时，才接着走第 7 步——它接在这个位置，但<b>逻辑上不属于重启</b>。
+          </div>
         </div>
 
         <!-- ===== switchover 计划内切换 ===== -->
         <div class="detail" data-k="s7">
+          <div class="branch">
+            <b>这一步是可选的，不属于重启流程。</b>前面的 <span class="chip">stop group</span> / <span class="chip">startup group</span> 只是让实例停一下再起来，<b>主备角色从头到尾没变</b>；只有 switchover 才会真正对调主备。跳过它，重启依然是一次完整的重启。<br>
+            <b>需要做</b>：换机下线、验证切换能力、计划内把业务挪到另一台、切换演练。　<b>不用做</b>：单纯的重启维护（改参数、打补丁、换硬件后重启）。
+          </div>
           <p class="goal"><b>目标：</b>计划内维护做主备角色互换：不丢数据，原备库升主、原主库降备。</p>
           <div class="cmdbox">
             <button class="cp" type="button">复制</button>
@@ -428,12 +446,16 @@ Y
             <pre><code><span class="cm"># [monitor] 提示符下执行</span>
 show
 
-<span class="cm"># 验收标准：</span>
-<span class="cm"># 1) 两个实例的 ISTATUS 与 IMODE 都是 OPEN</span>
-<span class="cm"># 2) IMODE 已按预期互换（原主→STANDBY，原备→PRIMARY）</span>
-<span class="cm"># 3) FLSN / CLSN 重新趋于一致（备库追平需要一点时间）</span>
-<span class="cm">#    RSTAT 主库侧 VALID、备库侧可能 NULL，不作为判据</span></code></pre>
+<span class="cm"># 共同项（两种情形都要满足）：</span>
+<span class="cm"># 1) 两个实例的 ISTATUS 都是 OPEN</span>
+<span class="cm"># 2) FLSN / CLSN 重新趋于一致（备库追平需要一点时间）</span>
+<span class="cm">#    RSTAT 主库侧 VALID、备库侧可能 NULL，不作为判据</span>
+<span class="cm">#</span>
+<span class="cm"># 角色项（看 IMODE，按你走到哪一步挑一组核对，别套错）：</span>
+<span class="cm"># A 只重启、没做第 7 步 → 角色应保持原样：DB1 仍 PRIMARY、DB2 仍 STANDBY</span>
+<span class="cm"># B 做过第 7 步切换   → 角色应已互换：DB1 变 STANDBY、DB2 变 PRIMARY</span></code></pre>
           </div>          <ul>
+            <li><b>标准别套错</b>：没做第 7 步却看到角色变了，或者做了切换角色却没变，都算异常——先看 <span class="chip">show</span> 的 IMODE 列和实例日志，别急着收工。</li>
             <li>若此时业务已恢复写入，FLSN/CLSN 有少量差值属正常——「一致」要在「业务已停」前提下看才算数。</li>
           </ul>
         </div>
@@ -451,7 +473,7 @@ show
   <h3>一、什么时候要做这件事</h3>
   <div class="note">
     <ul>
-      <li><b>计划内维护</b>：版本升级、硬件更换或扩容、机房搬迁、需重启才生效的参数调整——走本页这套流程。</li>
+      <li><b>计划内维护</b>：版本升级、硬件更换或扩容、机房搬迁、需重启才生效的参数调整——走本页这套流程；要不要顺带做一次 switchover，看变更单要求，<b>不是默认动作</b>（见第 7 步，可选）。</li>
       <li><b>主库故障后的恢复</b>：处置路径不同，用的是 <span class="chip">takeover</span> 而不是 <span class="chip">switchover</span>，且可能丢数据，不要套用本页的计划内切换步骤。</li>
       <li>判断依据是变更单或故障单的明确要求，不是「感觉该重启了」——停机窗口没批下来就不要动。</li>
     </ul>
@@ -493,7 +515,7 @@ show
   <h3>五、如何自证已完成</h3>
   <div class="note">
     <ul>
-      <li><span class="chip">show</span> 输出中两个实例的 <b>ISTATUS 均为 OPEN、IMODE 均为 OPEN</b>，WSTATUS 也是 OPEN。</li>
+      <li><span class="chip">show</span> 输出中两个实例的 <b>ISTATUS 均为 OPEN</b>，WSTATUS 也是 OPEN。</li>
       <li><b>IMODE 符合预期</b>：只重启未切换则主备角色不变；做过切换则主备已互换（原主→STANDBY，原备→PRIMARY）。</li>
       <li><span class="chip">RSTAT</span> 均为 <b>VALID</b>，且 <b>FLSN / CLSN 两侧趋于一致</b>，说明备库已追平、日志同步正常。</li>
       <li>应用侧连接正常、关键业务与监控告警无异常后，才算交付完成。</li>
@@ -597,27 +619,35 @@ sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_norma
   </div>
 
   <div class="faq-item">
-    <button class="q" type="button">Q4：普通监视器能执行 stop group / switchover 吗？要不要停掉确认监视器？<span class="src-tag src-official">文档</span><span class="arr">▼</span></button>
+    <button class="q" type="button">Q4：重启完还要不要接着做 switchover？<span class="src-tag src-field">现场</span><span class="arr">▼</span></button>
+    <div class="a">
+      <p><b>通常不需要。</b><span class="chip">stop group</span> / <span class="chip">startup group</span> 只是把实例停掉再起来，全程<b>不改主备角色</b>；switchover 是另一件事——把主备对调。只做重启维护（改参数、打补丁、换硬件后重启）就跳到终验，第 7 步可以完全跳过。</p>
+      <p>只有本次变更单确实要求<b>把业务挪到另一台</b>、或要<b>验证切换能力</b>时才做。<b>动手前先算一笔账</b>：应用如果是直连主库 IP 而不是服务名 / VIP，切换后连接串得跟着改，这才是做切换的真正成本；用的是服务名就基本无感。</p>
+    </div>
+  </div>
+
+  <div class="faq-item">
+    <button class="q" type="button">Q5：普通监视器能执行 stop group / switchover 吗？要不要停掉确认监视器？<span class="src-tag src-official">文档</span><span class="arr">▼</span></button>
     <div class="a">
       <p>能。文档口径：普通监视器「仅用于监控守护系统状态与执行手动切换命令」，管理命令都能用。<b>不要为了操作而停掉确认监视器</b>——一个集群只能有一个确认监视器，停掉它会制造一段无确认监视器的风险窗口；正确做法是复制配置把 MON_DW_CONFIRM 改 0，另起一个普通监视器与它共存。</p>
     </div>
   </div>
 
   <div class="faq-item">
-    <button class="q" type="button">Q5：DW_MODE=AUTO 的集群还能手工 switchover 吗？<span class="src-tag src-official">文档</span><span class="arr">▼</span></button>
+    <button class="q" type="button">Q6：DW_MODE=AUTO 的集群还能手工 switchover 吗？<span class="src-tag src-official">文档</span><span class="arr">▼</span></button>
     <div class="a">
       <p>能。文档口径：AUTO 只影响「主库故障时备库是否自动接管」，与人工发起的计划内切换无关——实测 AUTO 模式下 switchover 完整跑通两个方向（角色互换后两实例仍双 OPEN、FLSN=CLSN）。</p>
     </div>
   </div>
 
   <div class="faq-item">
-    <button class="q" type="button">Q6：tip 提示 not in CONFIRM mode 严重吗？<span class="src-tag src-official">文档</span><span class="arr">▼</span></button>
+    <button class="q" type="button">Q7：tip 提示 not in CONFIRM mode 严重吗？<span class="src-tag src-official">文档</span><span class="arr">▼</span></button>
     <div class="a">
       <p>取决于你依不依赖自动切换。文档口径：该提示表示此监视器不在 CONFIRM 模式，主库故障时<b>无法完成自动接管</b>。只做计划内维护不必紧张；生产上依赖自动切换的集群，务必按手册把监视器配成确认模式。</p>
     </div>
   </div>
   <div class="faq-item">
-    <button class="q" type="button">Q7：主库上 ps 看不到 dmmonitor，是集群没起监视器吗？<span class="src-tag src-field">现场</span><span class="arr">▼</span></button>
+    <button class="q" type="button">Q8：主库上 ps 看不到 dmmonitor，是集群没起监视器吗？<span class="src-tag src-field">现场</span><span class="arr">▼</span></button>
     <div class="a">
       <p>多半是<b>找错机器了</b>。<span class="chip">ps</span> 只列本机进程，而监视器只跑在启动它的那一台（本演示是备库 136，由系统服务 <span class="chip">DmMonitorServiceDBMM</span> 常驻）。
       判断顺序：① <span class="chip">hostname</span> 确认当前在哪台 → ② <span class="chip">ps -ef | grep -i '[d]mmonitor'</span> → ③ <span class="chip">systemctl list-units --type=service | grep -i DmMonitor</span> → ④ 看谁在写 <span class="chip">MON_LOG_PATH</span> 下的日志（<span class="chip">ls -lt</span> 时间在涨的那台）。
@@ -649,7 +679,7 @@ sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_norma
     </div>
   </section>
 
-<footer class="ft">更新于 2026-10-26</footer>
+<footer class="ft">更新于 2026-10-26 · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号</a></footer>
 
 </div>
 
