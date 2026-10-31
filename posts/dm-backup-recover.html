@@ -175,7 +175,7 @@ SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MIN(ID) AS MIN_ID, MAX(ID) AS MAX_I
 <h2>另一条快路：回收站闪回（前提是它恰好开着）</h2>
 <blockquote><p>如果目标实例开了回收站，误删的表可以直接闪回，不用走上面这一整套备份恢复流程。前提是 <code>RECYCLEBIN=1</code>，直接 <code>SHOW RECYCLEBIN</code> 找到原表名后 <code>FLASHBACK TABLE 原表名 TO BEFORE DROP</code>。</p></blockquote>
 </div>
-  <section class="contact">
+  <section class="contact" hidden>
   <details class="contact-fold">
       <summary>要我微信？点开看二维码（不点也行）</summary>
       <div class="contact-qr">

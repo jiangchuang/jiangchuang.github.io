@@ -278,7 +278,7 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</code><
 <p>做不到的也说清楚：它不替你判断该加什么索引，也不判断这条 SQL 业务上该不该存在。报告给的是证据和优先级，判断还是人做。</p>
 <blockquote><p>用着有问题、或者你手上的日志它读不动，<a href="https://gitee.com/jiangchuang/dm-tools/issues">提个 issue</a>，把 <code>--version</code> 的输出和报错原文贴上就够定位。这类问题基本都能修，修完别人也能用。</p></blockquote>
 </div>
-  <section class="contact">
+  <section class="contact" hidden>
     <div class="contact-body">
       <h3>卡在某一步了？</h3>
       <p>先翻 <a href="../interactive/dmsqlq-log-parse.html">交互版</a>，四步都有实跑输出，多数坑在第二步的参数顺序上。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、<code>dmsqlq --version</code> 的输出。不用发日志原文，也不用发配置。</p>

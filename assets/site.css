@@ -421,9 +421,11 @@ mark{background:var(--accent);color:var(--bg);padding:0 2px;border-radius:calc(v
 }
 
 /* ================= 联系方式（微信二维码折叠 + 邮箱） ================= */
-/* 二维码默认收起：不点开就不占位、不下载（img 带 loading=lazy）。
-   理由不是"设计感"，是这东西确实招人烦 —— 文章还没看就被要求加好友。
-   但它也确实是唯一的反馈入口，所以留着，只是不摆在明面上。 */
+/* 现状：posts/ 下全部博文已加 hidden 隐藏这个区块，页面上不出现。
+   结构和样式都保留着，把标签上的 hidden 去掉就恢复，不用重写内容。
+   index.html 与 about.html 未隐藏（首页要留一个入口，about 页本身就是关于页）。
+   加一条兜底，避免以后给 .contact 补 display 时把 hidden 压掉。 */
+.contact[hidden]{display:none}
 .contact{
   margin:44px 0 0;padding:22px 24px;background:var(--bg-2);
   border:1px solid var(--line-2);border-radius:var(--radius-lg);
