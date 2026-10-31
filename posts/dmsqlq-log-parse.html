@@ -75,51 +75,59 @@
   </div>
   <div class="content">
 <blockquote><p>📋 <strong>想照着敲？</strong>这篇有 <strong>交互操作版</strong>——步骤卡片导航、命令一键复制，现场对着敲更顺手：<a href="../interactive/dmsqlq-log-parse.html">打开交互操作版 →</a></p></blockquote>
-<blockquote><p>本文讲的工具是 <strong>dmsqlq</strong>，自研、单文件、开源之前先放二进制。下面每条命令和每个输出都是本机实跑取的，<strong>没有改写、没有补全</strong>。性能数字标了样本来源，能自己复核。</p></blockquote>
+<blockquote><p>本文讲的工具是 dmsqlq，自研，单文件，开源之前先放二进制。下面每条命令、每个输出都是本机实跑取的，没改写、没补全。性能数字标了样本来源，你可以自己复核。</p></blockquote>
 
-<h2>先说结论：让你复现不了现场的，不是日志太难，是参数没了</h2>
+<h2>日志里那句 <code>where fbill_id = ?</code>，到底在执行什么</h2>
 <p>客户说"早上那条单子查不出来"，你去翻 SQL 日志，看到的是这个：</p>
 <pre class="code"><code>[SEL] SELECT * FROM t_rim_invoice WHERE fbill_id = ? AND status = ?  EXECTIME: 18.4(ms)</code></pre>
-<p>两个问号。<code>fbill_id</code> 是什么、<code>status</code> 是几，日志里这句话本身没写。</p>
-<p>但 DM 的 SQL 日志其实把它<strong>记在另一行</strong>——紧接着的 <code>PARAMS(SEQNO, TYPE, DATA)</code> 行，靠时间戳和会话/语句句柄跟语句配对：</p>
+<p>两个问号。<code>fbill_id</code> 是什么、<code>status</code> 是几，这行本身都没写。</p>
+<p>DM 把这两个值记在另一行：紧跟着的 <code>PARAMS(SEQNO, TYPE, DATA)</code>，靠时间戳和会话/语句句柄跟语句配对。</p>
 <pre class="code"><code>2026-09-10 09:00:00.000 (EP[0]{sess:0x7f100a,user:SYSDBA,stmt:0x2010,...}) PARAMS(SEQNO, TYPE, DATA)={(1, VARCHAR, 'dac000000'),(2, INT, 0)}
 2026-09-10 09:00:00.000 (EP[0]{sess:0x7f100a,user:SYSDBA,stmt:0x2010,...}) [SEL] SELECT * FROM t_rim_invoice WHERE fbill_id = ? AND status = ?  EXECTIME: 18.4(ms)</code></pre>
-<p>所以能不能还原，只取决于两件事：<strong>日志里有没有那行 PARAMS</strong>（采集侧配的），和<strong>工具愿不愿意在参数值本身就带 <code>?</code> 时继续往下填</strong>。第二件是很多工具翻车的地方，后面「和官方 DMLOG 怎么选」里说。</p>
+<p>所以能不能还原，只看两件事：采集侧有没有把 PARAMS 行记下来；工具在参数值本身就带 <code>?</code> 的时候，还敢不敢继续往下填。第二件是很多工具翻车的地方，后面讲 DMLOG 那一节会说到。</p>
 
 <h2>先把它拿到手</h2>
-<p>单文件、免安装、零依赖：<strong>不用装运行时、不连数据库、不建表、不联网</strong>，只读日志文件、写结果文件。<code>install</code> 也只是把二进制放进你的用户目录并修 PATH，不动 <code>/usr</code>，<code>--remove</code> 整套撤销。</p>
+<p>单文件，免安装，不需要运行时。不连库、不建表、不联网，只读日志、只写结果文件。<code>install</code> 做的事就是把二进制放进你的用户目录并修 PATH，不动 <code>/usr</code>；<code>--remove</code> 撤得干净。</p>
 <table>
 <tr><th style="width:190px">平台</th><th style="width:290px">包</th><th>大小</th></tr>
 <tr><td>Windows x64</td><td><a href="https://gitee.com/jiangchuang/dm-tools/raw/master/dmsqlq/V2.37/dmsqlq-V2.37-windows-x64.zip">dmsqlq-V2.37-windows-x64.zip</a></td><td>2.2 MB</td></tr>
 <tr><td>Linux x86_64</td><td><a href="https://gitee.com/jiangchuang/dm-tools/raw/master/dmsqlq/V2.37/dmsqlq-V2.37-linux-x64.zip">dmsqlq-V2.37-linux-x64.zip</a></td><td>2.1 MB</td></tr>
 <tr><td>Linux arm64（鲲鹏/飞腾）</td><td><a href="https://gitee.com/jiangchuang/dm-tools/raw/master/dmsqlq/V2.37/dmsqlq-V2.37-linux-arm64.zip">dmsqlq-V2.37-linux-arm64.zip</a></td><td>1.9 MB</td></tr>
 </table>
-<p>下完先对一遍校验值——这一步十秒，能挡住中间人替换安装包（企业网里真发生过）：</p>
+<p>下完先对一遍校验值，十秒的事，能挡住中间人替换安装包——企业网里真发生过。</p>
 <pre class="code"><code class="lang-bash"># Linux / macOS：进入解压后的 V2.37 目录
 sha256sum -c CHECKSUMS.txt
 # Windows PowerShell：和 CHECKSUMS.txt 里对应那一行的值比
 Get-FileHash .\dmsqlq-V2.37-windows-x64.zip -Algorithm SHA256</code></pre>
-<p>公司网络拦 gitee、或者下载奇慢，<a href="https://gitee.com/jiangchuang/dm-tools/issues">提 issue</a> 说一声，我换个地方给你。</p>
+<p>公司网络拦 gitee，或者下载慢得离谱，去 <a href="https://gitee.com/jiangchuang/dm-tools/issues">issue</a> 说一声，我换个地方给你。</p>
 <blockquote><p><strong>下载页</strong>：<a href="https://gitee.com/jiangchuang/dm-tools">gitee.com/jiangchuang/dm-tools</a>（只放编译好的包，不放源码；dmkit 也在这）</p></blockquote>
 
 <h2>四条命令，从「上不了手」到「能交付」</h2>
-<p>下面第四条只是同一个命令换个参数。所有命令里的目录改成你自己的，其余照抄。</p>
+<p>第四条只是同一个命令换了个参数。命令里的目录改成你自己的，其余照抄。</p>
 
-<h3>第 1 步：确认日志在哪，别认错文件</h3>
-<p>日志默认在实例目录的 <code>log</code> 下：</p>
-<pre class="code"><code class="lang-bash">ls /opt/dmdbms/data/DAMENG/log/dmsql_*.log</code></pre>
-<p>同目录下还有另外两种日志，名字很像但完全不是一回事：</p>
+<h3>第 1 步：先把日志目录找出来，别背路径</h3>
+<p>网上教程大多写 <code>/opt/dmdbms/data/DAMENG/log</code>。这串是安装时的一个默认值，不是固定值——装的时候数据目录可以指到任何地方，实例名也可以不叫 DAMENG。我自己的机器上数据目录就在 <code>/dmdata/DAMENG</code>，照着教程敲那行，结果是一个空目录，或者干脆 "No such file"。</p>
+<p>所以别记路径，先问实例自己要。最省事是看进程：</p>
+<pre class="code"><code class="lang-bash">ps -ef | grep dmserver | grep -v grep</code></pre>
+<p>输出里最后那个参数就是 dm.ini 的完整路径，它的父目录就是实例目录，<code>log</code> 在它下面：</p>
+<pre class="code"><code>dmdba  12345  /home/dmdba/dmdbms/bin/dmserver /dmdata/DAMENG/dm.ini -noconsole</code></pre>
+<p>这条路不用连库。客户端连不上、口令也忘了的时候，它照样能定位。</p>
+<p>能连库的话直接问它更快：</p>
+<pre class="code"><code class="lang-sql">select para_value from v$dm_ini where para_name = 'PATH';</code></pre>
+<p>拿到的就是数据目录，后面接 <code>/log</code>。</p>
+<p>同目录下还有两种日志，名字像，内容完全不是一回事：</p>
 <table>
 <tr><th style="width:170px">文件名</th><th>是什么</th></tr>
-<tr><td><code>dmsql_*.log</code></td><td><strong>要的就是这个</strong>——SQL 日志，带语句、耗时、参数</td></tr>
+<tr><td><code>dmsql_*.log</code></td><td>要的就是这个——SQL 日志，带语句、耗时、参数</td></tr>
 <tr><td><code>dm_*.log</code></td><td>实例事件日志（启停、切换、报错），没有 SQL</td></tr>
 <tr><td><code>dmtrc_*.log</code></td><td>跟踪日志，另一套开关</td></tr>
 </table>
-<p>机器上一个 <code>dmsql_*.log</code> 都没有？说明 SQL 日志没开，或者开了但没采到——先看后面「报告能不能信」那一节的采集体检，别急着换工具。</p>
+<p>一个 <code>dmsql_*.log</code> 都没有？八成是 SQL 日志没开，或者开了没采到。先看后面「报告能不能信」那节的采集体检，别急着换工具。</p>
+<p>采集开关在 <code>sqllog.ini</code>，一般在安装目录的 <code>bin</code> 下，不确定就 <code>find / -name sqllog.ini 2>/dev/null</code>。</p>
 
 <h3>第 2 步：先扫一眼，不出文件</h3>
-<pre class="code"><code class="lang-bash">dmsqlq /opt/dmdbms/data/DAMENG/log -S</code></pre>
-<p><code>-S</code> 是大写，意思「只打到屏幕」；<code>-s</code> 小写会额外生成一份 HTML 报告并用浏览器打开。实际输出（样例日志，600 条语句）：</p>
+<pre class="code"><code class="lang-bash">dmsqlq /dmdata/DAMENG/log -S</code></pre>
+<p><code>-S</code> 大写是「只打到屏幕」，小写 <code>-s</code> 会额外生成一份 HTML 报告并用浏览器打开。实际输出（样例日志，600 条语句）：</p>
 <pre class="code"><code>dmsqlq 2.37 统计报告   2026-10-31 00:45:14
 ────────────────────────────── 概览 ──────────────────────────────
   ★ 头号问题：累计耗时最高的是一类语句（600 次 / 累计 18.03s，
@@ -134,28 +142,28 @@ Get-FileHash .\dmsqlq-V2.37-windows-x64.zip -Algorithm SHA256</code></pre>
       问题信号：SELECT * 取全字段（直接查基表）
       建议动作：只取需要的列 —— 覆盖索引时才可能免回表
       语句样例：SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000000' AND status = 0</code></pre>
-<p>注意这份报告排的是 <strong>累计耗时占比</strong>，不是「单次最慢」。一天只跑一次的 8 秒慢查询，不该排在一个每分钟跑 60 次、每次 200ms 的查询前面——后者一天耗掉的小时数才是真的。</p>
+<p>注意它排的是<strong>累计耗时占比</strong>，不是单次最慢。一天只跑一次的 8 秒慢查询，不该排在每分钟 60 次、每次 200ms 的语句前面——后者一天耗掉的小时数才是真的。</p>
 
 <h3>第 3 步：把 <code>?</code> 换成真实值，导出能直接执行的 SQL</h3>
-<pre class="code"><code class="lang-bash">dmsqlq /opt/dmdbms/data/DAMENG/log -o out.sql</code></pre>
+<pre class="code"><code class="lang-bash">dmsqlq /dmdata/DAMENG/log -o out.sql</code></pre>
 <p><code>out.sql</code> 里长这样：</p>
 <pre class="code"><code class="lang-sql">-- 2026-09-10 09:00:00 · [SEL] · 0.1ms · SYSDBA, · trxid:3816438, · SAMPLE
 SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000000' AND status = 0;
 
 -- 2026-09-10 09:00:00 · [UPD] · 0.5ms · SYSDBA, · trxid:3816438, · SAMPLE · /*未找到匹配参数: 占位符2个*/
 update ACCOUNTS set BALANCE = BALANCE + ? where ACCT_ID = ?;</code></pre>
-<p>两条对照着看就懂了：第一条参数填好了，可以直接贴进 disql；<strong>第二条工具自己承认「没找到参数」，而不是编一个值糊上去</strong>。</p>
-<p>这一点值得单独说：「没还原」和「还原错了」是两种完全不同的后果。前者你知道要手工补；后者你会拿着一条假 SQL 去复现一个根本不存在的现场，然后得出完全错误的结论。所以还原不了的语句原样留 <code>?</code>，注释头里写清占位符个数。</p>
+<p>两条对照着看：第一条参数填好了，可以直接贴进 disql；第二条工具自己承认没找到参数，没有编个值糊上去。</p>
+<p>「没还原」和「还原错了」是两种后果。前者你知道要手工补；后者你会拿着一条假 SQL 去复现一个根本不存在的现场，结论错得还很自信。所以还原不了的语句原样留 <code>?</code>，注释头里写清占位符个数。</p>
 
 <h3>第 4 步：只要慢的，出交付清单</h3>
-<pre class="code"><code class="lang-bash">dmsqlq /opt/dmdbms/data/DAMENG/log -m 1000 -B 20 -o slow.sql</code></pre>
+<pre class="code"><code class="lang-bash">dmsqlq /dmdata/DAMENG/log -m 1000 -B 20 -o slow.sql</code></pre>
 <p><code>-m 1000</code> 是耗时下限（毫秒），<code>-B 20</code> 是最多取 20 条。实际输出（样例取最慢 3 条）：</p>
 <pre class="code"><code class="lang-sql">-- 2026-09-10 09:09:59 · [SEL] · 60ms · SYSDBA, · trxid:3816637, · SAMPLE
 SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000599' AND status = 5;
 
 -- 2026-09-10 09:09:58 · [SEL] · 59.9ms · SYSDBA, · trxid:3816637, · SAMPLE
 SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</code></pre>
-<p>要发给开发商或客户当优化清单，加 <code>-e 交付_202609.xlsx</code> 直接出 Excel，已经按累计耗时降序排好优先级——省掉你在 Excel 里手工排序那一小时。</p>
+<p>要发给开发商或客户当优化清单，加 <code>-e 交付_202609.xlsx</code> 直接出 Excel，已经按累计耗时降序排好优先级，省掉你在 Excel 里手工排序那一小时。</p>
 
 <h2>它到底能扛多大</h2>
 <p>数字来自工具仓库的现网实测记录，样本、版本、结果都列出来：</p>
@@ -164,12 +172,12 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</code><
 <tr>
 <td>单文件 <strong>1.03 GB</strong> 现网日志<br><span style="color:#6b7280">334 万条记录 / 92 万 SQL 事件</span></td>
 <td>2.26 s<br>≈ 455 MB/s（单线程）</td>
-<td>输出 46.8 万条可执行 SQL；参数还原成功率 <strong>97.8%</strong>。热数据单文件实测 549 MB/s</td>
+<td>输出 46.8 万条可执行 SQL；参数还原成功率 97.8%。热数据单文件实测 549 MB/s</td>
 </tr>
 <tr>
 <td>7 个日志 7.3 GB（冷盘）</td>
 <td><code>-j 1</code> → 99 MB/s<br><code>-j 4</code> → 157 MB/s<br><code>-j 8</code> → 146 MB/s</td>
-<td>并发甜点在 <strong>4</strong>；到 8 已经撞上磁盘读带宽，再加没用</td>
+<td>并发甜点在 4；到 8 已经撞上磁盘读带宽，再加没用</td>
 </tr>
 <tr>
 <td>13.9 GB 全量（14 个来源）</td>
@@ -177,57 +185,57 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</code><
 <td>顺带给出被争抢最狠的对象（表 10175：1,156 次，占全部等待 80%），拿 table id 反查字典即可定位</td>
 </tr>
 </table>
-<p>一句话结论：<strong>这是个 I/O 型的活，CPU 从来不是瓶颈</strong>——否则单线程跑不到 549 MB/s。所以在外面再包一层 <code>rg</code> 之类的东西不会更快：真正花钱的是磁盘读和 gzip 解压，不是文本匹配。</p>
-<p>在库服务器上跑，建议 <code>-j 2~4</code>，别开满。省下那两秒，不够抵掉你抢数据库实例 CPU 惹出来的麻烦。</p>
+<p>这活吃 I/O，不吃 CPU，否则单线程跑不到 549 MB/s。在外面再套一层 <code>rg</code> 之类的东西也不会更快：花钱的是磁盘读和 gzip 解压，不是文本匹配。</p>
+<p>在库服务器上跑，建议 <code>-j 2~4</code>，别开满。省下的那两秒，不够抵你抢数据库实例 CPU 惹出来的麻烦。</p>
 
-<h2>报告能不能信：三个自检点</h2>
+<h2>报告能不能信，看这三个地方</h2>
 
-<h3>一、先看「采集缺口」，这是「查不出来」的第一嫌疑</h3>
-<p>日志里显示「锁等待 0 次」，是真的没锁竞争吗？<strong>大概率是没采集到。</strong>工具会把这件事挑明，不让你误判：</p>
+<h3>一、先看采集缺口，「查不出来」的第一嫌疑</h3>
+<p>日志里显示「锁等待 0 次」，是真没锁竞争吗？大概率是没采集到。工具会把这件事挑明，不让你误判：</p>
 <pre class="code"><code>  采集缺口   缺位号 29：本批日志无事务/锁事件行（TRX: / DLCK / LOCK_TID 全为 0）
              → 「锁等待」「长事务」「TPS」是没采集到，不是没发生</code></pre>
-<p>判据很硬：29 位号一旦开启，事务事件行必然大量出现，<strong>不可能恰好是 0</strong>。要这个维度，就在 <code>sqllog.ini</code> 的 <code>SQL_TRACE_MASK</code> 里打开 29 重采；短期替代是在库上查 <code>V$TRXWAIT</code> / <code>V$LOCK</code>。</p>
-<p>顺带它还会做一份采集配置体检：缺 <strong>28</strong> 就没有参数行（还原率直接归零）、缺 <strong>27</strong> 没有原始语句、缺 <strong>23</strong> 没有报错语句。这几个位号记不住没关系，报告会直接告诉你缺哪个。</p>
+<p>判据很硬：29 位号一旦开启，事务事件行必然大量出现，不可能恰好是 0。要这个维度，就在 <code>sqllog.ini</code> 的 <code>SQL_TRACE_MASK</code> 里打开 29 重采；短期替代是在库上查 <code>V$TRXWAIT</code> / <code>V$LOCK</code>。</p>
+<p>它还会顺手做一份采集配置体检：缺 28 就没有参数行（还原率直接归零）、缺 27 没有原始语句、缺 23 没有报错语句。位号记不住没关系，报告会直接告诉你缺哪个。</p>
 
 <h3>二、还原不了的，它明说，不装</h3>
-<p><code>/*未找到匹配参数: 占位符2个*/</code> 这行注释就是自检点。看到它，说明这批日志的 PARAMS 行缺失或被截断，不是工具坏了——回去查采集配置（位号 28），或者确认日志有没有被跨文件截断。</p>
+<p><code>/*未找到匹配参数: 占位符2个*/</code> 这行注释就是自检点。看到它，说明这批日志的 PARAMS 行缺失或被截断，不是工具坏了。回去查采集配置（位号 28），或者确认日志有没有被跨文件截断。</p>
 
 <h3>三、排序口径是「累计」，不是「单次最慢」</h3>
-<p>前面说过一次，这里再强调：如果你要的是「哪条 SQL 最拖垮系统」，累计耗时才是答案；如果你要的是「哪条 SQL 最慢」，用 <code>-m</code> 卡耗时下限。两个问题不一样，别拿一个答案去回另一个。</p>
+<p>要回答「哪条 SQL 最拖垮系统」，累计耗时才是答案；要回答「哪条 SQL 最慢」，用 <code>-m</code> 卡耗时下限。两个问题不一样，别拿一个答案去回另一个。</p>
 
 <h2>和官方 DMLOG 怎么选</h2>
-<p>先把话说清楚：<strong>DMLOG 是这条路上的先行者</strong>，从零到一把「SQL 日志能分析」这件事做成了。后来者（包括 dmsqlq）都是站在它提出的思路和口径上往前走的。所以下面只讲<strong>形态差异</strong>，不是谁替代谁。</p>
+<p>DMLOG 是这条路上的先行者，从零到一把「SQL 日志能分析」这件事做成了能用的东西。后来者包括 dmsqlq，都是在它提出的思路和口径上往前走的。下面只讲形态差异，不是谁替代谁。</p>
 <table>
 <tr><th style="width:130px">维度</th><th style="width:330px">官方 DMLOG 8.183</th><th>dmsqlq</th></tr>
 <tr><td>运行方式</td><td>要一个 DM 分析库（32K 页）+ <code>dmlog.properties</code> + JDBC 连接</td><td>单个二进制，<code>dmsqlq .</code> 就完事</td></tr>
-<tr><td>结果落地</td><td>在被分析的库里 DROP / CREATE 6 张分析表</td><td>只写 SQL 文本文件，<strong>不落库</strong></td></tr>
+<tr><td>结果落地</td><td>在被分析的库里 DROP / CREATE 6 张分析表</td><td>只写 SQL 文本文件，不落库</td></tr>
 <tr><td>参数值本身含 <code>?</code></td><td>整条放弃（同一批现网日志实测还原率 10.9%）</td><td>继续还原（同批 97.8%）</td></tr>
 <tr><td>参数值里带逗号</td><td>会静默切掉前缀，仍标记为成功</td><td>实测 14.9 万条含逗号/含引号的值全部完整</td></tr>
 </table>
-<p><strong>怎么选</strong>：要长期建库做趋势分析、本来就有专门的 analys 库 → DMLOG 那套仍然合适；要<strong>临时拿一份现网日志、几分钟内出结论、而且绝不能在生产库上建表</strong>（尤其不能出现 <code>LOG_COMMIT</code> 同名被 DROP 的风险）→ 用不落库这一支。</p>
-<p><strong>没做的事也说清楚</strong>：本次<strong>没有</strong>对 DMLOG 做计时实测，所以这里<strong>不引用任何耗时对比</strong>，只比有实测支撑的维度。</p>
+<p><strong>怎么选</strong>：要长期建库做趋势分析、本来就有 analys 库，DMLOG 那套仍然合适；要临时拿一份现网日志、几分钟出结论，而且绝不能在生产库上建表（尤其不能出现 <code>LOG_COMMIT</code> 同名被 DROP 的风险），用不落库这一支。</p>
+<p>这次没有对 DMLOG 做计时实测，所以不引用任何耗时对比，只比有实测支撑的维度。</p>
 
-<h2>三个场景，对号入座</h2>
-<h3>场景一：现场救火，只有一台能连的机器</h3>
-<p>把日志目录整个拷出来（或直接在库机上跑），<code>dmsqlq 目录 -S</code> 三十秒看结论。这时候最怕的是「为了分析先建个库」——现网不允许，也没时间。</p>
-<h3>场景二：给客户交优化清单</h3>
+<h2>三种用法</h2>
+<h3>现场救火，只有一台能连的机器</h3>
+<p>把日志目录整个拷出来，或者直接在库机上跑 <code>dmsqlq 目录 -S</code>，三十秒看结论。这时候最怕的是「为了分析先建个库」——现网不允许，也没时间。</p>
+<h3>给客户交优化清单</h3>
 <p><code>-m 200 -B 50 -e 交付.xlsx</code>，按累计耗时排好序，附上每条的真实参数。客户拿着这份清单能自己去改索引、改 SQL，不用你再口头解释「那个时间段那条语句」。</p>
-<h3>场景三：长期观察，日志堆了几十 GB</h3>
-<p>直接喂目录或压缩包，<code>-j 4</code>。它会按文件并行，压缩包内的条目也并行——这一点手工脚本很难做对，因为 gzip 本身是串行流，能重叠的只有「解压」和「解析」。</p>
+<h3>长期观察，日志堆了几十 GB</h3>
+<p>直接喂目录或压缩包，<code>-j 4</code>。它按文件并行，压缩包内的条目也并行。这一点手工脚本很难做对，因为 gzip 本身是串行流，能重叠的只有「解压」和「解析」。</p>
 
 <h2>常见问题</h2>
 
 <h3>单个大日志，开 <code>-j 30</code> 会快很多吗？</h3>
-<p>不会。并发只作用于<strong>多个文件</strong>或压缩包内的<strong>多个条目</strong>；单个大文件开满核也没用（实测 <code>-j 1</code> 与 <code>-j 30</code> 同速）。</p>
+<p>不会。并发只作用于多个文件或压缩包内的多个条目；单个大文件开满核也没用（实测 <code>-j 1</code> 与 <code>-j 30</code> 同速）。</p>
 
 <h3>它会不会改我的库？要不要装 Java / .NET？</h3>
 <p>都不会，都不用。单文件、零依赖，不连数据库、不建表、不联网。你可以把它拷到一台完全隔离的机器上跑，只要有日志文件。</p>
 
 <h3>记不住参数怎么办？</h3>
-<p>直接敲 <code>dmsqlq</code> 不带参数，就是交互向导：五问（日志在哪 / 要什么结果 / 时间范围 / 耗时下限 / 操作类型），<strong>每一步回车就是推荐值</strong>，最后把等效命令行打印出来，下次照着敲。<code>TAB</code> 补全首次交互运行时自动装好，选项和路径都能补。</p>
+<p>直接敲 <code>dmsqlq</code> 不带参数，就是交互向导：五问（日志在哪 / 要什么结果 / 时间范围 / 耗时下限 / 操作类型），每一步回车就是推荐值，最后把等效命令行打印出来，下次照着敲。<code>TAB</code> 补全首次交互运行时自动装好，选项和路径都能补。</p>
 
 <h3>为什么报告里有些语句没有 EXECTIME？</h3>
-<p>说明这条语句在日志里没有执行完成的行（例如采集期间实例重启、或语句还在跑）。这类不会被算进耗时统计，但会出现在事件计数里，看起来「条数对不上」是正常的。</p>
+<p>说明这条语句在日志里没有执行完成的行（采集期间实例重启、或语句还在跑）。这类不计入耗时统计，但会出现在事件计数里，看着「条数对不上」是正常的。</p>
 
 <h3>Windows 上用，路径要怎么写？</h3>
 <p>反斜杠和正斜杠都认：<code>dmsqlq D:\dmsql_log -s</code> 和 <code>dmsqlq D:/dmsql_log -s</code> 等价。路径里有空格就加引号。</p>
@@ -236,26 +244,16 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</code><
 <p>能，<code>--from</code> / <code>--to</code> 给时间范围（<code>YYYY-MM-DD HH24:MI:SS</code>）。只关心某类操作就加 <code>--ops SEL</code>（或多选 <code>SEL,UPD</code>）。</p>
 
 <h2>最后</h2>
-<p>这个工具的全部价值只有一句话：<strong>让「日志里那句话到底在执行什么」这个问题，在三分钟内有个能执行的答案</strong>，而不是让你在几百万行里手工捞参数。</p>
-<p>它做不了的事也说清楚：它不会替你判断该加什么索引，也不会告诉你这条 SQL 业务上该不该存在。报告给的是<strong>证据和优先级</strong>，判断还是人做。</p>
-<blockquote><p>用着有问题、或者你手上的日志它读不动，<a href="https://gitee.com/jiangchuang/dm-tools/issues">提个 issue</a>，把 <code>--version</code> 的输出和报错原文贴上就够定位。这类问题基本都能修，而且修完别人也能用。</p></blockquote>
+<p>它只解决一个问题：日志里那句话到底在执行什么，三分钟内给你一个能执行的答案，而不是让你在几百万行里手工捞参数。</p>
+<p>做不到的也说清楚：它不替你判断该加什么索引，也不判断这条 SQL 业务上该不该存在。报告给的是证据和优先级，判断还是人做。</p>
+<blockquote><p>用着有问题、或者你手上的日志它读不动，<a href="https://gitee.com/jiangchuang/dm-tools/issues">提个 issue</a>，把 <code>--version</code> 的输出和报错原文贴上就够定位。这类问题基本都能修，修完别人也能用。</p></blockquote>
 </div>
   <section class="contact">
     <div class="contact-body">
-      <h3>这条命令你跑通了吗？</h3>
-      <p>点一下就行——不用登录、不用打字、不用留任何联系方式。我只想知道这篇有没有用。</p>
-      <div class="sig-row">
-        <button class="sig-btn" type="button" data-sig="dmsqlq-ok">跑通了</button>
-        <button class="sig-btn" type="button" data-sig="dmsqlq-stuck">卡住了</button>
-        <span class="sig-note" id="sigNote" hidden></span>
-      </div>
-      <details class="sig-help" id="sigHelp">
-        <summary>卡住了，接着看这里</summary>
-        <p>先翻 <a href="../interactive/dmsqlq-log-parse.html">交互版</a>，四步都有实跑输出，多数坑在第二步的参数顺序上。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、<code>dmsqlq --version</code> 的输出。这三样够判断了，不用发日志原文，也不用发任何配置。</p>
-        <p>发哪儿都行：<a href="https://gitee.com/jiangchuang/dm-tools/issues" target="_blank" rel="noopener">工具仓库提个 issue</a>（回复公开可查，别人也能搜到），或者直接找我——联系方式收在下面。</p>
-      </details>
+      <h3>卡在某一步了？</h3>
+      <p>先翻 <a href="../interactive/dmsqlq-log-parse.html">交互版</a>，四步都有实跑输出，多数坑在第二步的参数顺序上。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、<code>dmsqlq --version</code> 的输出。不用发日志原文，也不用发配置。</p>
       <details class="contact-fold">
-        <summary>要找我本人？二维码和邮箱在这</summary>
+        <summary>要我微信？点开看二维码（不点也行）</summary>
         <div class="contact-qr">
           <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
           <span>扫了备注「达梦」<br>不备注我也加</span>
