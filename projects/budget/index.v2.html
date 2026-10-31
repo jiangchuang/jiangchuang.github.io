@@ -50,6 +50,21 @@
   .stat.saved{color:var(--ok);border-color:#cfe6da;background:#f3faf6}
   .stat.saved::before{background:var(--ok)}
   .stat.dirty{color:var(--warn);border-color:#f0dfc0;background:#fdf8ee}
+  /* 备份状态条：只在「有改动没备份」时显眼 */
+  .syncbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+    padding:7px 20px;font-size:12.5px;color:var(--muted);
+    border-bottom:1px solid var(--line2);background:#fbf9f6}
+  .syncbar .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+  .syncbar b{font-weight:650;color:var(--ink)}
+  .syncbar.warn{background:#fdf6e8;color:#8a5710;border-bottom-color:#f0dfc0}
+  .syncbar.warn .dot{background:var(--warn)}
+  .syncbar.warn b{color:#7a4c0d}
+  .syncbar.err{background:#fdf0ee;color:#8f2b23;border-bottom-color:#f3d6d2}
+  .syncbar.err .dot{background:var(--err)}
+  .syncbar details{margin-left:auto}
+  .syncbar summary{cursor:pointer;opacity:.85}
+  .syncbar .how{padding:6px 0 2px;max-width:640px;line-height:1.7}
+  .syncbar code{background:rgba(42,37,33,.06);padding:1px 5px;border-radius:4px;font-size:12px}
   .stat.dirty::before{background:var(--warn)}
   .stat.saving{color:#2a5d9e;border-color:#cfdff5;background:#f2f7fd}
   .stat.saving::before{background:#2a5d9e;animation:pulse 1s infinite}
@@ -464,6 +479,19 @@
   <a class="who" href="./" title="回到原来的界面，数据完全通用">回旧版</a>
 </header>
 
+<div class="syncbar" id="syncbar" hidden>
+  <span class="dot"></span>
+  <span id="syncText">—</span>
+  <details>
+    <summary>怎么备份</summary>
+    <div class="how">
+      在台式机上跑 <code>bash infra/backup-pull.sh</code>：取最新一份备份到本地
+      <code>I:/backups/budget</code>，再推 gitee。
+      核 <code>sha256</code> 前 8 位，跟这里显示一致就是同一份。
+    </div>
+  </details>
+</div>
+
 <div class="wrap">
 
   <section class="dash">
@@ -817,6 +845,7 @@ function flush(){
       setStatus(pending ? "dirty" : "saved", pending ? "未保存" : "已保存");
       $("statWho").textContent = (state.who ? "最后保存：" + state.who + " · " : "") +
         String(state.ts).replace("T", " ");
+      loadMeta();
       if (pending){
         clearTimeout(saveTimer);
         saveTimer = setTimeout(flush, 700);
@@ -865,6 +894,42 @@ function applyData(d){
   });
 }
 
+/* ---------- 备份状态条 ---------- */
+// 只为一件事：让「有人改过、但还没备份」在页面上躲不掉。拿不到就当没这条。
+function loadMeta(){
+  if (!token) return;
+  fetch("api/meta", {headers:{"X-Auth":token}, cache:"no-store"})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(m){ if (m) paintSyncbar(m); })
+    .catch(function(){});
+}
+
+function paintSyncbar(m){
+  var bar = $("syncbar"), txt = $("syncText");
+  if (!bar || !txt) return;
+  var d = m.data;
+  if (!d){ bar.hidden = true; return; }
+  bar.hidden = false;
+  var who = d.who ? "（" + esc(d.who) + "）" : "";
+  var b = m.backup;
+  if (!b){
+    bar.className = "syncbar err";
+    txt.innerHTML = "这份账本<b>还没有任何备份</b>。最后修改 " + esc(d.mtime_h) + who;
+    return;
+  }
+  if (m.dirty){
+    var h = m.age_h || 0;
+    var ago = h >= 48 ? Math.round(h / 24) + " 天" : Math.max(1, Math.round(h)) + " 小时";
+    bar.className = "syncbar warn";
+    txt.innerHTML = "有改动还没备份：最后修改 <b>" + esc(d.mtime_h) + "</b>" + who +
+      "，最近一次备份停在 <b>" + esc(b.mtime_h) + "</b>（" + ago + "前）";
+    return;
+  }
+  bar.className = "syncbar";
+  txt.innerHTML = "已备份到 <b>" + esc(b.mtime_h) + "</b> · 数据最后修改 " +
+    esc(d.mtime_h) + who + " · 校验 " + esc(d.sha8);
+}
+
 function load(){
   if (!token){ $("gate").hidden = false; return; }
   api("GET").then(function(res){
@@ -879,6 +944,7 @@ function load(){
     $("statWho").textContent = (state.who ? "最后保存：" + state.who + " · " : "") +
       String(state.ts).replace("T", " ");
     renderAll();
+    loadMeta();
   }).catch(function(err){
     setStatus("error", err && err.name === "TimeoutError" ? "加载超时" : "网络异常");
   });

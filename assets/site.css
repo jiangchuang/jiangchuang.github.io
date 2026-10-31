@@ -452,4 +452,24 @@ mark{background:var(--accent);color:var(--bg);padding:0 2px;border-radius:calc(v
 .contact-mail a{color:var(--accent);font-weight:500;text-decoration:none;border-bottom:1px solid var(--accent-line)}
 .contact-fine{font-size:12px !important;color:var(--text-3) !important;line-height:1.65 !important}
 .contact-fine a{color:var(--text-2);text-decoration:underline}
+/* 一键反馈：主位给按钮。不是为了采集数据，是为了让读者一个动作就能表态 */
+.sig-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:14px 0 2px}
+.sig-btn{
+  font:inherit;font-size:13.5px;line-height:1;cursor:pointer;
+  padding:10px 22px;border-radius:999px;border:1px solid var(--line-2);
+  background:#fff;color:var(--text);transition:border-color .15s,color .15s,background .15s;
+}
+.sig-btn:hover{border-color:var(--accent);color:var(--accent)}
+.sig-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sig-btn:disabled{cursor:default;opacity:.5}
+.sig-btn.sig-on{background:var(--bg-3);border-color:var(--accent);color:var(--accent);opacity:1}
+.sig-note{font-size:12.5px;color:var(--text-3)}
+.sig-help{margin:14px 0 0}
+.sig-help summary{
+  cursor:pointer;font-size:13px;color:var(--accent);list-style:none;display:inline-block;
+}
+.sig-help summary::-webkit-details-marker{display:none}
+.sig-help summary::before{content:"▸ ";transition:transform .15s}
+.sig-help[open] summary::before{content:"▾ "}
+.sig-help p{margin:10px 0 0;font-size:13px;color:var(--text-2);line-height:1.75}
 @media(max-width:560px){.contact-fold .contact-qr{flex-direction:column;align-items:flex-start;gap:10px}}

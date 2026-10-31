@@ -120,6 +120,31 @@ for p in walk('posts'):
     if p.endswith('.html') and PLACEHOLDER in read(p):
         err(f'{p} 的 meta description 还是占位句')
 
+# ---------- 9. 相对链接是不是真的能打开 ----------
+# 这一条是被真实事故催出来的：about.html 搬到根目录后，posts/ 与 interactive/
+# 里 13 个页面的页脚还写着 href="about.html"，全站「本站说明」都是 404，
+# 而没有任何东西会报错 —— 页面能开、别处链接也能跳，只有那一个链接是死的。
+LINK_PAT = re.compile(r'(?:href|src)="([^"]+)"')
+for p in list(walk('posts')) + list(walk('interactive')) + ['index.html', 'about.html', 'search.html']:
+    if not p.endswith('.html'):
+        continue
+    base = os.path.dirname(p)
+    for m in LINK_PAT.finditer(read(p)):
+        u = m.group(1).split('#')[0].split('?')[0].strip()
+        if not u or u.startswith(('http://', 'https://', '//', 'mailto:',
+                                 'javascript:', 'data:', '/')):
+            continue
+        # 前端用 JS 拼出来的 href（' + it.u + '）不是静态地址，跳过
+        if any(t in m.group(1) for t in ("' +", "${", "{{", "it.u")):
+            continue
+        # 浏览器里越过站点根就停在根（/../x 等价于 /x），这里比照这个语义，
+        # 否则根目录页面写 ../assets/ 会被误判成死链
+        target = os.path.normpath(os.path.join(base, u))
+        while target.startswith('..' + os.sep) or target == '..':
+            target = target[3:] if target.startswith('..' + os.sep) else '.'
+        if not os.path.exists(target):
+            err(f'{p} 的链接打不开：{m.group(1)}（解析成 {target}）')
+
 # ---------- 8. 出结果 ----------
 print()
 for m in OK:

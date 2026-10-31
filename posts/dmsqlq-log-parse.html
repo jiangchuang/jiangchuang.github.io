@@ -241,21 +241,27 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</code><
 <blockquote><p>用着有问题、或者你手上的日志它读不动，<a href="https://gitee.com/jiangchuang/dm-tools/issues">提个 issue</a>，把 <code>--version</code> 的输出和报错原文贴上就够定位。这类问题基本都能修，而且修完别人也能用。</p></blockquote>
 </div>
   <section class="contact">
-    <details class="contact-fold">
-      <summary>要我微信？点开看二维码（不点也行）</summary>
-      <details class="contact-fold">
-      <summary>要我微信？点开看二维码（不点也行）</summary>
-      <div class="contact-qr">
-        <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
-        <span>扫了备注「达梦」<br>不备注我也加</span>
-      </div>
-    </details>
-    </details>
     <div class="contact-body">
-      <h3>卡在某一步了？</h3>
-      <p>先看 <a href="../interactive/dmsqlq-log-parse.html">交互版</a>，四步都有实跑输出。还对不上，把 <b>卡在第几步</b>、报错原文、<code>dmsqlq --version</code> 的输出发我——这三样够判断了，不用发日志原文或任何配置。</p>
-      <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
-      <p class="contact-fine">想让答案别人也能查到？在 <a href="https://gitee.com/jiangchuang/dm-tools/issues" target="_blank" rel="noopener">工具仓库</a> 提 issue，回复公开可查。</p>
+      <h3>这条命令你跑通了吗？</h3>
+      <p>点一下就行——不用登录、不用打字、不用留任何联系方式。我只想知道这篇有没有用。</p>
+      <div class="sig-row">
+        <button class="sig-btn" type="button" data-sig="dmsqlq-ok">跑通了</button>
+        <button class="sig-btn" type="button" data-sig="dmsqlq-stuck">卡住了</button>
+        <span class="sig-note" id="sigNote" hidden></span>
+      </div>
+      <details class="sig-help" id="sigHelp">
+        <summary>卡住了，接着看这里</summary>
+        <p>先翻 <a href="../interactive/dmsqlq-log-parse.html">交互版</a>，四步都有实跑输出，多数坑在第二步的参数顺序上。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、<code>dmsqlq --version</code> 的输出。这三样够判断了，不用发日志原文，也不用发任何配置。</p>
+        <p>发哪儿都行：<a href="https://gitee.com/jiangchuang/dm-tools/issues" target="_blank" rel="noopener">工具仓库提个 issue</a>（回复公开可查，别人也能搜到），或者直接找我——联系方式收在下面。</p>
+      </details>
+      <details class="contact-fold">
+        <summary>要找我本人？二维码和邮箱在这</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
     </div>
   </section>
   <div class="art-foot">
@@ -267,8 +273,9 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</code><
     <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
     <p>达梦手记</p>
     <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
-    <p><a href="about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
   </div>
 </footer>
+<script src="../assets/site.js" defer></script>
 </body>
 </html>

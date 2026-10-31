@@ -18,6 +18,7 @@
   data.json   原子写入（tmp + os.replace），每次写入前保留 data.json.bak
   口令取 secret.txt 首行（不存在则自动生成）
 """
+import hashlib
 import json
 import mimetypes
 import os
@@ -38,6 +39,7 @@ HTML_PATH = os.path.join(BASE, "index.html")        # v1 老版界面（默认�
 HTML_V2_PATH = os.path.join(BASE, "index.v2.html")  # v2 新版界面
 HTML_ORIG_PATH = os.path.join(BASE, "index.orig.html")  # 最初上线版，救命用，不日常维护
 IMG_DIR = os.path.join(BASE, "img")
+BACKUP_DIR = os.environ.get("BACKUP_DIR", "/var/backups/budget")   # 每日备份落在哪
 
 MAX_BODY = 4 * 1024 * 1024          # 4MB
 MAX_IMG = 3 * 1024 * 1024           # 单张图片 3MB
@@ -102,6 +104,57 @@ def write_data(obj):
         except OSError:
             pass
     os.replace(tmp, DATA_PATH)
+
+
+def _fmt_local(ts):
+    return datetime.fromtimestamp(ts).strftime("%m-%d %H:%M")
+
+
+def meta_payload():
+    """界面上那条「有没有改动、该不该备份」的状态条靠这个。
+
+    只回答三个问题：数据什么时候改的、谁改的、最后一次备份是什么时候。
+    数据比备份新 = 有改动还没进备份 —— 这时候界面要显眼，因为没人提醒就会一直忘。
+    """
+    out = {"now": now_iso(), "data": None, "backup": None, "dirty": None}
+    try:
+        st = os.stat(DATA_PATH)
+        with open(DATA_PATH, "rb") as f:
+            sha8 = hashlib.sha256(f.read()).hexdigest()[:8]
+        d = read_data()
+        out["data"] = {
+            "mtime": int(st.st_mtime),
+            "mtime_h": _fmt_local(st.st_mtime),
+            "size": st.st_size,
+            "sha8": sha8,                      # 前 8 位够区分「是不是同一份」，也够人眼比对
+            "v": d.get("v", 0),
+            "rows": len(d.get("rows") or []),
+            "todos": len(d.get("todos") or []),
+            "ts": d.get("ts", ""),
+            "who": d.get("who", ""),
+        }
+    except (OSError, ValueError):
+        pass
+
+    try:
+        names = [n for n in os.listdir(BACKUP_DIR)
+                 if n.startswith("budget-") and n.endswith(".tar.gz")]
+        if names:
+            newest = max(names, key=lambda n: os.path.getmtime(
+                os.path.join(BACKUP_DIR, n)))
+            st = os.stat(os.path.join(BACKUP_DIR, newest))
+            out["backup"] = {"name": newest, "mtime": int(st.st_mtime),
+                             "mtime_h": _fmt_local(st.st_mtime)}
+    except OSError:
+        pass
+
+    if out["data"]:
+        b = out["backup"]
+        out["dirty"] = bool(b is None or out["data"]["mtime"] > b["mtime"])
+        if b:
+            gap = out["data"]["mtime"] - b["mtime"]
+            out["age_h"] = round(gap / 3600.0, 1) if gap > 0 else 0
+    return out
 
 
 def sniff_image(data):
@@ -308,6 +361,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(401, {"error": "auth"})
             d = read_data()
             return self._json_etagged(data_etag(d.get("v", 0)), d)
+
+        if path == "/api/meta":
+            # 只读元信息：最后改动时间 / 谁改的 / 最后一次备份。
+            # 跟 /api/data 一样要口令 —— 记账时间点本身就是隐私（不在家的时候有没有人在动账本）。
+            if not self._authed(qs):
+                return self._json(401, {"error": "auth"})
+            return self._send(200, json.dumps(meta_payload(), ensure_ascii=False),
+                              "application/json; charset=utf-8",
+                              {"Cache-Control": "no-store"})
 
         if path == "/favicon.ico":
             return self._send(204, "")
