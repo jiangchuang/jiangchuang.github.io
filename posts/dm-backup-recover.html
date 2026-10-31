@@ -74,7 +74,7 @@
     <span class="cat">故障恢复</span>
   </div>
   <div class="content">
-<blockquote><p>📋 <strong>想照着做？</strong>这篇有 <strong>交互操作版</strong>——左侧步骤卡片导航、命令一键复制，现场照着敲更方便：<a href="../interactive/dm-backup-recover.html">打开交互操作版 →</a></p></blockquote>
+<blockquote><p>📋 这篇有交互操作版：左侧步骤卡片导航、命令可一键复制，现场照着敲更方便。<a href="../interactive/dm-backup-recover.html">打开交互操作版 →</a></p></blockquote>
 <blockquote><p>本文内容与交互版逐条对应，命令均为实测输出，未做删改。占位符 <code>&lt;…&gt;</code> 请按本机环境替换后执行。</p></blockquote>
 <h2>先看结论：你手里有什么，决定能救回多少</h2>
 <blockquote><p>误删表能不能救回来，只取决于两样东西：<strong>全库备份</strong>和<strong>归档日志</strong>。备份决定"能回到哪个基线"，归档决定"能从基线往前走多远"。两者齐备，误删的数据能完整找回；缺归档，就只能回到备份那一刻，备份之后写入的数据一律丢失。</p></blockquote>

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flink CDC 接达梦：卡住你的不是连接器，是日志里的 ID · 达梦手记</title>
+<meta name="description" content="开 RLOG_APPEND_LOGIC 只是第一关。实测 DM8：参数为 0 时整个归档文件挖不出任何记录；改 1 后 DML 全在，但 DML 记录的 TABLE_NAME 是空的，SQL_REDO 里模式名表名列名全是 ID 占位（INSERT INTO "150994945"."OBJ# 1035"）。本文给出 0/1 两档实测原文、ID 翻译方法、以及 LOGMNR 会话级这个必踩的坑。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-10-31 &nbsp;·&nbsp; 日常运维</div>
+    <h1>Flink CDC 接达梦：卡住你的不是连接器，是日志里的 ID</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+<blockquote><p>本文所有命令和输出都在 DM8（8.1.3.140，Rocky Linux 8.6，单机）上实跑取得，原文照抄，没有改写。Flink 侧的连接器行为本文未实测，涉及处一律标注，不给数字。</p></blockquote>
+
+<h2>参数开了，你看到的还是看不懂</h2>
+<p>按网上教程配完 CDC，参数也改了、实例也重启了，兴冲冲去查<code>V$LOGMNR_CONTENTS</code>，屏幕上出来的是这个：</p>
+<pre class="code"><code>INSERT INTO "150994945"."OBJ# 1035"("COL 1", "COL 2", "COL 3", "COL 4") VALUES (...)</code></pre>
+<p>三个问号就冒出来了：150994945 是谁，OBJ# 1035 是哪张表，COL 1 又是哪一列。</p>
+<p>这不是你配错了，也不是驱动版本低。达梦的日志挖掘结果本来就是这样：它给的是对象编号，不是名字。要变成能读的东西，得自己查字典表翻译。</p>
+<p>这篇文章把达梦这一侧的三个关说清楚。三关都过了，数据才轮到连接器去读。</p>
+
+<h2>第一关：参数不是「必须等于 1」，是「必须非 0」</h2>
+<p>网上流传最广的一句是「必须 <code>RLOG_APPEND_LOGIC=1</code>，否则 <code>V$LOGMNR_CONTENTS</code> 永远为空」。</p>
+<p>前半句对（0 确实挖不到），后半句的「=1」不准确。达梦官方手册的原话是置为 1、2、3 或 4，取值不同，能挖到的信息量不同。</p>
+
+<h3>实测：0 和 1 到底差在哪</h3>
+<p>同一台库、同一批 DML（3 条 INSERT、1 条 UPDATE、1 条 DELETE，外加建表删表），只在两个参数值下各跑一遍，然后切归档、挖新生成的那个归档文件。</p>
+<p>参数为 0 时，整个归档文件的结果是：</p>
+<pre class="code"><code>select count(*) from v$logmnr_contents;        -- 0
+select operation, count(*) from v$logmnr_contents group by operation;
+-- （空结果集，一行都没有）</code></pre>
+<p>注意：不是「挖不到这张表的 DML」，是整个文件一行都挖不出来，连 START/COMMIT 都没有。所以「0 才空」这句是准确的。</p>
+<p>把参数改成 1、重启实例、重新造同样的数据、再挖，同一个归档文件的结果：</p>
+<pre class="code"><code>select count(*) from v$logmnr_contents;        -- 21
+
+OPERATION   COUNT(*)
+---------   --------
+START              7
+COMMIT             7
+DDL                2
+INSERT             3
+UPDATE             1
+DELETE             1</code></pre>
+<p>DML 一条不少。差异一目了然。</p>
+
+<h3>怎么改，以及一个容易漏的点</h3>
+<pre class="code"><code class="lang-sql">-- 第二参数 2 = 同时改内存和 dm.ini；给 1 只改内存，重启就白改了
+call sp_set_para_value(2, 'RLOG_APPEND_LOGIC', 1);</code></pre>
+<pre class="code"><code class="lang-bash"># 这是静态参数，必须重启实例才生效
+systemctl restart DmServiceDMSERVER</code></pre>
+<p>改完去 <code>dm.ini</code> 里确认那一行真的变了，再看 <code>V$DM_INI</code> 里的值。两处都对，才说明重启后生效了。</p>
+
+<h2>第二关：DML 记录的 <code>TABLE_NAME</code> 是空的</h2>
+<p>这一关最阴，它让你以为自己挖到了，其实全被过滤掉了。</p>
+<p>我第一遍查用的就是最自然的那句：</p>
+<pre class="code"><code class="lang-sql">select count(*) from v$logmnr_contents where table_name = 'LOGCASE_T';</code></pre>
+<p>返回 2，看着像有数据。但紧接着按操作类型分组，发现这 2 条都是 <code>DDL</code>——3 条 INSERT、1 条 UPDATE、1 条 DELETE 全不见了。</p>
+<p>原因：只有 DDL 记录的 <code>TABLE_NAME</code> 有值，DML 记录的 <code>TABLE_NAME</code> 是 NULL。</p>
+<p>改成不带表名过滤，看全貌：</p>
+<pre class="code"><code class="lang-sql">select operation, table_name, seg_owner, row_id from v$logmnr_contents where rownum &lt;= 6;</code></pre>
+<pre class="code"><code>OPERATION  TABLE_NAME  SEG_OWNER     ROW_ID
+---------  ----------  ------------  ------------------
+START      &lt;null&gt;      &lt;null&gt;        &lt;null&gt;
+DDL        LOGCASE_T   SYSDBA        &lt;null&gt;
+COMMIT     &lt;null&gt;      &lt;null&gt;        &lt;null&gt;
+INSERT     &lt;null&gt;      150994945     AAAAAAAAAAAAAAAAAB
+...</code></pre>
+<p>能定位到 DML 的只剩三个字段：<code>SEG_OWNER</code>（是对象 ID，不是用户名）、<code>ROW_ID</code>、<code>DATA_OBJ#</code>。</p>
+<blockquote><p>所以按表名过滤 DML 这件事，在达梦上必须先自己翻译出表名。照抄 Oracle 那句 <code>where table_name = '...'</code>，得到的结果会安静地少掉九成数据——不报错，只是不对。</p></blockquote>
+
+<h2>第三关：ID 要自己查字典翻译</h2>
+<p>回到那条大家都看不懂的 INSERT。把它涉及的三个 ID 拿去查 <code>SYSOBJECTS</code>：</p>
+<pre class="code"><code class="lang-sql">select 'OBJ' as src, id, name, type$ from sysobjects where id = 1035;
+select 'SEG' as src, id, name, type$ from sysobjects where id = 150994945;
+select 'USR' as src, id, name, type$ from sysobjects where id = 50331649;</code></pre>
+<pre class="code"><code>SRC  ID          NAME        TYP
+---  ----------  ----------  ------
+OBJ  1035        LOGCASE_T   SCHOBJ
+SEG  150994945   SYSDBA      SCH
+USR  50331649   SYSDBA      UR</code></pre>
+<p>对上了。<code>SQL_REDO</code> 里的结构是这样的对应关系：</p>
+<table>
+<tr><th style="width:210px">日志里写的</th><th style="width:150px">实际是什么</th><th>怎么翻译</th></tr>
+<tr><td><code>"150994945"</code></td><td>模式（SCHEMA）ID</td><td><code>sysobjects.id</code> → 模式名</td></tr>
+<tr><td><code>"OBJ# 1035"</code></td><td>表 / 对象 ID</td><td><code>sysobjects.id</code> → 对象名</td></tr>
+<tr><td><code>"COL 1"</code>…<code>"COL 4"</code></td><td>列序号（不是列名）</td><td><code>syscolumns</code> 按列序反查</td></tr>
+<tr><td><code>USERNAME</code> = <code>50331649</code></td><td>用户 ID</td><td><code>sysobjects</code>（type=<code>UR</code>）</td></tr>
+</table>
+<p>所以达梦的日志挖掘给你的是「谁、对哪个对象、做了哪个操作、旧值新值是什么」，但「对象叫什么、哪一列叫什么」这一层，留给调用方自己解。</p>
+<p>这也是为什么很多自己写的 CDC 脚本能跑却对不上数据——它按列序去映射，一旦表加过列、改过列顺序，就对歪了。</p>
+
+<h2>顺带一个必踩的坑：LOGMNR 是会话级的</h2>
+<p>这些操作必须在同一个数据库连接里完成：</p>
+<pre class="code"><code class="lang-sql">call dbms_logmnr.add_logfile('/dmdata/dmarch/DAMENG/ARCHIVE_LOCAL1_..._2026-10-31_10-03-50.redo', 1);
+call dbms_logmnr.start_logmnr();
+select count(*) from v$logmnr_contents;     -- 必须在 start 之后、同一个连接里
+call dbms_logmnr.end_logmnr();</code></pre>
+<p>换一个连接去查，报的是这句：</p>
+<pre class="code"><code>dm.jdbc.driver.DMException: dbms_logmnr.start_logmnr() must be invoked before selecting from v$logmnr_contents</code></pre>
+<p>所以「用 A 工具 start、用 B 工具查」这条路走不通。用 disql 一次跑完没问题（同一个会话），
+用驱动写脚本就很容易在这里翻车。</p>
+
+<h2>切归档这一步，别漏</h2>
+<p>只改了参数、只跑了 DML，归档文件还没切换的话，那批操作可能还在当前日志里没落盘成归档。
+<code>DBMS_LOGMNR</code> 只认归档日志，所以要显式切一下：</p>
+<pre class="code"><code class="lang-sql">alter system switch logfile;</code></pre>
+<p>切完去 <code>V$ARCHIVED_LOG</code> 按 <code>SEQUENCE#</code> 倒序看最新那个文件，路径直接用它的。别自己拼文件名。</p>
+<blockquote><p>顺带一句：<code>alter system</code> 这类语句在 JDBC 下会报
+<code>Operation does not support using PREPARE way</code>——不是权限问题，是它不接受预处理方式。
+写脚本时遇到这句，换成直接 <code>Statement.execute()</code> 就好。</p></blockquote>
+
+<h2>三关都过了，才轮到连接器</h2>
+<p>把上面的顺序倒过来看，就明白为什么「CDC 连不上 / 读不到数据」这类问题里，
+很大一部分其实跟连接器没关系：</p>
+<table>
+<tr><th style="width:60px">顺序</th><th style="width:230px">要做的事</th><th>没做的现象</th></tr>
+<tr><td>1</td><td>开归档 + <code>RLOG_APPEND_LOGIC</code> 非 0</td><td>挖出来永远是空</td></tr>
+<tr><td>2</td><td>确认能挖到 DML（别按表名过滤）</td><td>以为没数据，其实是过滤掉了</td></tr>
+<tr><td>3</td><td>把对象 ID 翻译成表名列名</td><td>数据能同步，但字段对歪</td></tr>
+</table>
+<p>关于 Flink 这一侧，本文没有实测。我没在本文环境里搭过 Flink 集群，所以连接器版本兼容性、断点续传、全量转增量的切点这些，我不给数字也不给结论。这一半在另一台机器上做，跑完单独成篇。</p>
+<p>能确定的只有边界：凡是从达梦归档日志里读变更的实现，都要过上面三关。连接器只是帮你把第 3 步做了，它改变不了第 1、2 步。</p>
+
+<h2>回头说三关的份量</h2>
+<p>官方文档说「置为 1、2、3 或 4」，第三方文档说「必须等于 1」，而实际跑起来你会发现真正的工作量在第 3 步：把 ID 翻译成名字。前两关十分钟，第三关决定这套方案能不能交付。</p>
+<blockquote><p>如果你也在达梦上做 CDC，卡在哪一步、报错原文是什么，欢迎在 <a href="https://gitee.com/jiangchuang/dm-tools/issues">工具仓库提个 issue</a>。
+我这边有一套可复跑的探针脚本，报错对上号我可以直接告诉你卡在第几关。</p></blockquote>
+
+<h2>几个常被问到的问题</h2>
+
+<h3>参数到底该选 1 还是 2？</h3>
+<p>本文只实测了 0 和 1，<strong>2/3/4 未实测，不给建议</strong>。能确定的是：0 必然空；
+1 下 UPDATE/DELETE 会记录非主键列，且 <code>UNDO_VALUE</code> 有值（我这条 INSERT 是 <code>UNDO_VALUE=15</code>）。
+按官方手册的说法，3 只记 ROWID、挖不到 UNDO 值。具体取舍建议在你自己环境里按同样的方法跑一遍。</p>
+
+<h3>开了这个参数，redo 会不会暴涨？</h3>
+<p><strong>未实测，不给数字。</strong>能确定的是：只要不是 0，写日志时就会额外记逻辑记录，redo 增长是必然的。
+增长多少取决于你的更新频率和列宽，这个必须在自己的库上量。归档空间要提前留够——
+<code>dmarch.ini</code> 里的 <code>ARCH_SPACE_LIMIT</code> 就是干这个的。</p>
+
+<h3>为什么我按 table_name 过滤，DML 一条都没有？</h3>
+<p>因为 DML 记录的 <code>TABLE_NAME</code> 是 NULL（见第二关）。要么先翻译出对象 ID 再按
+<code>SEG_OWNER</code> 过滤，要么去掉表名条件看全量。</p>
+
+<h3><code>V$LOGMNR_CONTENTS</code> 有 63 列，常用的就那几个？</h3>
+<p><code>SCN</code>、<code>TIMESTAMP</code>、<code>XID</code>、<code>OPERATION</code>、<code>OPERATION_CODE</code>、
+<code>SEG_OWNER</code>、<code>ROW_ID</code>、<code>DATA_OBJ#</code>、<code>USERNAME</code>、
+<code>SQL_REDO</code>、<code>SQL_UNDO</code>、<code>UNDO_VALUE</code>、<code>REDO_VALUE</code>。
+另外 <code>XID</code> 是二进制，直接打印会把终端当成二进制文件处理，记得转成十六进制再看。</p>
+
+<h3>能不能绕过 LOGMNR 直接读 redo 文件？</h3>
+<p><strong>未实测。</strong>达梦没有公开的 redo 解析接口，官方路径就是 <code>DBMS_LOGMNR</code>。
+自己解析 redo 属于非公开格式，版本一变就可能失效，不建议作为交付方案。</p>
+
+<h3>这个结论在集群上成立吗？</h3>
+<p><strong>本文是单机</strong>（DM8 8.1.3.140，Rocky Linux 8.6）。DSC / 数据守护环境下每个节点的归档、
+<code>SEG_OWNER</code> 的编号规则是否一致，<strong>未实测</strong>。上集群前建议先按本文方法在单节点验证一遍。</p>
+
+<p><em>本文测于 2026-10-31。达梦版本 8.1.3.140（<code>1-3-140-2026.08.03-340005-20093-ENT</code>），
+Rocky Linux 8.6，单机实例，归档本地磁盘。</em></p>
+</div>
+  <section class="contact">
+    <div class="contact-body">
+      <h3>这篇对你有用吗？</h3>
+      <p>点一下就行——不用登录、不用打字、不用留任何联系方式。</p>
+      <div class="sig-row">
+        <button class="sig-btn" type="button" data-sig="dm-cdc-ok">跑通了</button>
+        <button class="sig-btn" type="button" data-sig="dm-cdc-stuck">卡住了</button>
+        <span class="sig-note" id="sigNote" hidden></span>
+      </div>
+      <details class="sig-help" id="sigHelp">
+        <summary>卡住了，接着看这里</summary>
+        <p>先把这三样发我：<b>卡在第几关</b>、报错原文（连带错误码）、<code>select * from v$dm_ini where para_name='RLOG_APPEND_LOGIC'</code> 的结果。这三样够判断了，不用发日志原文，也不用发任何配置。</p>
+        <p>发哪儿都行：<a href="https://gitee.com/jiangchuang/dm-tools/issues" target="_blank" rel="noopener">工具仓库提个 issue</a>（回复公开可查，别人也能搜到），或者直接找我——联系方式收在下面。</p>
+      </details>
+      <details class="contact-fold">
+        <summary>要找我本人？二维码和邮箱在这</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>

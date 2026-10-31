@@ -106,27 +106,57 @@ Get-FileHash .\dmsqlq-V2.37-windows-x64.zip -Algorithm SHA256</code></pre>
 <p>第四条只是同一个命令换了个参数。命令里的目录改成你自己的，其余照抄。</p>
 
 <h3>第 1 步：先把日志目录找出来，别背路径</h3>
-<p>网上教程大多写 <code>/opt/dmdbms/data/DAMENG/log</code>。这串是安装时的一个默认值，不是固定值——装的时候数据目录可以指到任何地方，实例名也可以不叫 DAMENG。我自己的机器上数据目录就在 <code>/dmdata/DAMENG</code>，照着教程敲那行，结果是一个空目录，或者干脆 "No such file"。</p>
-<p>所以别记路径，先问实例自己要。最省事是看进程：</p>
+<p>网上教程大多写 <code>/opt/dmdbms/data/DAMENG/log</code>。这串是某次安装的默认值，不是固定值——装的时候数据目录可以指到任何地方，实例名也可以不叫 DAMENG。我这台的数据目录在 <code>/dmdata/DAMENG</code>，照着教程敲那行，得到的是 No such file。</p>
+<p>更要紧的一点：日志压根不在数据目录下。我这台的日志在 <code>/home/dmdba/dmdbms/log</code>，是安装目录下的 log。数据目录和日志目录是两回事，别拿一个推另一个。</p>
+<p>所以别猜，先问实例自己要。最省事是看进程：</p>
 <pre class="code"><code class="lang-bash">ps -ef | grep dmserver | grep -v grep</code></pre>
-<p>输出里最后那个参数就是 dm.ini 的完整路径，它的父目录就是实例目录，<code>log</code> 在它下面：</p>
-<pre class="code"><code>dmdba  12345  /home/dmdba/dmdbms/bin/dmserver /dmdata/DAMENG/dm.ini -noconsole</code></pre>
-<p>这条路不用连库。客户端连不上、口令也忘了的时候，它照样能定位。</p>
-<p>能连库的话直接问它更快：</p>
-<pre class="code"><code class="lang-sql">select para_value from v$dm_ini where para_name = 'PATH';</code></pre>
-<p>拿到的就是数据目录，后面接 <code>/log</code>。</p>
-<p>同目录下还有两种日志，名字像，内容完全不是一回事：</p>
+<p>输出里 <code>path=</code> 后面那串就是 dm.ini 的完整路径，它的父目录是实例目录：</p>
+<pre class="code"><code>dmdba  105734  1  0 10:03 ?  00:00:03 /home/dmdba/dmdbms/bin/dmserver path=/dmdata/DAMENG/dm.ini -noconsole</code></pre>
+<p>这条路不用连库。客户端连不上、口令也忘了的时候，它照样能动。</p>
+<p>能连库的话直接查更快：</p>
+<pre class="code"><code class="lang-sql">select para_value from v$dm_ini where para_name = 'SYSTEM_PATH';</code></pre>
+<p>返回 <code>/dmdata/DAMENG</code>，这就是实例目录。参数名是 <code>SYSTEM_PATH</code>，不是 <code>PATH</code>——<code>v$dm_ini</code> 里没有叫 <code>PATH</code> 的参数，有些教程写 <code>para_name = 'PATH'</code>，跑出来 0 行。</p>
+
+<h4>日志到底落哪儿：查 sqllog.ini，别猜</h4>
+<p>实例目录下有个 <code>sqllog.ini</code>，SQL 日志写到哪里由里面的 <code>FILE_PATH</code> 决定。最快是连库直接查，不用登服务器翻文件：</p>
+<pre class="code"><code class="lang-sql">select mode_name, para_name, para_value, is_default
+  from v$dm_sqllog_ini where para_name like '%PATH%';</code></pre>
+<p>我这台的返回值：</p>
+<pre class="code"><code>MODE_NAME      PARA_NAME  PARA_VALUE  IS_DEFAULT
+&lt;DEFAULT&gt;      FILE_PATH  ../log      Y
+SLOG_ALL       FILE_PATH  ../log      Y
+SLOG_ERROR     FILE_PATH  ../log      Y
+SLOG_DDL       FILE_PATH  ../log      Y
+SLOG_LONG_SQL  FILE_PATH  ../log      Y</code></pre>
+<p>五行对应五个配置段：一个全局加四个模式。最后那列 <code>IS_DEFAULT = Y</code> 说明全是默认值，没人改过。</p>
+<p><code>../log</code> 是从 bin 目录算的相对路径，所以落在 <code>/home/dmdba/dmdbms/log</code>，也就是安装目录/log。<b>不是</b>相对 sqllog.ini 所在的实例目录——按「实例目录/log」去翻，那儿是空的，我这台连这个目录都没建。</p>
+<p>要挪位置就把 <code>FILE_PATH</code> 改成绝对路径，比如 <code>/data/dmlog</code>。改完在库里执行一句，让内存重新读文件，不用重启：</p>
+<pre class="code"><code class="lang-sql">call sp_refresh_svr_log_config();</code></pre>
+<p>实测返回 <code>DMSQL executed successfully</code>。</p>
+<blockquote><p>两个视图名字像，查的东西不是一个，别搞混：</p>
+<p><code>V$DM_SQLLOG_INI</code> 读的是 sqllog.ini 文件，磁盘上那份，任何时候都有值；<br>
+<code>V$DM_SQLLOG_CONFIG</code> 是内存里已经生效的那份，只有 <code>SVR_LOG</code> 开着才有内容。</p>
+<p>我这台 <code>SVR_LOG = 0</code>，刷完配置再查 <code>V$DM_SQLLOG_CONFIG</code> 仍是 no rows。所以确认日志目录查 INI 那个；CONFIG 查出来是空的，不代表配置坏了，是采集压根没开。</p></blockquote>
+<p>这个目录里躺着好几种日志，名字像，内容完全不是一回事：</p>
 <table>
 <tr><th style="width:170px">文件名</th><th>是什么</th></tr>
 <tr><td><code>dmsql_*.log</code></td><td>要的就是这个——SQL 日志，带语句、耗时、参数</td></tr>
 <tr><td><code>dm_*.log</code></td><td>实例事件日志（启停、切换、报错），没有 SQL</td></tr>
 <tr><td><code>dmtrc_*.log</code></td><td>跟踪日志，另一套开关</td></tr>
 </table>
-<p>一个 <code>dmsql_*.log</code> 都没有？八成是 SQL 日志没开，或者开了没采到。先看后面「报告能不能信」那节的采集体检，别急着换工具。</p>
-<p>采集开关在 <code>sqllog.ini</code>，一般在安装目录的 <code>bin</code> 下，不确定就 <code>find / -name sqllog.ini 2>/dev/null</code>。</p>
+<p>一个 <code>dmsql_*.log</code> 都没有？多半是 SQL 日志压根没开。这个开关分两层，连上库查一句就见分晓：</p>
+<pre class="code"><code class="lang-sql">select para_name, para_value from v$dm_ini
+ where para_name in ('SVR_LOG', 'SVR_LOG_NAME');</code></pre>
+<p>我这台的返回值：</p>
+<pre class="code"><code>SVR_LOG        0
+SVR_LOG_NAME   SLOG_ALL</code></pre>
+<p><code>SVR_LOG = 0</code> 就是采集没开。这时候 <code>dm_*.log</code> 里只有启停和报错，一条 SQL 都不会有——不是工具读不出来，是压根没写进去。<code>SVR_LOG_NAME</code> 指向 <code>sqllog.ini</code> 里的 <code>[SLOG_ALL]</code> 那一段，具体采哪些位号、路径写哪儿，都在那一段里。</p>
+<p>我这台的 sqllog.ini 在实例目录下（<code>/dmdata/DAMENG/sqllog.ini</code>），不在 bin 下。找不到就 <code>find / -name sqllog.ini 2&gt;/dev/null</code>，或者干脆问库：</p>
+<pre class="code"><code class="lang-sql">select para_value from v$dm_ini where para_name = 'CONFIG_PATH';</code></pre>
+<p>返回的目录就是实例目录，sqllog.ini 在那儿等着。</p>
 
 <h3>第 2 步：先扫一眼，不出文件</h3>
-<pre class="code"><code class="lang-bash">dmsqlq /dmdata/DAMENG/log -S</code></pre>
+<pre class="code"><code class="lang-bash">dmsqlq /home/dmdba/dmdbms/log -S</code></pre>
 <p><code>-S</code> 大写是「只打到屏幕」，小写 <code>-s</code> 会额外生成一份 HTML 报告并用浏览器打开。实际输出（样例日志，600 条语句）：</p>
 <pre class="code"><code>dmsqlq 2.37 统计报告   2026-10-31 00:45:14
 ────────────────────────────── 概览 ──────────────────────────────
@@ -145,7 +175,7 @@ Get-FileHash .\dmsqlq-V2.37-windows-x64.zip -Algorithm SHA256</code></pre>
 <p>注意它排的是<strong>累计耗时占比</strong>，不是单次最慢。一天只跑一次的 8 秒慢查询，不该排在每分钟 60 次、每次 200ms 的语句前面——后者一天耗掉的小时数才是真的。</p>
 
 <h3>第 3 步：把 <code>?</code> 换成真实值，导出能直接执行的 SQL</h3>
-<pre class="code"><code class="lang-bash">dmsqlq /dmdata/DAMENG/log -o out.sql</code></pre>
+<pre class="code"><code class="lang-bash">dmsqlq /home/dmdba/dmdbms/log -o out.sql</code></pre>
 <p><code>out.sql</code> 里长这样：</p>
 <pre class="code"><code class="lang-sql">-- 2026-09-10 09:00:00 · [SEL] · 0.1ms · SYSDBA, · trxid:3816438, · SAMPLE
 SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000000' AND status = 0;
@@ -156,7 +186,7 @@ update ACCOUNTS set BALANCE = BALANCE + ? where ACCT_ID = ?;</code></pre>
 <p>「没还原」和「还原错了」是两种后果。前者你知道要手工补；后者你会拿着一条假 SQL 去复现一个根本不存在的现场，结论错得还很自信。所以还原不了的语句原样留 <code>?</code>，注释头里写清占位符个数。</p>
 
 <h3>第 4 步：只要慢的，出交付清单</h3>
-<pre class="code"><code class="lang-bash">dmsqlq /dmdata/DAMENG/log -m 1000 -B 20 -o slow.sql</code></pre>
+<pre class="code"><code class="lang-bash">dmsqlq /home/dmdba/dmdbms/log -m 1000 -B 20 -o slow.sql</code></pre>
 <p><code>-m 1000</code> 是耗时下限（毫秒），<code>-B 20</code> 是最多取 20 条。实际输出（样例取最慢 3 条）：</p>
 <pre class="code"><code class="lang-sql">-- 2026-09-10 09:09:59 · [SEL] · 60ms · SYSDBA, · trxid:3816637, · SAMPLE
 SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000599' AND status = 5;

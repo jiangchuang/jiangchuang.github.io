@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python 连接达梦数据库：三条通道怎么选（disql / dmPython / JDBC）· 达梦手记</title>
+<meta name="description" content="Python 连达梦只有三条路：disql 子进程、官方 dmPython、jaydebeapi + JDBC。三条都不是免费的，本文按实测算清各自代价，并给出 jaydebeapi 四处默认转换坑（DECIMAL 丢精度、TIMESTAMP 变字符串、CLOB 返回 Java 对象、整数是 java.lang.Integer）的通用修法，含 pandas / polars / SQLAlchemy 的二次坑、达梦 JDBC 编译期错误居然没有错误码的实测结论，以及 10 万行实测吞吐。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../interactive/">操作指南</a></li>
+      <li><a href="./">图文版</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-10-31 &nbsp;·&nbsp; 应用开发</div>
+    <h1>Python 连达梦：三条通道怎么选，以及为什么官方驱动反而最难装</h1>
+    <span class="cat">应用开发</span>
+  </div>
+  <div class="content">
+<blockquote><p>本文所有依赖版本、报错原文、性能数字都来自同一台机器上的一次连续实测：Python 3.13.14 / JayDeBeApi 1.2.3 / JPype1 1.5.2 / pandas 3.1.0 / polars 2.1.0 / SQLAlchemy 2.1.6 / JDK 1.8.0_131，服务端 DM8（<code>03134284172-20260803-340005-20093 Pack65</code>）跑在 Linux 上，客户端在 Windows。性能数字的前提是跨公网段（经 SSH 隧道转发），本机走 localhost 会明显更快，别拿它们当绝对值。</p></blockquote>
+
+<h2>三条路，复杂度放在不同的地方</h2>
+<p>搜「Python 连达梦」，能搜到三条路。它们不是三个档次的方案，是三种复杂度安置方式，你总得接住其中一份。</p>
+<table>
+<tr><th style="width:150px">通道</th><th style="width:190px">复杂度放在哪</th><th style="width:200px">什么时候它是正解</th><th>主要代价</th></tr>
+<tr><td><code>disql</code> 子进程</td><td>shell 层</td><td>要把 disql 自己的命令（管理、备份、导出）串起来</td><td>解析文本输出；引号与环境变量踩坑</td></tr>
+<tr><td>官方 <code>dmPython</code></td><td>编译链</td><td>镜像自带 gcc 与内核头文件，能装能编</td><td>源码分发，装不上就是装不上</td></tr>
+<tr><td><code>jaydebeapi</code> + JDBC</td><td>JVM</td><td>要在 Python 里算数据、喂 pandas / polars</td><td>要 JDK；四处默认转换坑</td></tr>
+</table>
+<p>下面三条都摊开讲，包括各自翻车的地方。急着用的可以先记住一句：做数据处理走 JDBC，代价是装个 JRE 再改几行转换器，换来的是你能像用 PostgreSQL 一样用达梦。</p>
+
+<h2>大概率先撞上这三句报错</h2>
+<pre class="code"><code class="lang-bash">pip install dmPython
+# ...
+error: command 'gcc' failed with exit status 1</code></pre>
+<p>或者更干脆一点，装完了导不进来：</p>
+<pre class="code"><code class="lang-python">import dmPython
+# ModuleNotFoundError: No module named 'dmPython'</code></pre>
+<p>再或者装上了，运行时找不到驱动库：</p>
+<pre class="code"><code>ImportError: libdmdpi.so: cannot open shared object file: No such file or directory</code></pre>
+<p>这三句话指向同一件事：达梦的 Python 官方驱动是 C 扩展，源码分发。它要好几个前提同时成立——编译器在、内核头文件在、DM 客户端库路径对、glibc 版本不炸。这些前提你本机开发时通常都成立，在你真正要去的那台机器上通常都不成立。</p>
+
+<h2>通道一：disql，最好的命令行，最差的程序接口</h2>
+<p>disql 是达梦自带的 SQL 命令行，位置跟 Oracle 的 sqlplus 一样。好在零安装、跟数据库同版本、能跑所有 <code>SP_*</code> 系统过程。坏在它是给人看的，不是给程序调用的。</p>
+
+<h3>三个坑，都在 Linux 上实测过</h3>
+<p><b>坑一：环境变量得自己设。</b> DM 装完不会给你生成 <code>dm_env.sh</code>，不设就是找不到库：</p>
+<pre class="code"><code class="lang-bash">export DM_HOME=/opt/dmdbms
+export PATH=$DM_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$DM_HOME/bin:$DM_HOME/lib:$LD_LIBRARY_PATH</code></pre>
+<p>不设的话，报错是 <code>libdisql_dll.so: cannot open shared object file</code>。有个最省事的替代：直接 <code>cd</code> 到 <code>$DM_HOME/bin</code> 再执行，那个 so 就在同目录，必然能找到。</p>
+<p>顺带一个实测细节：<code>$DM_HOME</code> 只有 <code>dmdba</code> 用户的 shell 里有值，用 root 跑 <code>echo $DM_HOME</code> 出来是空的。所以这串 export 写进谁的环境，得看你用哪个账号跑脚本。</p>
+
+<p><b>坑二：口令里带 <code>@</code>，必须「外单引号 + 内双引号」。</b> 不带 <code>@</code> 的口令怎么写都行，带了就只有一种写法对：</p>
+<pre class="code"><code class="lang-bash"># 口令是 Dm@2026 —— 这样写可以
+disql -S 'SYSDBA/"Dm@2026"@127.0.0.1:5236' -e "SELECT 1;"</code></pre>
+<p>外层用双引号（哪怕是转义过的）会被 disql 拆错；<code>#{}</code> 那种扩展写法跟外层单引号冲突。这条坑的报错是 <code>[-2501] 用户名或密码错</code>——它会让你以为口令记错了，其实是引号错了。</p>
+
+<p><b>坑三：执行脚本文件要用反引号，而且 <code>-e</code> 不能跟 <code>/NOLOG</code> 一起用。</b></p>
+<pre class="code"><code class="lang-bash">disql -S 'SYSDBA/"Dm@2026"@127.0.0.1:5236' \`/tmp/check.sql   # 对
+disql -S 'SYSDBA/"Dm@2026"@127.0.0.1:5236' /tmp/check.sql     # 错：当连接串解析，退出码 2
+disql -S /NOLOG -e "SELECT 1;"                                # 错：[-70025] 连接未打开</code></pre>
+
+<h3>别拿它当程序接口</h3>
+<p>能跑，但你会写出一堆这种代码：起子进程、拿 stdout、按列宽切字符串、用正则认表头。它的输出长这样（列宽随内容变、中文对齐算的是字节不是字符）：</p>
+<pre class="code"><code>行号     NAME        AMT
+----------  ----------  ----------
+1           A           1.23</code></pre>
+<p>这套解析代码活不过一次版本升级，也活不过一次字符集变更。更要命的是错误处理：SQL 报错时它的退出码只有 0/1/2/127 四种，你分不清「连不上」「表不存在」「语法错」，只能再回去 grep 输出里的错误码。</p>
+<p>所以 disql 该用在只有它能干的事上：<code>SP_*</code> 系统过程、备份恢复、<code>dexp/dimp</code> 的配套操作、在没有 Python 的机器上做一次性核查。要拿数据、要算、要喂 DataFrame，别用它。</p>
+
+<h2>通道二：dmPython，官方驱动反而最难装</h2>
+<p><code>dmPython</code> 是达梦官方的 Python 驱动，也是很多文档里推荐的第一选择。理论上它最合适：原生 DB-API 2.0、不带 JVM、内存占用小、跟数据库同版本发布。</p>
+<p>问题出在分发形态：源码包，装的时候现场编译。</p>
+
+<h3>实测：CentOS 7 上就没装上</h3>
+<p>在一台 CentOS 7 的测试机上试过，卡在编译链本身：</p>
+<pre class="code"><code class="lang-bash">pip install dmPython
+# ...
+error: command 'gcc' failed with exit status 1</code></pre>
+<p>根因不是 dmPython 的代码有问题，是那台机器装不上 gcc。CentOS 7 已 EOL，官方 yum 源整体失效，<code>yum install gcc</code> 直接失败；换 vault 归档源能装但极慢。这跟本篇主题无关，但恰好说明一件事：</p>
+<blockquote><p>dmPython 的可靠性取决于你现场有没有编译能力，而现场恰恰是最缺编译能力的地方。能编译它的机器（你的开发本、标准化的 CI 镜像）通常不是需要连达梦的那台。</p></blockquote>
+<p>本文不对 dmPython 做性能实测，因为我没能在测试机上装起来，所以不给任何数字。想走这条，先确认三件事：<code>gcc</code> 在、<code>python3-devel</code>（或 <code>kernel-headers</code>）在、DM 客户端库的路径在 <code>LD_LIBRARY_PATH</code> 里。</p>
+
+<h3>什么时候它仍然是对的</h3>
+<ul>
+<li>基础镜像本身带编译链（比如 <code>python:3.12-slim</code> 加 <code>build-essential</code>），构建期编译、运行期不用；</li>
+<li>你要在 ARM（鲲鹏/飞腾）上跑，不想为一个 Python 脚本拖一个 JRE；</li>
+<li>内存预算紧到装不下 JVM。</li>
+</ul>
+<p>反过来说，如果现场只有 SSH，不能装包、不能编译，这条路可以直接划掉。</p>
+
+<h2>通道三：jaydebeapi + JDBC，绕道 Java 反而最稳</h2>
+<p>思路很朴素：既然达梦的 Java 驱动是官方最完整、跟随版本最紧的那一个，那就让 Python 借 Java 的路走一遍。桥是 JPype，包装是 jaydebeapi，交付物是一个 jar 加两个 pip 包。</p>
+
+<h3>Java 通道在达梦上确实是第一</h3>
+<p>不是偏好问题，是投入问题。达梦的 JDBC 驱动是官方主推、随版本更新、被自家产品（DTS、DM 管理工具、DEM）大量使用的那一套，用得多的东西坑就被踩平了。反过来，Python、Node、Go 这些生态的驱动用户基数小，很多边界情况没人踩过——没踩过不等于没问题，等于问题还在那儿，只是别人没遇到。</p>
+<p>驱动可靠性跟被使用的人次正相关，跟语言优劣无关。</p>
+
+<h3>装：两个 pip 包 + 一个 jar</h3>
+<pre class="code"><code class="lang-bash">pip install JayDeBeApi==1.2.3 JPype1==1.5.2</code></pre>
+<p>版本不是随便写的，这个组合有硬约束（实测）：</p>
+<table>
+<tr><th style="width:130px">你的 JDK</th><th style="width:180px">能用的 JPype1</th><th>现象</th></tr>
+<tr><td>JDK 8</td><td><strong>≤ 1.5.2</strong></td><td>1.7.x 起要求 JDK 9+，装了直接起不来</td></tr>
+<tr><td>JDK 11 / 17</td><td>1.5.x 及以上均可</td><td>—</td></tr>
+<tr><td>Python 3.13</td><td>避开 1.6.0</td><td>import 阶段直接段错误（不是异常，是崩进程）</td></tr>
+</table>
+<p>jar 在 DM 安装目录的 <code>drivers/jdbc/</code> 下，按 JDK 版本挑一个。我用的这个文件是 <code>DmJdbcDriver8.jar</code>，约 1.6 MB。把它拷到你项目里或者固定一个路径，别每次从安装目录现找。</p>
+
+<h3>七处默认坑：不修，数据就是错的</h3>
+<p>这不是用起来别扭的问题，是值本身错了。前四处都在 jaydebeapi 的类型转换表里，第四处是写这篇时用类型探针现抓的，最阴；后三处在调用它的框架那边，各自换了个花样。</p>
+
+<h4>坑一：DECIMAL 一律被转成 float，金额丢精度</h4>
+<p>jaydebeapi 的 <code>_java_to_py_bigdecimal()</code> 里，<code>scale != 0</code> 的 DECIMAL 走的是 <code>doubleValue()</code>。也就是说你的 <code>decimal(18,2)</code> 金额列，到 Python 里是 <code>float64</code>。</p>
+<p>float64 只有 15–16 位有效数字。日常金额看着没问题（<code>1.23</code> 的 repr 还是 <code>1.23</code>），但只要参与汇总、或者位数变多，误差就会显形：</p>
+<pre class="code"><code class="lang-python">&gt;&gt;&gt; from decimal import Decimal
+&gt;&gt;&gt; float(Decimal("99999999.99"))
+99999999.99
+&gt;&gt;&gt; sum([float(Decimal("0.1"))] * 10) == 1.0
+False</code></pre>
+<p>对账场景里，这个差额会被放大成「系统算错了」。而且它在 <code>df.dtypes</code> 里只表现为一个平平无奇的 <code>float64</code>，不看代码根本想不到。</p>
+
+<h4>坑二：TIMESTAMP 被主动转成字符串</h4>
+<p><code>_to_datetime()</code> 的最后一行是 <code>return str(d)</code>。所以你读出来的时间列，dtype 是 <code>object</code>，里面装的是 <code>'2026-10-31 09:00:00'</code> 这样的字符串。</p>
+<pre class="code"><code class="lang-python">&gt;&gt;&gt; df["TS"].dtype
+dtype('O')
+&gt;&gt;&gt; df["TS"].iloc[0]
+'2026-10-31 09:00:00.0'</code></pre>
+<p>后果是时间序列分析全部要手动 <code>to_datetime</code>，而且带纳秒后缀的字符串格式还不统一，转换会零散地失败几行。</p>
+
+<h4>坑三：字符串和 CLOB 返回 Java 对象，polars 直接拒收</h4>
+<p>VARCHAR / CHAR / CLOB 拿到的是 <code>java.lang.String</code> 的包装对象，不是 Python 原生 <code>str</code>。pandas 会把它当 <code>object</code> 塞着（能用但不对），polars 更直接：</p>
+<pre class="code"><code>TypeError: cannot parse input of type 'JChar'</code></pre>
+<p>这句话是很多人第一次用 polars 读达梦时看到的，然后以为是 polars 不支持——其实是不支持「Java 对象混进 Python 列表」。</p>
+
+<h4>坑四：整数返回 java.lang.Integer，而 isinstance 会放它过去</h4>
+<p>这一处是写本文时用类型探针抓出来的，也是最阴的一处，因为它看起来完全正常：</p>
+<pre class="code"><code class="lang-python">&gt;&gt;&gt; v = rows[0][0]              # 一列 int
+&gt;&gt;&gt; isinstance(v, int)
+True                             # ← 类型检查全过
+&gt;&gt;&gt; json.dumps(v)
+'1'                              # ← 序列化也过
+&gt;&gt;&gt; type(v)
+&lt;class 'java.lang.Integer'&gt;      # ← 但它并不是 int</code></pre>
+<p>JPype 让 <code>java.lang.Integer</code> 继承了 Python 的 <code>int</code>，所以 <code>isinstance</code> 会放它过去。可它终究是个 Java 对象：喂给 polars、或者任何按 <code>type()</code> 分派的地方，照样炸。</p>
+<p>这一处的教训在检查方式上：验证转换器有没有生效，必须用 <code>type(v) is int</code>，不能用 <code>isinstance(v, int)</code>。前者问「它是什么」，后者只问「它像不像」。</p>
+<p>整数、浮点这几种也得一并换掉，别只盯 DECIMAL 和 TIMESTAMP：</p>
+<pre class="code"><code class="lang-python">def _as_int(rs, col):
+    v = rs.getObject(col)
+    return None if v is None else int(v)
+
+
+def _as_float(rs, col):
+    v = rs.getObject(col)
+    return None if v is None else float(v)
+
+
+for code in (4, 5, -6, -5):      # INTEGER / SMALLINT / TINYINT / BIGINT
+    conv[code] = _as_int
+for code in (8, 6, 7):           # DOUBLE / FLOAT / REAL（这三个本来就该是 float）
+    conv[code] = _as_float</code></pre>
+<p>DOUBLE / FLOAT / REAL 保持 float 是对的，别顺手改成 Decimal——那会白白变慢，而且它本来就是浮点语义。</p>
+
+<h4>还有一个更隐蔽的：<code>_converters</code> 一开始是 <code>None</code></h4>
+<p>你想改转换器，得先去改 <code>jaydebeapi._converters</code>。但它不是一 import 就有的，要等 JVM 起来、jaydebeapi 反射出 <code>java.sql.Types</code> 之后才被填上。所以在 import 语句旁边改它，改的是 <code>None</code>，静默失败，一点报错都没有。</p>
+<p>正确顺序是：<code>startJVM</code> → <code>connect</code> → 改转换器。</p>
+
+<h3>通用修法：换掉转换表的项，别改内置函数</h3>
+<p>关键认识是：<code>_converters</code> 是模块级 dict，<code>connect()</code> 把同一个对象的引用交给 Connection 和 Cursor。所以原地替换它的项，对所有已存在和之后新建的连接都立即生效，不需要猴子补丁，也不需要重启。</p>
+<p>下面这段是验证过的完整实现，拿去直接用：</p>
+<pre class="code"><code class="lang-python">from __future__ import annotations
+
+import datetime
+from decimal import Decimal
+
+import jaydebeapi
+import jpype
+
+# java.sql.Types 的常量值（手写，免得为几个整数去反射一遍 JVM）
+T_DECIMAL, T_NUMERIC = 3, 2
+T_TIMESTAMP, T_DATE = 93, 91
+T_CHAR, T_VARCHAR, T_LONGVARCHAR, T_CLOB = 1, 12, -1, 2005
+
+
+def _as_decimal(rs, col):
+    v = rs.getBigDecimal(col)
+    return None if v is None else Decimal(str(v))
+
+
+def _as_datetime(rs, col):
+    v = rs.getTimestamp(col)
+    if v is None:
+        return None
+    # getNanos() 给 9 位，datetime 只吃 6 位微秒
+    return datetime.datetime.strptime(str(v)[:19], "%Y-%m-%d %H:%M:%S").replace(
+        microsecond=int(str(v.getNanos())[:6])
+    )
+
+
+def _as_str(rs, col):
+    # getString 返回 java.lang.String，必须 str() 成原生 str，否则 polars 报 JChar
+    v = rs.getString(col)
+    return None if v is None else str(v)
+
+
+def install_converters() -> bool:
+    """把 jaydebeapi 的模块级转换表改成原生 Python 类型。
+
+    必须在 startJVM() + connect() 之后调用：这之前 _converters 还是 None。
+    """
+    conv = jaydebeapi._converters
+    if conv is None:
+        return False
+
+    for code in (T_DECIMAL, T_NUMERIC):
+        conv[code] = _as_decimal
+    conv[T_TIMESTAMP] = _as_datetime
+    conv[T_DATE] = _as_datetime
+    for code in (T_CHAR, T_VARCHAR, T_LONGVARCHAR, T_CLOB):
+        conv[code] = _as_str
+    return True
+
+
+DRIVER = "dm.jdbc.driver.DmDriver"
+
+
+def connect(host: str, port: int, user: str, password: str, jar: str):
+    if not jpype.isJVMStarted():
+        jpype.startJVM(jpype.getDefaultJVMPath(), "-Xmx1g", classpath=[jar])
+    conn = jaydebeapi.connect(DRIVER, f"jdbc:dm://{host}:{port}", [user, password], jar)
+    install_converters()   # ← 顺序不能动：必须在 connect 之后
+    return conn</code></pre>
+<p>注意别顺手把 <code>DOUBLE</code> 也改成 <code>Decimal</code>——它本来就该是 float，改了反而慢且失真。只动你确定需要的类型。</p>
+
+<h3>坑五（pandas 的）：<code>coerce_float=False</code></h3>
+<p>就算你把 DECIMAL 修成了 <code>Decimal</code>，<code>pd.read_sql</code> 还会把它转回去。<code>coerce_float</code> 默认是 <code>True</code>，意思是「尽量把数值列变成 float」：</p>
+<pre class="code"><code class="lang-python">import pandas as pd
+
+# 错：前面白修了，AMT 又变回 float64
+df = pd.read_sql("select * from t_order", conn)
+
+# 对
+df = pd.read_sql("select * from t_order", conn, coerce_float=False)</code></pre>
+<p>这一步最容易漏，因为它在你自己的代码里，不在第三方库里。</p>
+
+<h3>坑六（polars 的）：<code>infer_schema_length=None</code></h3>
+<p>polars 默认只拿前 100 行推断类型。如果某一列前 100 行恰好全是 NULL（在宽表、稀疏列上很常见），它会把这列定成 <code>Null</code> 类型，后面一旦有值就炸。要么关掉推断，要么显式给 schema：</p>
+<pre class="code"><code class="lang-python">import polars as pl
+
+cur = conn.cursor()
+cur.execute("select id, name, amt, ts, flag, note from t_order")
+cols = [str(d[0]) for d in cur.description]
+rows = cur.fetchall()
+pdf = pl.DataFrame(rows, schema=cols, orient="row", infer_schema_length=None)</code></pre>
+
+<h3>坑七（SQLAlchemy 的）：<code>default_schema_name</code> 会被覆盖成 None</h3>
+<p>如果你想用 SQLAlchemy（ORM、或者 <code>pd.read_sql(..., engine)</code>），得自己写个最小方言。这里有一个特别阴的坑：</p>
+<pre class="code"><code class="lang-python">class DMDialect(DefaultDialect):
+    name = "dm"
+    driver = "jaydebeapi"
+    paramstyle = "qmark"
+    default_schema_name = "SYSDBA"      # ← 写了也没用
+
+    def _get_default_schema_name(self, connection):
+        # 必须实现这个钩子，且必须返回真值。
+        # DefaultDialect.initialize() 在首次连接后会调用它，
+        # 默认实现返回 None，把上面那个类属性覆盖掉。
+        return "SYSDBA"</code></pre>
+<p>不实现的话，后续所有带 <code>owner='...'</code> 的反射查询都会变成 <code>owner='None'</code>，结果是<strong>空表清单，而且不报错</strong>。你会以为连上了但库里没表。</p>
+
+<h2>旁路：只取个数的话，还有更轻的一档</h2>
+<p>上面三条都是在 Python 进程里连库。如果你的需求其实是跑一条 SQL 把结果拿出来，还有更轻的形态：单文件可执行程序，通过子进程调用，输出 CSV/JSON。</p>
+<p>我这边的工具是 <code>dmkit</code>（<a href="https://gitee.com/jiangchuang/dm-tools">dm-tools</a>），Go 编译的单文件，扔到任何机器就能跑，不需要解释器、不需要 JDK：</p>
+<pre class="code"><code class="lang-bash">dmkit q --dsn 'dm://SYSDBA:YourPassw0rd@192.0.2.10:5236' --sql "select count(*) from t_order" --format json</code></pre>
+<p>它的优势是部署成本为零，劣势也明确：只能通过 shell 调用。一旦你要「取数 → 在 Python 里算 → 再回写」，就得走 CSV 中间文件，多一次进程启动和一次序列化往返。同一个 10 万行查询，走 <code>dmkit q</code> 导 CSV 比 jaydebeapi 直读多花了约 4.5 秒，基本都花在这上面（数字见下一节）。</p>
+<p>所以分工是：<code>dmkit</code> 管「扔进任何机器就能取数」，<code>jaydebeapi</code> 管「要在进程里编排的活」。不冲突。</p>
+
+<h2>实测：10 万行 × 6 列，跨公网隧道</h2>
+<p>前提是 Windows 客户端走 SSH 隧道连 Linux 上的 DM8 单机实例。所有数字都含公网 RTT，本机 localhost 会比这快，别直接拿去当基准。表结构 <code>(id int pk, name varchar(50), amt decimal(18,2), ts timestamp, flag char(1), note varchar(100))</code>，10 万行。</p>
+<table>
+<tr><th style="width:240px">项目</th><th style="width:150px">耗时</th><th>说明</th></tr>
+<tr><td>JVM 启动</td><td>0.26 s</td><td>进程内一次，之后所有连接共享</td></tr>
+<tr><td>首次建连（含 JVM）</td><td>1.55 s</td><td>冷启动，含驱动加载</td></tr>
+<tr><td>第二个连接（复用 JVM）</td><td>0.11 s</td><td>—</td></tr>
+<tr><td>单条查询往返</td><td>257 ms</td><td>几乎全是公网 RTT，不是达梦慢</td></tr>
+<tr><td><code>executemany</code> 2000 行</td><td>0.32 s</td><td>≈ 6 300 行/秒，是真 batch</td></tr>
+<tr><td><code>fetchall</code> 10 万行</td><td>9.4 s</td><td>≈ 10 700 行/秒</td></tr>
+<tr><td><code>fetchmany(10000)</code> 分块</td><td>7.5 s</td><td>≈ 13 400 行/秒，比 fetchall 快约 25%</td></tr>
+<tr><td><code>pandas.read_sql</code></td><td>9.6 s</td><td>注意：这里<strong>没</strong>传 <code>coerce_float=False</code>，金额是 float</td></tr>
+<tr><td><code>polars.read_database</code></td><td>8.4 s</td><td>比 pandas 快约 12%</td></tr>
+<tr><td><code>dmkit q</code> 导 CSV</td><td>13.9 s</td><td>多出来的是进程启动 + 序列化</td></tr>
+</table>
+<p>两条能直接用的经验：</p>
+<ul>
+<li>大结果集用 <code>fetchmany</code> 分块，别用 <code>fetchall</code>。快到 25% 且内存可控，这是分流式读取的天然优势，不是玄学。</li>
+<li>写入别一行一条 <code>execute</code>。<code>executemany</code> 在 JDBC 上是真 batch（6 300 行/秒这个量级），一行一条会掉到几十行/秒。</li>
+</ul>
+
+<h2>并发：一个连接能不能多线程用</h2>
+<p>实测结果：8 个线程共用一个 Connection，无报错。但这只能说明它不炸，不能说明它正确——JDBC 的 Connection 本来就不是设计成多线程共享的，达梦不拦你不等于语义安全。</p>
+<p>要并发的正确做法是每线程一个 Connection，共享一个 JVM。JVM 启动成本只付一次（0.26 s），连接复用成本是 0.11 s 量级，开几个线程都不心疼。</p>
+
+<h2>怎么选：问自己三个问题</h2>
+<table>
+<tr><th style="width:60px">顺序</th><th style="width:330px">问题</th><th>是的话选</th></tr>
+<tr><td>1</td><td>现场能装包、能编译吗？</td><td>不能 → 直接划掉 <code>dmPython</code>，别浪费时间</td></tr>
+<tr><td>2</td><td>你要的是「一条 SQL 出结果」，还是「在 Python 里算」？</td><td>前者 → 单文件 <code>dmkit q</code> 就够；后者 → 往下走</td></tr>
+<tr><td>3</td><td>这台机器容得下一个 JRE（约 100–200 MB）吗？</td><td>容得下 → jaydebeapi + JDBC，这是本文推荐的默认答案</td></tr>
+</table>
+<p>三个都「否」的时候，才回到用 disql 子进程硬扛——而且要清楚你在用正则解析报表，随时可能被版本升级打断。</p>
+
+<h2>常见问题</h2>
+
+<h3>为什么不用 <code>pymysql</code> 那种「纯 Python 驱动」的思路？</h3>
+<p>因为不存在。达梦的协议没有公开的纯 Python 实现，官方只给 C 扩展和 Java 驱动。这是生态规模决定的，不是谁偷懒。</p>
+
+<h3><code>jaydebeapi</code> 每次导入都要起 JVM，脚本不是会很慢？</h3>
+<p>JVM 启动 0.26 s，且一个进程只付一次。真正的成本在首次建连（1.55 s）。如果你要跑几百次短脚本，应该改成常驻进程或连接池，而不是反复起进程——反复起进程的话，Go 单文件工具反而是更合适的选择。</p>
+
+<h3>改了 <code>_converters</code>，会影响已经在用的连接吗？</h3>
+<p>会，而且是立即生效。因为 <code>connect()</code> 交给 Connection 的是同一个 dict 对象的引用，你原地改项，所有连接看到的都是新的。这就是为什么必须严格按 <code>startJVM → connect → install_converters</code> 这个顺序——反过来改的是 <code>None</code>，静默无效。</p>
+
+<h3>错误怎么区分？连接失败和 SQL 报错混在一起了</h3>
+<p>实测下来反直觉的一点：达梦 JDBC 的编译期错误根本没有错误码。</p>
+<p>我原本按 disql 的经验写了一张 <code>-2106 表不存在 / -2007 语法错</code> 的映射表，真跑起来发现全是空转。实际形态是两种：</p>
+<table>
+<tr><th style="width:180px">错误类型</th><th style="width:250px">异常形态</th><th>有没有码</th></tr>
+<tr><td>编译期（表/列不存在、语法错）</td><td><code>dm.jdbc.driver.DMException</code>，<code>args[0]</code> 是<strong>纯字符串</strong></td><td><strong>没有</strong>，只有中文消息</td></tr>
+<tr><td>执行期（除零、约束冲突）</td><td>被包成 <code>DatabaseError</code>，<code>args[0]</code> 是 Java 对象</td><td>有，<code>getErrorCode()</code> / <code>getSQLState()</code></td></tr>
+</table>
+<p>实测的原始报文长这样，注意里面没有任何方括号数字：</p>
+<pre class="code"><code>dm.jdbc.driver.DMException: 第1 行附近出现错误:
+无效的表或视图名[NO_SUCH_T]</code></pre>
+<p>所以分类只能以中文文案为主，错误码和 SQLState 为辅：</p>
+<pre class="code"><code class="lang-python">TEXT_RULES = [
+    ("无效的表或视图名", "object"),
+    ("无效的列名",      "object"),
+    ("语法分析出错",    "syntax"),
+    ("用户名或口令",    "auth"),
+]
+
+
+def get_error_code(exc):
+    """执行期错误（除零、约束冲突）才有；编译期错误这里是 None。"""
+    for arg in getattr(exc, "args", ()):
+        fn = getattr(arg, "getErrorCode", None)
+        if callable(fn):
+            return fn()
+    return None
+
+
+def classify(exc):
+    text = str(exc)
+    code = get_error_code(exc)
+    if code in (-6103,):                 # 只收实测确认过的码
+        return "sql"
+    for needle, category in TEXT_RULES:
+        if needle in text:
+            return category
+    return "sql"                         # 认不出来就交给上层人判断</code></pre>
+<p>认不出来的错误宁可落到一个宽泛类别，也别硬塞进一个具体类别。分类错了比不分类更坏，因为脚本会据此做错误的重试或告警。</p>
+
+<h3>能在 Docker 里跑吗？镜像多大？</h3>
+<p>能。基础镜像用 <code>python:3.12-slim</code> 加一个 JRE headless，最终镜像大约 400 MB 上下（JRE 占大头）。如果这个体积不能接受，说明你的场景更适合单文件工具，而不是 JDBC。</p>
+
+<h3>这套东西在 ARM 上能用吗？</h3>
+<p>JDK 有 ARM64 版本，理论上能。但我没有在鲲鹏/飞腾上实测过，所以不给结论。要在国产化环境里用，先单独验证 JPype 的二进制轮子有没有对应架构，这一步最容易卡住。</p>
+
+<h2>说到底</h2>
+<p>选通道，本质是在选你愿意把复杂度放在哪一层，不是在选哪个方案更好。</p>
+<p>disql 把复杂度推给 shell，dmPython 推给编译链，JDBC 推给 JVM。三条路都要付账，区别只在于你现场有没有能力付这一份。有 JDK、要在 Python 里算数据，就选 JDBC，然后把前面那七处转换坑一次改干净；只有 SSH 不能装包，就老老实实用 disql 加反引号。</p>
+<p>至于那些看起来装上了、跑起来也不报错，但值已经错了的坑，它们比装不上危险得多。<code>float64</code> 的金额、<code>object</code> 类型的时间戳，都不会在跑通的那一刻提醒你。</p>
+<blockquote><p>如果你在别的版本、别的发行版上踩到不一样的坑，<a href="mailto:jiang-chuang@qq.com">发我一封邮件</a>，说清版本号和报错原文就行。这篇会按反馈继续修。</p></blockquote>
+</div>
+  <section class="contact">
+    <div class="contact-body">
+      <h3>这篇对上你的情况了吗？</h3>
+      <p>点一下就行——不用登录、不用打字、不用留任何联系方式。我只想知道这篇有没有用。</p>
+      <div class="sig-row">
+        <button class="sig-btn" type="button" data-sig="python-dm-ok">跑通了</button>
+        <button class="sig-btn" type="button" data-sig="python-dm-stuck">卡住了</button>
+        <span class="sig-note" id="sigNote" hidden></span>
+      </div>
+      <details class="sig-help" id="sigHelp">
+        <summary>卡住了，接着看这里</summary>
+        <p>先确认三件事：<code>java -version</code> 能出来（说明 JRE 在）、<code>python -c "import jpype"</code> 不报错（说明版本对）、jar 的路径写得对（绝对路径最省事）。这三样都过了还报错，把这三样发我：<b>卡在哪一步</b>、报错原文、<code>pip list</code> 里 jaydebeapi 和 JPype1 的版本。够判断了，不用发连接串和口令。</p>
+      </details>
+      <details class="contact-fold">
+        <summary>要找我本人？二维码和邮箱在这</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
