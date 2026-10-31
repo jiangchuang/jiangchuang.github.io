@@ -13,7 +13,14 @@
 #   backup-pull.sh --list       只列两端差异
 set -euo pipefail
 
-SERVER="${SERVER:-root@47.117.13.158}"
+# 这个仓是公开的，真实服务器地址放在 env.local（已 gitignore），不写在这里。
+_BACKUP_PULL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$_BACKUP_PULL_DIR/env.local" ]; then
+  # shellcheck disable=SC1090
+  . "$_BACKUP_PULL_DIR/env.local"
+fi
+
+SERVER="${SERVER:-root@CHANGE-ME.invalid}"
 REMOTE_DIR="${REMOTE_DIR:-/var/backups/budget}"
 LOCAL_DIR="${LOCAL_DIR:-I:/backups/budget}"
 KEEP_DAYS="${KEEP_DAYS:-30}"

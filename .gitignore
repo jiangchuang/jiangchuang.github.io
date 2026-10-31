@@ -1,2 +1,4 @@
 server.log
 dm_exp_imp_extract.txt
+# 本机私有值（真实服务器地址等），绝不入库
+infra/env.local

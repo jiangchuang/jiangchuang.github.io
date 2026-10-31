@@ -14,7 +14,8 @@ ACME_HOME="/root/.acme.sh"
 ACME_WEBROOT="/var/www/blog"         # webroot 模式：challenge 文件写在站点根下
 
 # ---- 服务器 ----
-SERVER="root@47.117.13.158"          # 现在这台
+# 公开仓里不留真实地址：这里只是占位，真实值写在同目录 env.local（已 gitignore）。
+SERVER="root@CHANGE-ME.invalid"      # 占位，被 env.local 覆盖
 SERVER_NEW=""                        # 迁移时填新机 IP，其余脚本用 --to new 切换
 WEBROOT="/var/www/blog"
 APP_DIR="/opt/budget"
@@ -35,3 +36,13 @@ PULL_KEEP_DAYS=30                    # 本机异地副本保留天数
 # 也不要把 infra/（含 IP、SSH 用法）或 projects/ 推上公网。
 DEPLOY_PATHS="index.html about.html search.html assets posts interactive"
 MAX_FILE_MB=10                       # 单文件超过它就不许发布（改走对象存储/CDN）
+
+# ---- 本机私有值（不进公开仓）----
+# 这个仓是公开的，服务器地址这类东西不能写进被跟踪的文件。
+# 真值放 env.local，那一行在 .gitignore 里；没有 env.local 时用上面的占位，
+# 脚本会因为连不上 CHANGE-ME.invalid 立刻报错，而不是悄悄用错地址。
+_ENV_LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.local"
+if [ -f "$_ENV_LOCAL" ]; then
+  # shellcheck disable=SC1090
+  . "$_ENV_LOCAL"
+fi
