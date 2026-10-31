@@ -1,0 +1,14 @@
+# 脚本类文件必须是 LF：CRLF 的 .sh 在 Linux/macOS 上会报
+#   bash: $'\r': command not found
+# 这类错误看起来像"脚本写坏了"，实际是换行符，排查很费时间。
+*.sh   text eol=lf
+*.py   text eol=lf
+*.tpl  text eol=lf
+*.md   text eol=lf
+
+# 二进制资源不要做任何换行转换
+*.mp4  binary
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.zip  binary
