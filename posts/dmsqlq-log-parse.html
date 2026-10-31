@@ -129,14 +129,16 @@ SLOG_ERROR     FILE_PATH  ../log      Y
 SLOG_DDL       FILE_PATH  ../log      Y
 SLOG_LONG_SQL  FILE_PATH  ../log      Y</code></pre>
 <p>五行对应五个配置段：一个全局加四个模式。最后那列 <code>IS_DEFAULT = Y</code> 说明全是默认值，没人改过。</p>
-<p><code>../log</code> 是从 bin 目录算的相对路径，所以落在 <code>/home/dmdba/dmdbms/log</code>，也就是安装目录/log。<b>不是</b>相对 sqllog.ini 所在的实例目录——按「实例目录/log」去翻，那儿是空的，我这台连这个目录都没建。</p>
+<p><code>../log</code> 是相对路径，按 bin 目录解析，落到 <code>/home/dmdba/dmdbms/log</code>，也就是安装目录/log。它不是相对 sqllog.ini 所在的实例目录：按「实例目录/log」去翻是空的，我这台连那个目录都没建。</p>
+<p>这个目录确实存在，里面放着 <code>dm_DMSERVER_*.log</code> 这类事件日志。但 <code>dmsql_*.log</code> 我没见它生成过，因为这台实例的 SQL 日志从来没真正打开过（原因见下），所以落点这一句是按 <code>FILE_PATH</code> 推算的，不是我亲眼看到文件在那儿。</p>
 <p>要挪位置就把 <code>FILE_PATH</code> 改成绝对路径，比如 <code>/data/dmlog</code>。改完在库里执行一句，让内存重新读文件，不用重启：</p>
 <pre class="code"><code class="lang-sql">call sp_refresh_svr_log_config();</code></pre>
-<p>实测返回 <code>DMSQL executed successfully</code>。</p>
-<blockquote><p>两个视图名字像，查的东西不是一个，别搞混：</p>
-<p><code>V$DM_SQLLOG_INI</code> 读的是 sqllog.ini 文件，磁盘上那份，任何时候都有值；<br>
-<code>V$DM_SQLLOG_CONFIG</code> 是内存里已经生效的那份，只有 <code>SVR_LOG</code> 开着才有内容。</p>
-<p>我这台 <code>SVR_LOG = 0</code>，刷完配置再查 <code>V$DM_SQLLOG_CONFIG</code> 仍是 no rows。所以确认日志目录查 INI 那个；CONFIG 查出来是空的，不代表配置坏了，是采集压根没开。</p></blockquote>
+<p>实测返回 <code>DMSQL executed successfully</code>。这一句管的是「日志已经开着、你改了配置」，刷一下就换新路径；本来就没开的，刷了也不会凭空长出日志来。</p>
+<blockquote><p>两个视图名字像，查的东西不是一个：</p>
+<p><code>V$DM_SQLLOG_INI</code> 读磁盘上那份 <code>sqllog.ini</code>，不挑 <code>SVR_LOG</code> 状态，任何时候都查得到。<br>
+<code>V$DM_SQLLOG_CONFIG</code> 读内存里已经生效的那份。能查到它的时候，拿它跟 INI 对一遍，就知道你改完 sqllog.ini 到底刷进内存没有，这是它比 INI 多出来的用处。</p>
+<p>但这台实例上它查不出东西，我试了三种状态：<code>SVR_LOG = 0</code> 时 0 行；动态改成 <code>1</code>（按 sqllog.ini 记）再 <code>sp_refresh_svr_log_config()</code>，还是 0 行；改成 <code>2</code>（详细模式）再刷，仍然 0 行。我猜是动态改参数不会让日志子系统重新初始化，得重启实例才真正加载。这一点我没重启验证，所以只是猜测。</p>
+<p>还有更要紧的一层：两个视图给的 <code>FILE_PATH</code> 都是 <code>../log</code> 这种相对值。<b>就算 CONFIG 里有内容，也拿不到绝对路径</b>，还是得知道 bin 目录在哪。想过这一关，别指望查视图，用前面那条 <code>ps</code> 命令。</p></blockquote>
 <p>这个目录里躺着好几种日志，名字像，内容完全不是一回事：</p>
 <table>
 <tr><th style="width:170px">文件名</th><th>是什么</th></tr>
