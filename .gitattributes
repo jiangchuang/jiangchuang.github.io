@@ -5,6 +5,8 @@
 *.py   text eol=lf
 *.tpl  text eol=lf
 *.md   text eol=lf
+*.js   text eol=lf
+*.css  text eol=lf
 
 # 二进制资源不要做任何换行转换
 *.mp4  binary
