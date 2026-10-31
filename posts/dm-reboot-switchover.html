@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>达梦主备集群：重启与切换的完整操作 · 达梦手记</title>
-<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<meta name="description" content="主备集群重启顺序错一步就脑裂。完整操作：先备后主的理由、重启前后各查什么、主备切换的判据与回退条件。附实测回显与踩过的坑。">
 <link rel="stylesheet" href="../assets/site.css">
 <script>
 (function(){
@@ -88,7 +88,7 @@
 <hr>
 <h2>一、先认清演示环境</h2>
 <p>这一节只是为了让你看懂后面的输出示例。<strong>你的环境路径和实例名大概率不同，照着换成自己的即可。</strong></p>
-<div class="tbl-wrap"><table><thead><tr><th>角色</th><th>实例名</th><th>IP</th><th>守护状态</th></tr></thead><tbody><tr><td><strong>主库</strong></td><td>DB139</td><td>192.168.16.139</td><td>PRIMARY</td></tr><tr><td><strong>备库</strong></td><td>DB138</td><td>192.168.16.138</td><td>STANDBY</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table><thead><tr><th>角色</th><th>实例名</th><th>IP</th><th>守护状态</th></tr></thead><tbody><tr><td><strong>主库</strong></td><td>DB1</td><td>192.0.2.11</td><td>PRIMARY</td></tr><tr><td><strong>备库</strong></td><td>DB2</td><td>192.0.2.12</td><td>STANDBY</td></tr></tbody></table></div>
 <ul><li>守护组名：<code>GRP1</code></li><li><strong>软件安装目录（DM_HOME）</strong>：<code>/data/dmdata</code></li><li>监视器程序：<code>/data/dmdata/bin/dmmonitor</code></li><li>监视器配置：<code>/data/dmdata/dmmon/DAMENG/dmmonitor_auto.ini</code></li></ul>
 <p>后面每处需要替换成你自己环境的，我都会标出来。</p>
 <h3>先记住达梦的这条目录约定</h3>
@@ -146,8 +146,8 @@ dmmonitor_auto.ini    dmmonitor_manual.ini</code></pre>
 <h3>第 4 步：看一眼集群状态</h3>
 <pre class="code"><code>show</code></pre>
 <p>输出长这样：</p>
-<pre class="code"><code>WTIME 2024-12-18 00:56:24  RTSTATUS 0  INST_OK  NAME DB138  STATUS OPEN  RISTAT OPEN  RSTAT STANDBY  VALID 3  FLSN 47822  CLSN 47822
-WTIME 2024-12-18 00:56:24  RTSTATUS 0  INST_OK  NAME DB139  STATUS OPEN  RISTAT OPEN  RSTAT PRIMARY  VALID 3  FLSN 47822  CLSN 47822</code></pre>
+<pre class="code"><code>WTIME 2024-12-18 00:56:24  RTSTATUS 0  INST_OK  NAME DB2  STATUS OPEN  RISTAT OPEN  RSTAT STANDBY  VALID 3  FLSN 47822  CLSN 47822
+WTIME 2024-12-18 00:56:24  RTSTATUS 0  INST_OK  NAME DB1  STATUS OPEN  RISTAT OPEN  RSTAT PRIMARY  VALID 3  FLSN 47822  CLSN 47822</code></pre>
 <p><strong>只要盯住三个字段</strong>：</p>
 <div class="tbl-wrap"><table><thead><tr><th>字段</th><th>正常值</th><th>说明</th></tr></thead><tbody><tr><td><code>STATUS</code></td><td><code>OPEN</code></td><td>实例处于打开状态</td></tr><tr><td><code>RSTAT</code></td><td><code>PRIMARY</code> / <code>STANDBY</code></td><td>实例的主备角色</td></tr><tr><td><code>FLSN</code> / <code>CLSN</code></td><td>两侧<strong>基本一致</strong></td><td>主备数据同步进度 —— <strong>这是最关键的一项</strong></td></tr></tbody></table></div>
 <p><strong>这两个数值怎么判读（重要）</strong></p>
@@ -168,12 +168,12 @@ WTIME 2024-12-18 00:56:24  RTSTATUS 0  INST_OK  NAME DB139  STATUS OPEN  RISTAT 
 <h3>第 6 步：停止整个守护组</h3>
 <pre class="code"><code>stop group</code></pre>
 <p>监视器会<strong>按顺序</strong>执行：</p>
-<pre class="code"><code>Stop dmmonitor process of instance DB139[PRIMARY, OPEN, ISTAT_SAME_TRUE]
-Stop dmmonitor process of instance DB138[STANDBY, OPEN, ISTAT_SAME_TRUE]
+<pre class="code"><code>Stop dmmonitor process of instance DB1[PRIMARY, OPEN, ISTAT_SAME_TRUE]
+Stop dmmonitor process of instance DB2[STANDBY, OPEN, ISTAT_SAME_TRUE]
 Notify instance[dmdba] shutdown
-Instance DB139 shutdown success, please wait
-Instance DB138 shutdown success, please wait</code></pre>
-<p><strong>顺序是：先停主库（DB139），再停备库（DB138）。</strong> 监视器自己会保证这个次序，不用手工干预。</p>
+Instance DB1 shutdown success, please wait
+Instance DB2 shutdown success, please wait</code></pre>
+<p><strong>顺序是：先停主库（DB1），再停备库（DB2）。</strong> 监视器自己会保证这个次序，不用手工干预。</p>
 <blockquote><p>⚠️ <strong>这一步会真正停掉数据库，业务会中断。</strong> 生产环境务必先确认已进入停机窗口，并且应用侧已经断开连接。</p></blockquote>
 <hr>
 <h2>四、启动主备集群</h2>
@@ -235,10 +235,13 @@ echo $DM_HOME
 <blockquote><p><strong>看视频版</strong> → 本文顶部同一篇文章内嵌的录屏演示（3 分 15 秒）</p></blockquote>
   </div>
   <section class="contact">
-  <div class="contact-qr">
-    <img src="../assets/wechat-qr.png" alt="微信扫码添加 JC" width="120" height="120" loading="lazy">
-    <span>微信扫码加我<br>备注「达梦」</span>
-  </div>
+  <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <div class="contact-qr">
+        <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+        <span>扫了备注「达梦」<br>不备注我也加</span>
+      </div>
+    </details>
   <div class="contact-body">
     <h3>卡在某一步了？</h3>
     <p>先对着 <a href="../interactive/dm-reboot-switchover.html">交互版</a> 过一遍，每一步都有实测输出。还对不上，把<b>卡在第几步</b>、报错原文、版本号发我 —— 这三样就够判断了，不用发 <code>dm.ini</code> 或任何配置文件。</p>
@@ -256,7 +259,7 @@ echo $DM_HOME
     <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
     <p>达梦手记</p>
     <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
-    <p><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+    <p><a href="about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
   </div>
 </footer>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>

@@ -145,6 +145,15 @@
 .jc-float-nav a{padding:7px 16px;font:600 13px/1.4 system-ui,"Microsoft YaHei",sans-serif;color:#334155;text-decoration:none;transition:background .15s,color .15s}
 .jc-float-nav a:hover{background:rgba(37,99,235,.09);color:#1d4ed8}
 .jc-float-nav .sep{width:1px;height:14px;background:rgba(15,23,42,.14);flex:none}
+
+  /* 二维码折叠：不想被扫码打扰的人，一辈子不用看见它 */
+  .cta-qr-fold { grid-column: 1 / -1; }
+  .cta-qr-fold summary { display: inline-block; cursor: pointer; font-size: 13px; color: #2563eb;
+    padding: 8px 14px; border: 1px dashed rgba(37,99,235,.35); border-radius: 999px; list-style: none; }
+  .cta-qr-fold summary::-webkit-details-marker { display: none; }
+  .cta-qr-fold[open] summary { margin-bottom: 14px; border-style: solid; }
+  .cta-qr-fold .cta-qr { display: flex; gap: 16px; align-items: center; text-align: left; }
+  .cta-qr-fold .cta-cap { margin-top: 0; }
 </style>
 <div class="jc-float-nav">
   <a href="../index.html">目录</a><span class="sep"></span><a href="../search.html">搜索</a>
@@ -437,10 +446,13 @@ SQL&gt; select count(*) from SYSDBA.T_ORDER;    -- [-2106]:Invalid table or view
     <h2>卡在某一步了？</h2>
     <div class="h2sub">把报错原文贴出来，比描述现象有用得多。</div>
     <div class="cta-grid">
-      <div class="cta-qr">
-        <img src="../assets/wechat-qr.png" alt="微信二维码">
-        <div class="cta-cap">扫码加微信<br>备注「达梦」</div>
-      </div>
+      <details class="cta-qr-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="cta-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="176" height="176" loading="lazy">
+          <div class="cta-cap">扫了备注「达梦」<br>不备注我也加</div>
+        </div>
+      </details>
       <div>
         <div class="cta-item">
           <b>贴什么最有帮助</b>
@@ -466,7 +478,7 @@ SQL&gt; select count(*) from SYSDBA.T_ORDER;    -- [-2106]:Invalid table or view
   <footer style="text-align:center;color:#94a3b8;font-size:12.5px;padding:28px 0 40px">
     达梦命令行交付实操 · 交互版 ｜ DM8 实例实测 ｜ 2026-10-29
   <br><span>联系：<a href="mailto:jiang-chuang@qq.com" style="color:inherit;text-decoration:underline">jiang-chuang@qq.com</a></span>
-  <br><span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">渝ICP备2026027352号-1</a></span>
+  <br><span><a href="about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">渝ICP备2026027352号-1</a></span>
   </footer>
 
 </div>

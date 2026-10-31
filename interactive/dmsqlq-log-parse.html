@@ -104,6 +104,15 @@
   .jc-float-nav a{padding:7px 16px;font:600 13px/1.4 system-ui,"Microsoft YaHei",sans-serif;color:#334155;text-decoration:none;transition:background .15s,color .15s}
   .jc-float-nav a:hover{background:rgba(37,99,235,.09);color:#1d4ed8}
   .jc-float-nav .sep{width:1px;height:14px;background:rgba(15,23,42,.14);flex:none}
+
+  /* 二维码折叠：不想被扫码打扰的人，一辈子不用看见它 */
+  .cta-qr-fold { grid-column: 1 / -1; }
+  .cta-qr-fold summary { display: inline-block; cursor: pointer; font-size: 13px; color: #2563eb;
+    padding: 8px 14px; border: 1px dashed rgba(37,99,235,.35); border-radius: 999px; list-style: none; }
+  .cta-qr-fold summary::-webkit-details-marker { display: none; }
+  .cta-qr-fold[open] summary { margin-bottom: 14px; border-style: solid; }
+  .cta-qr-fold .cta-qr { display: flex; gap: 16px; align-items: center; text-align: left; }
+  .cta-qr-fold .cta-cap { margin-top: 0; }
 </style>
 </head>
 <body>
@@ -130,6 +139,23 @@
       <span class="chip">-m 只看慢的</span>
     </div>
   </header>
+
+  <section class="card">
+    <h2>先把它拿到手</h2>
+    <div class="h2sub">单文件、免安装、零依赖：不装运行时、不连数据库、不建表、不联网。下完先对一遍校验值（十秒，能挡住中间人替换安装包）。</div>
+    <table class="kv">
+      <tr><th style="width:180px">平台</th><th style="width:320px">下载</th><th>大小</th></tr>
+      <tr><td>Windows x64</td><td><a href="https://gitee.com/jiangchuang/dm-tools/raw/master/dmsqlq/V2.37/dmsqlq-V2.37-windows-x64.zip">dmsqlq-V2.37-windows-x64.zip</a></td><td class="mono">2.2 MB</td></tr>
+      <tr><td>Linux x86_64</td><td><a href="https://gitee.com/jiangchuang/dm-tools/raw/master/dmsqlq/V2.37/dmsqlq-V2.37-linux-x64.zip">dmsqlq-V2.37-linux-x64.zip</a></td><td class="mono">2.1 MB</td></tr>
+      <tr><td>Linux arm64（鲲鹏/飞腾）</td><td><a href="https://gitee.com/jiangchuang/dm-tools/raw/master/dmsqlq/V2.37/dmsqlq-V2.37-linux-arm64.zip">dmsqlq-V2.37-linux-arm64.zip</a></td><td class="mono">1.9 MB</td></tr>
+    </table>
+    <div class="note">
+      校验（Linux 进解压后的目录）：<code>sha256sum -c CHECKSUMS.txt</code>；
+      Windows：<code>Get-FileHash .\dmsqlq-V2.37-windows-x64.zip -Algorithm SHA256</code>，和 CHECKSUMS.txt 里那一行比。
+      装进 PATH 不用手动挪：<code>./dmsqlq install</code>（装到当前用户 <code>~/.local/bin</code>，<code>--remove</code> 可撤销）。
+    </div>
+  </section>
+
 
   <section class="card">
     <h2>四条命令，从上不了手到能交付</h2>
@@ -384,10 +410,13 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</pre>
     <h2>卡在哪一步了？</h2>
     <div class="h2sub">把报错原文贴出来，比描述现象有用得多。</div>
     <div class="cta-grid">
-      <div class="cta-qr">
-        <img src="../assets/wechat-qr.png" alt="微信二维码">
-        <div class="cta-cap">扫码加微信<br>备注「达梦」</div>
-      </div>
+      <details class="cta-qr-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="cta-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="176" height="176" loading="lazy">
+          <div class="cta-cap">扫了备注「达梦」<br>不备注我也加</div>
+        </div>
+      </details>
       <div>
         <div class="cta-item">
           <b>贴什么最有帮助</b>
@@ -400,7 +429,7 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</pre>
           <p>生产库的真实日志全文、客户表结构、连接串与口令。定位问题不需要这些 —— 先用 <code>-m</code> / <code>-B</code> 把范围卡小。</p>
         </div>
         <p class="cta-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
-        <p class="cta-fine">工具本体在 <a href="https://gitee.com/jiangchuang/DMSQLQ" target="_blank" rel="noopener">Gitee · DMSQLQ</a>；想让答案别人也能查到，在仓库提 issue。</p>
+        <p class="cta-fine">安装包与 issue 都在 <a href="https://gitee.com/jiangchuang/dm-tools" target="_blank" rel="noopener">dm-tools 发布仓</a>（只放编译好的包）。</p>
       </div>
     </div>
   </section>
@@ -412,7 +441,7 @@ SELECT * FROM t_rim_invoice WHERE fbill_id = 'dac000198' AND status = 0;</pre>
   <footer style="text-align:center;color:#94a3b8;font-size:12.5px;padding:28px 0 40px">
     达梦 SQL 日志解析（dmsqlq）· 交互版 ｜ 本机实测 v2.37 ｜ 2026-10-31
   <br><span>联系：<a href="mailto:jiang-chuang@qq.com" style="color:inherit;text-decoration:underline">jiang-chuang@qq.com</a></span>
-  <br><span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">渝ICP备2026027352号-1</a></span>
+  <br><span><a href="about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">渝ICP备2026027352号-1</a></span>
   </footer>
 
 </div>

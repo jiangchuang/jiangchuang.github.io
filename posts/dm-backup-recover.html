@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>达梦利用备份恢复误删表（时间点恢复）· 达梦手记</title>
-<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<meta name="description" content="误删表能不能救回来，只取决于两样东西：全库备份和归档日志。九步实测：确认表已消失、核查归档、dmrman 恢复到测试实例、dexp 导出、dimp 导回生产，每步附真实回显。含回收站闪回的前提条件。">
 <link rel="stylesheet" href="../assets/site.css">
 <script>
 (function(){
@@ -176,10 +176,13 @@ SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MIN(ID) AS MIN_ID, MAX(ID) AS MAX_I
 <blockquote><p>如果目标实例开了回收站，误删的表可以直接闪回，不用走上面这一整套备份恢复流程。前提是 <code>RECYCLEBIN=1</code>，直接 <code>SHOW RECYCLEBIN</code> 找到原表名后 <code>FLASHBACK TABLE 原表名 TO BEFORE DROP</code>。</p></blockquote>
 </div>
   <section class="contact">
-  <div class="contact-qr">
-    <img src="../assets/wechat-qr.png" alt="微信扫码添加 JC" width="120" height="120" loading="lazy">
-    <span>微信扫码加我<br>备注「达梦」</span>
-  </div>
+  <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <div class="contact-qr">
+        <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+        <span>扫了备注「达梦」<br>不备注我也加</span>
+      </div>
+    </details>
   <div class="contact-body">
     <h3>卡在某一步了？</h3>
     <p>先对着 <a href="../interactive/dm-backup-recover.html">交互版</a> 过一遍，每一步都有实测输出。还对不上，把<b>卡在第几步</b>、报错原文、版本号发我 —— 这三样就够判断了，不用发 <code>dm.ini</code> 或任何配置文件。</p>
@@ -196,7 +199,7 @@ SELECT COUNT(*) AS CNT, SUM(AMT) AS SUM_AMT, MIN(ID) AS MIN_ID, MAX(ID) AS MAX_I
     <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
     <p>达梦手记</p>
     <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
-    <p><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+    <p><a href="about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
   </div>
 </footer>
 </body>

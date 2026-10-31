@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本站说明（一个不爱扫码的人的自留地）· 达梦手记</title>
+<meta name="description" content="一个不爱扫码的人的自留地：只写跑过的东西、按屏幕上的报错找、术语解释完塞到文末。联系方式折起来了，不点开就不出现——因为我讨厌被打扰，但也想被听见。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-10-31 &nbsp;·&nbsp; 本站</div>
+    <h1>本站说明（一个不爱扫码的人的自留地）</h1>
+    <span class="cat">本站</span>
+  </div>
+  <div class="content">
+
+<p>凌晨两点，群里一句"库连不上了"，后面跟三个表情包。</p>
+<p>你打开搜索。第一篇是《达梦数据库从入门到精通（附下载）》，下载链接是某网盘的四位提取码；第二篇读起来很顺，但一句能执行的命令都没有；第三篇看着有干货，读到关键处弹出「关注公众号，回复 001 查看全文」。</p>
+<p>我把浏览器关了。这三个都不是我要的。</p>
+<p>我要的东西很简单：一条命令、一段真实的输出，外加一句"这条命令在你那个版本上会不会报错"。</p>
+
+<h2>所以这里的规矩只有三条</h2>
+<blockquote>
+<p><strong>一、每个命令我都跑过，输出是原样贴的。</strong>跑不了的我会写"未实测"，不写"应该可以"。这两句话的区别，在凌晨两点的时候特别大。</p>
+<p><strong>二、按你屏幕上的报错找，不按我的知识体系找。</strong>所以标题里是错误码和现象，不是「第一章 概述」。</p>
+<p><strong>三、术语第一次出现就解释，解释完塞到文末。</strong>正文只留能直接用的东西——你是来解决问题的，不是来上课的。</p>
+</blockquote>
+
+<h2>为什么叫"手记"</h2>
+<p>不是谦虚。是因为这些东西本来就是干完活顺手记的，不是写给人看的教科书。后来发现同事在翻，就想着整理一下——顺手的事，多花不了多少力气。</p>
+<p>顺手的事做久了，就成了现在这个样子。</p>
+
+<h2>同一件事，我给了两种看法</h2>
+<p>因为人要的东西不一样：</p>
+<ul>
+<li><strong>长文版</strong>能搜到、能引用、能发给同事看，适合"先弄明白为什么"；</li>
+<li><strong>交互版</strong>分步卡片、命令一键复制、每步带实测输出，适合"现在就要做完"。</li>
+</ul>
+<p>有人喜欢看视频，有人只想复制命令。两种都做，我费点事，省你的时间。这笔账是划算的。</p>
+
+<h2>关于联系方式，说几句实话</h2>
+<p>这一页原来在最显眼的地方挂着一个二维码，旁边写着「扫码加微信」。</p>
+<p>我自己刷到别的站也烦这个——文章还没看，先要被要求加好友。像走进一家店，货还没看到，三个店员围上来问你要不要办卡。</p>
+<p>所以现在它折起来了，在下面那个小抽屉里。你不点开，它一辈子不出现。</p>
+<p><strong>但我还是留着它。</strong>原因很俗：我写这些东西，是想知道有没有人真的用上了。做技术的都懂这种心情——写了三万字，最怕的不是被骂写错了，是没人吭声。</p>
+<p>所以这里有个矛盾：我讨厌被打扰，但我想被听见。折起来，是我能想到的最诚实的折中。</p>
+
+<h2>这个站不会有的东西</h2>
+<ul>
+<li><strong>「史上最全」「一文读懂」「保姆级」。</strong>这类词一出现，通常意味着作者没跑过。</li>
+<li><strong>转载。</strong>转载到最后，就是十个一模一样的站。</li>
+<li><strong>「关注后阅读全文」。</strong></li>
+<li><strong>弹窗、浮层、自动播放的声音。</strong>包括 cookie 提示——这站不收集你的任何东西，没资格问你要同意。</li>
+</ul>
+
+<h2>现在这里有什么</h2>
+<p>主要是达梦（DM8）现场的东西：故障恢复、日常运维、集群切换、命令行交付。另外放了两个自己写的小工具，安装包在 <a href="https://gitee.com/jiangchuang/dm-tools">dm-tools</a>——同样是单文件、免安装、不连库。</p>
+<p>目录在这里：<a href="../index.html">回到首页看全部</a>。</p>
+
+<h2>最后</h2>
+<p>如果这里有一篇帮你省下一个通宵，这个站就没白建。</p>
+<p>如果哪一篇写错了——版本对不上、命令在你机器上跑不起来、结论其实是错的——告诉我，我改。页脚有邮箱；不想写邮件，就点开下面那个抽屉。</p>
+<blockquote><p>错的地方不藏着。这个站的唯一优势不是"全"，是"真"。</p></blockquote>
+
+</div>
+  <section class="contact">
+    <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <div class="contact-qr">
+        <img src="assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+        <span>扫了备注「达梦」<br>不备注我也加</span>
+      </div>
+    </details>
+    </details>
+    <div class="contact-body">
+      <h3>找错、提问、抬杠都行</h3>
+      <p>说清三件事就够定位：<b>哪一篇</b>、<b>哪一步</b>、<b>报错原文</b>（带错误码）和你用的版本。不用发配置文件和日志原文。</p>
+      <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      <p class="contact-fine">想在公开地方说？去 <a href="https://gitee.com/jiangchuang/blog/issues" target="_blank" rel="noopener">Gitee 仓库</a> 提 issue，回复别人也能查到。</p>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p><a href="about.html">达梦手记</a> · <a href="about.html">本站说明</a></p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+</body>
+</html>

@@ -58,6 +58,7 @@
       <li><a href="index.html">目录</a></li>
       <li><a href="index.html#interactive">操作指南</a></li>
       <li><a href="index.html#cat-故障恢复">图文版</a></li>
+      <li><a href="about.html">本站</a></li>
     </ul>
     <a class="nav-search" href="search.html" title="搜索笔记">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
@@ -81,9 +82,9 @@
 </header>
 
 <div class="stats">
-  <div class="stat"><b>5</b><span>篇交互指南</span></div>
-  <div class="stat"><b>5</b><span>篇图文版</span></div>
-  <div class="stat"><b>4</b><span>类故障恢复</span></div>
+  <div class="stat"><b>&gt;_</b><span>以命令行为主</span></div>
+  <div class="stat"><b>1:1</b><span>命令与实测输出</span></div>
+  <div class="stat"><b>现场</b><span>按报错场景索引</span></div>
 </div>
 
 <main class="wrap">
@@ -93,20 +94,24 @@
 <li><a href="interactive/dm-backup-recover.html"><span class="idx">03</span><span class="t">利用备份恢复误删表（dmrman 时间点恢复）</span><span class="d">9 步</span></a></li>
 <li><a href="interactive/recover-deleted-dbf.html"><span class="idx">04</span><span class="t">数据文件 .DBF 误删后的恢复（句柄法）</span><span class="d">7 步</span></a></li>
 <li><a href="interactive/dm-cli-delivery.html"><span class="idx">05</span><span class="t">命令行交付实操：登录、表空间、授权与建表</span><span class="d">5 步</span></a></li>
-<li><a href="interactive/dmsqlq-log-parse.html"><span class="idx">06</span><span class="t">SQL 日志怎么读：把 ? 还原成真实参数（dmsqlq）</span><span class="d">4 步</span></a></li>
+<li><a href="interactive/dmsqlq-log-parse.html"><span class="idx">06</span><span class="t">SQL 日志怎么读：把 ? 还原成真实参数（dmsqlq）<span class="iv">长文版</span></span><span class="d">4 步</span></a></li>
 </ul></section>
 
-<section class="sec" id="cat-故障恢复"><div class="sec-head"><h2>对应图文版</h2><span class="cnt">与上方交互版逐条对应</span></div><ul class="posts">
-<li><a href="posts/dm-backup-recover.html"><span class="idx">01</span><span class="t">达梦利用备份恢复误删表（时间点恢复）<span class="iv">交互版</span></span><span class="d">2026-10-26</span></a></li>
-<li><a href="posts/recover-deleted-dbf.html"><span class="idx">02</span><span class="t">数据文件误删后的恢复方案<span class="iv">交互版</span></span><span class="d">2023-02-23</span></a></li>
-<li><a href="posts/dm-license-update.html"><span class="idx">03</span><span class="t">达梦数据库在线更换授权文件（不停机版）<span class="iv">交互版</span></span><span class="d">2026-10-02</span></a></li>
-<li><a href="posts/dm-reboot-switchover.html"><span class="idx">04</span><span class="t">达梦主备集群：重启与切换的完整操作<span class="iv">交互版</span></span><span class="d">2026-10-04</span></a></li>
+<section class="sec" id="cat-故障恢复"><div class="sec-head"><h2>长文版</h2><span class="cnt">能搜到、能引用，命令与输出逐条对应</span></div><ul class="posts">
+<li><a href="posts/dmsqlq-log-parse.html"><span class="idx">01</span><span class="t">达梦 SQL 日志怎么读：把 ? 还原成真实参数（dmsqlq）<span class="iv">交互版</span></span><span class="d">2026-10-31</span></a></li>
+<li><a href="posts/dm-backup-recover.html"><span class="idx">02</span><span class="t">达梦利用备份恢复误删表（时间点恢复）<span class="iv">交互版</span></span><span class="d">2026-10-26</span></a></li>
+<li><a href="posts/recover-deleted-dbf.html"><span class="idx">03</span><span class="t">数据文件误删后的恢复方案<span class="iv">交互版</span></span><span class="d">2023-02-23</span></a></li>
+<li><a href="posts/dm-license-update.html"><span class="idx">04</span><span class="t">达梦数据库在线更换授权文件（不停机版）<span class="iv">交互版</span></span><span class="d">2026-10-02</span></a></li>
+<li><a href="posts/dm-reboot-switchover.html"><span class="idx">05</span><span class="t">达梦主备集群：重启与切换的完整操作<span class="iv">交互版</span></span><span class="d">2026-10-04</span></a></li>
 </ul></section>
 <section class="contact">
-  <div class="contact-qr">
-    <img src="assets/wechat-qr.png" alt="微信扫码添加 JC" width="120" height="120" loading="lazy">
-    <span>微信扫码加我<br>备注「达梦」</span>
-  </div>
+  <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <div class="contact-qr">
+        <img src="assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+        <span>扫了备注「达梦」<br>不备注我也加</span>
+      </div>
+    </details>
   <div class="contact-body">
     <h3>指南之外，你还卡在哪？</h3>
     <p>误删、切换、授权、迁移 —— 现场问题往往比文档复杂。把<b>卡住的步骤</b>、报错原文、版本号发我，我能判断是不是这几篇没覆盖到；共性问题会补成新的指南。不用发 <code>dm.ini</code> 之类的配置文件。</p>
@@ -119,7 +124,7 @@
 <footer>
   <div class="wrap foot">
     <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
-    <p>达梦手记</p>
+    <p><a href="about.html">达梦手记</a> · <a href="about.html">本站说明</a></p>
     <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
     <p><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
   </div>

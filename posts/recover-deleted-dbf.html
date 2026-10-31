@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>数据文件误删后的恢复方案 · 达梦手记</title>
-<meta name="description" content="数据库一线实践笔记：迁移同步、日常运维、性能调优与故障恢复。">
+<meta name="description" content="数据文件被误删但实例还在跑：用句柄法从 /proc/PID/fd 把 .DBF 捞回来。含怎么判断实例是否已经挂、文件句柄是否还活着、恢复后怎么校验数据没坏。">
 <link rel="stylesheet" href="../assets/site.css">
 <script>
 (function(){
@@ -161,10 +161,13 @@ DMSQL 过程已成功完成
 <pre class="code"><code class="lang-sql">SQL&gt; select * from TEST_RM.T1;</code></pre>
   </div>
   <section class="contact">
-  <div class="contact-qr">
-    <img src="../assets/wechat-qr.png" alt="微信扫码添加 JC" width="120" height="120" loading="lazy">
-    <span>微信扫码加我<br>备注「达梦」</span>
-  </div>
+  <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <div class="contact-qr">
+        <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+        <span>扫了备注「达梦」<br>不备注我也加</span>
+      </div>
+    </details>
   <div class="contact-body">
     <h3>卡在某一步了？</h3>
     <p>先对着 <a href="../interactive/recover-deleted-dbf.html">交互版</a> 过一遍，每一步都有实测输出。还对不上，把<b>卡在第几步</b>、报错原文、版本号发我 —— 这三样就够判断了，不用发 <code>dm.ini</code> 或任何配置文件。</p>
@@ -181,7 +184,7 @@ DMSQL 过程已成功完成
     <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
     <p>达梦手记</p>
     <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
-    <p><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+    <p><a href="about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
   </div>
 </footer>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>

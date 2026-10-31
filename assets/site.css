@@ -1,5 +1,5 @@
 /* ============================================================
-   闯·达梦笔记 —— 站点样式（多主题）
+   达梦手记 —— 站点样式（多主题）
    ------------------------------------------------------------
    【想改配色？只改下面的主题变量块即可，不用碰任何组件样式】
 
@@ -9,7 +9,7 @@
 
    新增一套主题只要两步：
      ① 复制一份  html[data-theme="dark"]{...}  改名为你的主题
-     ② 在页面脚本的 THEMES 数组里加上这个 id（见 gen_blog.py 的 HEAD_SCRIPT）
+     ② 在页面脚本的 THEMES 数组里加上这个 id（每页 <head> 里那段内联脚本的 THEMES 数组）
    ------------------------------------------------------------
    变量速查：
      --bg / --bg-2 / --bg-3   页面底色 / 卡片 / 更浅一层（标签）
@@ -159,7 +159,7 @@ a:hover{text-decoration:underline}
   -webkit-background-clip:text;background-clip:text;
   -webkit-text-fill-color:transparent;color:transparent;
 }
-/* 副标题 / slogan（改文字见 gen_blog.py 的 SITE_SLOGAN） */
+/* 副标题 / slogan（直接改 index.html 里的文案） */
 .hero .slogan{
   font-family:var(--font-title);font-size:15.5px;font-weight:500;
   letter-spacing:.4em;text-indent:.4em;
@@ -420,12 +420,26 @@ mark{background:var(--accent);color:var(--bg);padding:0 2px;border-radius:calc(v
   .sr-d{font-size:11.5px}
 }
 
-/* ================= 联系方式（微信二维码 + 邮箱） ================= */
+/* ================= 联系方式（微信二维码折叠 + 邮箱） ================= */
+/* 二维码默认收起：不点开就不占位、不下载（img 带 loading=lazy）。
+   理由不是"设计感"，是这东西确实招人烦 —— 文章还没看就被要求加好友。
+   但它也确实是唯一的反馈入口，所以留着，只是不摆在明面上。 */
 .contact{
   margin:44px 0 0;padding:22px 24px;background:var(--bg-2);
   border:1px solid var(--line-2);border-radius:var(--radius-lg);
-  display:grid;grid-template-columns:132px minmax(0,1fr);gap:22px;align-items:start;
 }
+.contact-fold{margin:0 0 16px}
+.contact-fold summary{
+  display:inline-block;cursor:pointer;font-size:13px;color:var(--accent);
+  padding:8px 15px;border:1px dashed var(--accent-line);border-radius:999px;list-style:none;
+  transition:background .15s,border-color .15s;
+}
+.contact-fold summary::-webkit-details-marker{display:none}
+.contact-fold summary:hover{background:var(--bg-3);border-color:var(--accent)}
+.contact-fold summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.contact-fold[open] summary{margin-bottom:14px;border-style:solid}
+.contact-fold .contact-qr{display:flex;align-items:center;gap:16px;text-align:left}
+.contact-fold .contact-qr span{margin-top:0;text-align:left}
 .contact-qr{text-align:center}
 .contact-qr img{
   display:block;width:120px;height:120px;margin:0 auto;padding:5px;
@@ -438,4 +452,4 @@ mark{background:var(--accent);color:var(--bg);padding:0 2px;border-radius:calc(v
 .contact-mail a{color:var(--accent);font-weight:500;text-decoration:none;border-bottom:1px solid var(--accent-line)}
 .contact-fine{font-size:12px !important;color:var(--text-3) !important;line-height:1.65 !important}
 .contact-fine a{color:var(--text-2);text-decoration:underline}
-@media(max-width:560px){.contact{grid-template-columns:1fr;gap:16px}}
+@media(max-width:560px){.contact-fold .contact-qr{flex-direction:column;align-items:flex-start;gap:10px}}
