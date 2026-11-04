@@ -91,8 +91,8 @@
     '</div>' +
     '<details class="sig-help" id="fbHelp">' +
       '<summary>没解决？联系方式在这</summary>' +
-      '<p>把<b>卡在第几步</b>、报错原文、版本号发我就够判断了 —— 不用发配置文件。</p>' +
-      '<p>邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a>　·　想让答案别人也能查到？在 <a href="https://gitee.com/jiangchuang/blog/issues" target="_blank" rel="noopener">Gitee 仓库</a> 提 issue，回复公开可查。</p>' +
+      '<p>说清三件事就够判断：<b>卡在第几步</b>、<b>报错原文（带错误码）</b>、<b>版本号</b>。不用发配置文件和日志原文；口令整个别贴，IP、主机名、库名、真实表名先自行脱敏。</p>' +
+      '<p>邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a>　·　共性问题会补成新的指南，想让后来人搜到、也看得见补没补，就在 <a href="https://gitee.com/jiangchuang/blog/issues" target="_blank" rel="noopener">Gitee 仓库</a> 提 issue，回复公开可查。</p>' +
     '</details>';
   anchor.parentNode.insertBefore(bar, anchor);
 

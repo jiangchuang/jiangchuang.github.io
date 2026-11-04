@@ -477,9 +477,19 @@ mark{background:var(--accent);color:var(--bg);padding:0 2px;border-radius:calc(v
 @media(max-width:560px){.contact-fold .contact-qr{flex-direction:column;align-items:flex-start;gap:10px}}
 
 /* ================= 2026-11-04｜二维码全站收起 + 文章一行反馈 ================= */
-/* 只收起二维码折叠入口；.contact-body 里的邮箱 / issue 不受影响，
-   首页与关于页仍保留纯文字联系入口。DOM 与图片引用都留着，删掉本段即恢复。 */
+/* 二维码折叠入口与图片一律隐藏，DOM 与图片引用都留着，删掉本段即恢复。
+   首页 / 关于页的联系方式改由 .contact-more 折起（红线「折叠打扰」）。 */
 .contact-fold,.cta-qr-fold,.contact-qr,.cta-qr,img[src*="wechat-qr.png"]{display:none !important}
+.contact-more{margin:0}
+.contact-more>summary{
+  display:inline-block;cursor:pointer;list-style:none;
+  font-size:13.5px;color:var(--text-2);background:var(--bg-2);
+  padding:8px 14px;border:1px solid var(--line-2);border-radius:8px;
+}
+.contact-more>summary::-webkit-details-marker{display:none}
+.contact-more>summary:hover{color:var(--text);border-color:var(--accent)}
+.contact-more>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.contact-more[open]>summary{margin-bottom:16px}
 /* hidden 兜底：作者样式给 .card 设了 display，会压过 UA 的 [hidden] */
 .contact[hidden],.card.cta[hidden]{display:none !important}
 .fb-bar{
