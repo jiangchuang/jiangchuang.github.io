@@ -35,6 +35,8 @@
   .meta { font-size:13px; color:var(--sub); }
   .meta a { color:var(--brand); text-decoration:none; }
   .caphead { font-size:13px; font-weight:700; margin:18px 0 8px; color:var(--ink); }
+  .fast { margin-top:14px; padding:12px 14px; background:#eef5ff; border:1px solid #cfe0ff; border-radius:9px; font-size:13.5px; line-height:1.85; }
+  .fast b { color:var(--brand); }
   .caps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
   .cap { border:1px solid var(--line); border-radius:9px; padding:10px 12px; background:#fafbfd; }
   .cap b { display:block; font-size:13px; color:var(--ink); margin-bottom:2px; }
@@ -62,7 +64,7 @@
   <p class="sub">单文件、免安装、零依赖。直连下载，无需注册登录。</p>
 
   <div class="item">
-    <h2>dmkit <small>V0.7.44 · 2026-11-05</small></h2>
+    <h2>dmkit <small>V0.7.45 · 2026-11-05</small></h2>
     <p class="desc">达梦 DM8 运维诊断工具箱，23 个命令覆盖巡检、锁、执行计划、取证、网络与集群。绿色免安装，不需要管理员权限。</p>
     <div class="row">
       <a href="/dl/dmkit/dmkit-windows-x64.zip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Windows x64 · 11 MB</a>
@@ -74,6 +76,8 @@
       <a href="/dl/dmkit/CHECKSUMS.txt">SHA256 校验值</a>　·　
       <a href="https://gitee.com/jiangchuang/dm-tools">历史版本与问题反馈</a>
     </p>
+
+    <div class="fast"><b>不想看手册？直接用：</b>双击 <code>dmkit.exe</code> → 选 <code>6</code>「★ SQL 慢 → 一屏拍照（不执行）」→ 填 DSN → 粘一条 SQL（或填 <code>.sql</code> 文件路径）→ 回车。当前目录会生成 <code>at_report.md</code>，就是能直接发出去的采集结果；<strong>默认只读档，不会执行你的 SQL</strong>。</div>
 
     <div class="caphead">这 23 个命令在做什么</div>
     <div class="caps">
