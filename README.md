@@ -31,6 +31,7 @@
 | SQL 日志怎么读：把 `?` 还原成真实参数（dmsqlq） | [同题长文](posts/dmsqlq-log-parse.html) | 工具 |
 | — | [Python 连接达梦：三条通道怎么选](posts/python-dm-connection-channels.html) | 应用开发 |
 | — | [Flink CDC 接达梦：卡住你的不是连接器，是日志里的 ID](posts/dm-cdc-logmnr-id.html) | 日常运维 |
+| — | [把「难」拆开：四种难，四种解法](posts/how-to-decompose-hard-problems.html) | 工作方法 |
 
 完整清单以 [`assets/search.json`](assets/search.json) 为准（站内搜索也读这个文件）。
 

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>把「难」拆开：四种难，四种解法 · 达梦手记</title>
+<meta name="description" content="遇到一件很难、很耗时的事，第一动作不该是列 TODO。难有四种——定义不清、信息不足、路径不明、量太大——只有最后一种才需要切分。含四种诊断判据、最小可证伪实验、先做「全盘皆输」那一步、以及什么时候该放弃。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-工作方法">图文版</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-11-06 &nbsp;·&nbsp; 工作方法</div>
+    <h1>把「难」拆开：四种难，四种解法</h1>
+    <span class="cat">工作方法</span>
+  </div>
+  <div class="content">
+
+<p>有件事你拖了三天。每天打开电脑都想着它，但每次都没真正开始——不是不想做，是<b>不知道从哪下手</b>。</p>
+<p>这时候人的本能是列一张 TODO：拆成十条，排在待办里，然后看着那张表更焦虑了。</p>
+<p><b>先说清楚：这篇不涉及达梦的具体技术。</b>它讲的是「遇到难事怎么下手」，只是案例全部来自达梦现场的活。</p>
+<hr>
+
+<h3>一、先纠一个误解：拆解不是切分</h3>
+<p>大多数人以为「难」等于「活多」，所以第一反应是切分任务。但切分只对一种难有效——<b>路径清楚、纯粹量大</b>的那种。</p>
+<p>而真正的难，多半是另外三种：</p>
+<ul>
+<li>说不清「做完是什么样」</li>
+<li>不知道该查什么、该信谁</li>
+<li>知道要什么，但不知道下一步做什么</li>
+</ul>
+<p>这三种，切得再细也没用——因为你切出来的每一块，都还是「不知道下一步」。</p>
+<blockquote><p><b>核心判据</b>：难的本质不是「事大」，是「你不知道下一步做什么」。<br>所以拆解的目标不是<b>变小</b>，是<b>变确定</b>。</p></blockquote>
+<hr>
+
+<h3>二、先诊断：难有四种</h3>
+<div class="tbl-wrap"><table><thead><tr><th>类型</th><th>症状</th><th>第一动作</th></tr></thead><tbody>
+<tr><td><b>① 定义不清</b></td><td>说不清「做完是什么样」</td><td>写验收标准，<b>不写方案</b></td></tr>
+<tr><td><b>② 信息不足</b></td><td>不知道该查什么、该信谁</td><td>找<b>最小权威源</b></td></tr>
+<tr><td><b>③ 路径不明</b></td><td>知道要什么，不知道怎么走</td><td>做<b>最小可证伪实验</b></td></tr>
+<tr><td><b>④ 量太大</b></td><td>路径清楚，纯粹活多</td><td>这才是<b>切分</b></td></tr>
+</tbody></table></div>
+<p>我在自己的活里粗算过：前三种占绝大多数，第四种很少。但人的本能是往第四种上靠——因为列清单最省脑子，看起来也最努力。</p>
+<blockquote><p><b>最常见的误判</b>：把 ①②③ 当成 ④，然后列一张 TODO。那是用「看起来很努力」掩盖「还没想清楚」。</p></blockquote>
+<hr>
+
+<h3>三、四种解法</h3>
+
+<p><b>① 定义不清 → 先写「做完的样子」</b></p>
+<p>不是写方案，是写<b>验收条件</b>。差别有多大：</p>
+<div class="tbl-wrap"><table><thead><tr><th>反例</th><th>正例</th></tr></thead><tbody>
+<tr><td>做个同步工具</td><td>两个进程同时取号，拿到不同号且都退出 0</td></tr>
+<tr><td>优化一下性能</td><td>同一 SQL 从 3.2 秒降到 500 毫秒以内，且执行计划里没有全表扫描</td></tr>
+</tbody></table></div>
+<p>验收标准一写出来，方案往往就唯一了。<b>定义问题的过程本身就在解题</b>——这也是为什么很多人「一想清楚就知道怎么做了」，不是灵光乍现，是定义到了位。</p>
+
+<p style="margin-top:26px"><b>② 信息不足 → 找「最小权威源」</b></p>
+<p>不要一上来读全手册。按命中率排序找三样东西：</p>
+<ol>
+<li><b>踩过坑的人 / 自己的小本本</b>——成本最低、命中率最高</li>
+<li>权威文档的<b>相关那一节</b>（不是整本）</li>
+<li>一个<b>能跑的最小例子</b></li>
+</ol>
+<p>判据是：<b>你需要的是一条能落地的答案，不是一次系统学习。</b>系统学习是另一件事，别拿它当借口拖延开始。</p>
+
+<p style="margin-top:26px"><b>③ 路径不明 → 做「最小可证伪实验」</b></p>
+<p>不是做原型，是做一个<b>能推翻你假设</b>的实验。</p>
+<p>举个我自己的例子：要在 Windows 沙箱里装一个达梦库做全自动视频测试，红线是绝不能碰宿主机。整件事最不确定的只有一个点——<b>沙箱能不能接受命令行传进去的配置文件</b>。</p>
+<p>所以我没先去写整套自动化，而是只测这一件：传配置文件启动 → 秒退，返回 <code>-2147024713</code>。结论立刻明确：无头传参这条路不通，改走图形界面双击。<b>一次实验，省掉了后面所有弯路。</b></p>
+<p>设计实验先问三句：</p>
+<ul>
+<li>这个实验要是<b>失败了</b>，我会因此改变方案吗？（不会 → 别做）</li>
+<li>它要多久？（超过半小时 → 拆得更小）</li>
+<li>结论<b>怎么记</b>？（不记等于没做）</li>
+</ul>
+
+<p style="margin-top:26px"><b>④ 量太大 → 才切分，按依赖顺序</b></p>
+<p>不是按重要性，是按「谁必须先完成」。</p>
+<p>重要性排序会让你先做最容易出彩的那块，最后卡在最难的那块——而最难的那块才是决定成败的。按依赖顺序排，最难的通常被推到最前面，因为后面全等它。</p>
+<hr>
+
+<h3>四、一条前置原则：先做「如果不成，全盘皆输」的那一步</h3>
+<blockquote><p>难事之所以耗时间，往往不是因为工作量大，而是<b>中途发现方向错了，全盘重来</b>。</p></blockquote>
+<p>所以拆解时先问一句：<b>哪一步失败会让整个方案作废？把它放到最前面。</b></p>
+<p>另一个例子：给一个协作脚本做「并发取号不重复」。整件事最可能推翻全局的假设是——<b>git 的推送校验到底能不能保证并发原子性</b>。如果它不能，整个设计就得换。</p>
+<p>所以我没有先写工具，而是<b>先起两个进程同时跑</b>。第一轮就挂了：一个进程推送被拒后，卡在 rebase 冲突里，拿不到号。五分钟发现一个会推翻设计的 bug，比写完三百行再发现划算得多。</p>
+<p>判据：<b>把验证成本最低、推翻力最强的那个假设，排到第一位。</b></p>
+<hr>
+
+<h3>五、什么时候该放弃</h3>
+<p>这条最难，但最省钱。判据不是时间，是<b>信息增量</b>：</p>
+<ul>
+<li>每次失败都能说出「下次不这么干，因为 X」→ <b>继续</b></li>
+<li>连续两次失败只是<b>重复同一个错误</b>、没拿到新信息 → <b>换路</b></li>
+</ul>
+<p>耗了三小时但每次学到东西，值得；耗了二十分钟但原地打转，该停。<b>时间不是判据，「学会了什么」才是。</b></p>
+<hr>
+
+<h3>六、五分钟版</h3>
+<p>真到现场，就按这个顺序问自己四句：</p>
+<pre class="code"><code class="lang-text">1. 做完是什么样？        —— 说不清 → 定义问题（写验收标准）
+2. 该查什么、信谁？      —— 不知道 → 信息问题（找最小权威源）
+3. 下一步做什么？        —— 不确定 → 路径问题（做最小可证伪实验）
+4. 只是活多？            —— 是     → 才切分（按依赖顺序）</code></pre>
+<p><b>四句里只要有一句答不上来，就还没到「切分」这一步。</b></p>
+<hr>
+
+<h3>七、常见问题</h3>
+<p><strong>Q1：四种难同时占怎么办？</strong></p>
+<p>按顺序解：定义 → 信息 → 路径 → 量。定义不清时，后面三种的答案都是假的——你会为一个还没定义清楚的问题做实验。</p>
+<p><strong>Q2：拆到什么粒度算够？</strong></p>
+<p>拆到<b>每一块都能立刻动手</b>为止。如果某一块你看着还是「不知道从哪开始」，说明它没拆完，或者它根本不是量的问题。</p>
+<p><strong>Q3：最小可证伪实验和「做个原型」有什么区别？</strong></p>
+<p>原型是为了<b>证明能做</b>，实验是为了<b>证伪假设</b>。原型会越做越大（因为你想让它能跑），实验做完就该扔。判断标准：这个实验失败了，我会不会改方案？会，才算实验。</p>
+<p><strong>Q4：怎么记录实验结论才不算白做？</strong></p>
+<p>四件套：<b>环境、命令、原始输出、结论</b>。少一样，三个月后你自己都不认。这条和排查问题记日志是一个道理。</p>
+<p><strong>Q5：这套方法对「必须做完但真的很无聊」的事有用吗？</strong></p>
+<p>没用。那种事不需要拆解，需要的是定时器和外部约束。别把方法论套在意志力问题上。</p>
+<hr>
+<p style="color:var(--text-2);font-size:14px">这篇是 v1。几种难的占比是经验估计、没有统计；「实验超过半小时就再拆小」的阈值是拍脑袋定的。你按这个试几次，哪条不成立就回来告诉我，我改。</p>
+
+  </div>
+  <section class="contact" hidden>
+  <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <div class="contact-qr">
+        <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+        <span>扫了备注「达梦」<br>不备注我也加</span>
+      </div>
+    </details>
+  <div class="contact-body">
+    <h3>有不同看法？</h3>
+    <p>这篇讲的是方法，不是标准答案。你要是按它试过、发现哪条不成立，或者你自己有更好用的拆法，欢迎说 —— 把<b>具体那件事</b>和<b>你当时怎么处理的</b>说一下就行。</p>
+    <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p class="contact-fine">想让讨论别人也能看到？在 <a href="https://gitee.com/jiangchuang/blog/issues" target="_blank" rel="noopener">Gitee 仓库</a> 提 issue，回复公开可查。</p>
+  </div>
+</section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="dm-license-update.html">达梦数据库在线更换授权文件（不停机版）→</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+</body>
+</html>
