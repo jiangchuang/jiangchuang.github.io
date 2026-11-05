@@ -93,6 +93,8 @@
 
 /* 窄屏防横向溢出（既有问题，顺手修）：长行内代码、三列表格、.demo 内图片都会撑破 430px */
 .content code{overflow-wrap:anywhere}
+.content kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;
+  font-size:.86em;background:var(--bg-2);font-family:ui-monospace,Consolas,monospace}
 .content .demo{box-sizing:border-box}
 .content .demo img,.content .stepper img{box-sizing:border-box;max-width:100%}
 @media(max-width:640px){
@@ -284,7 +286,35 @@
 </div>
 </div>
 
-<div class="warn"><strong>别手写 XML。</strong>里面有加密后的口令串和一堆 <code>Strategy</code> 策略，手工拼极易漏字段。让向导生成，是这件事最省心的部分。另外：右键任务的"导出配置文件"也能导出，但<strong>前提是任务已经保存过</strong>；没保存会直接弹"配置文件为空!"（本轮实测）。<br><img src="../assets/dts/s7-warning.png" alt="配置文件为空的提示" style="max-width:min(420px,100%)"></div>
+<div class="pairnav">
+<p class="pn-t">拿到 XML 有两条路。本文走 A；你平时习惯 B 就走 B——<strong>后面步骤完全一样</strong>，不用从头再学一遍。</p>
+<div class="pn-grid">
+<div class="pn-card cur">
+<p class="pn-k">A · 「源代码」页全选复制<span class="pn-you">本文用这条</span></p>
+<p class="pn-d">窗口最底部那个页签，<kbd>Ctrl</kbd>+<kbd>A</kbd> 全选、<kbd>Ctrl</kbd>+<kbd>C</kbd> 复制。</p>
+<ul>
+<li><strong>不需要先保存任务</strong>，配置填完就能拿</li>
+<li>老版本也有这个页签，<strong>跨版本最稳</strong></li>
+</ul>
+</div>
+<div class="pn-card">
+<p class="pn-k">B · 右键任务 → 导出配置文件</p>
+<p class="pn-d">工程树里右键<strong>已保存</strong>的任务，选「导出配置文件」，直接落成一个文件。</p>
+<ul>
+<li>更省事：不用全选，不怕漏选</li>
+<li>前提是<strong>任务已经保存过</strong>，否则弹「配置文件为空!」</li>
+</ul>
+</div>
+</div>
+</div>
+
+<p class="cap">两条路导出的都是同一份任务定义（连接信息 + 表映射 + <code>Strategy</code> 策略 + 加密口令串），换的是"怎么拿"，不是"拿到什么"</p>
+
+<div class="warn"><strong>别手写 XML。</strong>里面有加密后的口令串和一堆 <code>Strategy</code> 策略，手工拼极易漏字段，让向导生成才省心。<br>
+<strong>B 这条路的验证边界也说清楚：</strong>本轮只验到「任务没保存时报错」这一步（下图），<strong>任务保存后导出成功的情形没有实跑</strong>——当时没保存任务就把 GUI 关了。所以正文按 A 写；你用 B 拿到文件，只要服务器能跑通、报告正常，就一样可用。</div>
+
+<img src="../assets/dts/s7-warning.png" alt="配置文件为空的提示" style="max-width:min(420px,100%)">
+<p class="cap">走 B 而任务还没保存时，点「导出配置文件」就是这个提示。顺带看图里的工程树：<strong>「迁移」下面的 <code>dm2dm_demo</code> 就是任务节点</strong>，右键的是它，不是「迁移」这层目录</p>
 
 <h2>第二步：把 XML 放到服务器上跑</h2>
 
@@ -338,7 +368,7 @@ su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
 <tr><th>现象</th><th>原因 / 处置</th></tr>
 <tr><td>向导报"连接数据库失败 / 网络通信异常"</td><td>服务器防火墙没放行数据库端口。<code>firewall-cmd --add-port=5236/tcp</code> 临时放行，或让网络管理员开白名单</td></tr>
 <tr><td>XML 传上去解析报错</td><td>CRLF 行尾。转 LF；本轮剪贴板出来的是 <code>\r\r\n</code>，要清干净</td></tr>
-<tr><td>右键"导出配置文件"提示"配置文件为空!"</td><td>任务没保存。要么在向导点一次"完成"保存，要么直接用"源代码"页复制</td></tr>
+<tr><td>右键"导出配置文件"提示"配置文件为空!"</td><td>任务没保存。先把任务存进工程再导出，或者直接用「源代码」页复制——<strong>复制不需要保存</strong></td></tr>
 <tr><td>改了数据库口令，任务跑不通</td><td>XML 里口令是加密串，别手改。回 GUI 重新填一次口令、重新导出</td></tr>
 <tr><td>看起来成功，数据却没到</td><td>退出码不可信，必须看状态行计数 + 目标库校验</td></tr>
 <tr><td>大表跑到一半 OOM</td><td>启动脚本把堆写死 <code>-Xms1024m -Xmx1024m</code>；拆批或成对调大 Xms/Xmx（只改 Xmx 会让 JVM 起不来）</td></tr>
@@ -374,7 +404,7 @@ su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
     ['../assets/dts/s4-options.png','⑤ 迁移选项保持默认','「迁移任务最大并发数」默认 2，机器内存小别往上调'],
     ['../assets/dts/s5-tables.png','⑥ 勾选模式和要迁的表','先勾源模式，再在「指定对象」页勾业务表，别带上系统统计表'],
     ['../assets/dts/s6-xml.png','⑦ 关键：切到底部「源代码」，全选复制','存成 sync_job.xml —— 千万别点「完成」，点完就当场执行了'],
-    ['../assets/dts/s7-warning.png','⑧ 注意：「导出配置文件」要求任务已保存','没保存会弹「配置文件为空!」，所以用「源代码」页最省事']
+    ['../assets/dts/s7-warning.png','⑧ 另一条路：右键任务「导出配置文件」','前提是任务已保存；没保存会弹「配置文件为空!」，那就走「源代码」页']
   ];
   var i=0,timer=null;
   var img=document.getElementById('stImg'),tt=document.getElementById('stTitle'),
