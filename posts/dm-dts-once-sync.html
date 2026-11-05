@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>没有图形界面的服务器，怎么把达梦的数据搬过去？ · 达梦手记</title>
-<meta name="description" content="服务器没装图形界面、隔着 VPN 迁库又慢，怎么办：在 Windows 上把达梦 DTS 任务配好，复制它生成的 XML，传到服务器用命令行跑一次。含 8 步动图、4 条踩坑（进度无百分比、退出码不可信、重跑会重复写入、OOM 后假死）与实跑输出。">
+<meta name="description" content="服务器没装图形界面、隔着 VPN 迁库又慢，怎么办：在 Windows 上把达梦 DTS 任务配好，复制它生成的 XML，传到服务器用命令行跑一次。含 7 步动图、4 条踩坑（进度无百分比、退出码不可信、重跑会重复写入、OOM 后假死）与实跑输出。">
 <link rel="stylesheet" href="../assets/site.css">
 <style>
 /* ---- 本文补充组件（用站点主题变量，ink / dark 两套配色都成立）---- */
@@ -53,6 +53,7 @@
 .content .dots span{height:5px;flex:1;background:var(--line-2);border-radius:3px;cursor:pointer}
 .content .dots span.on{background:var(--accent)}
 .content .goto{font-size:14px;color:var(--text-3);margin:10px 0 0}
+.content .goto strong{color:var(--text-2)}
 .content .pc{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}
 .content .pc>div{border:1px solid var(--line);border-radius:var(--radius-lg);padding:13px 16px;background:var(--bg-2)}
 .content .pc>div.good{border-top:3px solid var(--accent)}
@@ -91,6 +92,32 @@
   border-top:1px dashed var(--line)}
 @media(max-width:640px){.content .pn-grid{grid-template-columns:1fr}}
 
+/* 全文路线图：开头先交代「一共几步」，点卡片直接跳到对应章节 */
+.content .map{margin:22px 0 8px}
+.content .map-h{font-size:14px;color:var(--text-3);margin:0 0 12px;font-weight:600}
+.content .map-h b{color:var(--text)}
+.content .map-row{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.content .map-row a{display:flex;flex-direction:column;text-decoration:none;color:var(--text);
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-lg);padding:15px 15px 13px;
+  transition:border-color .15s,box-shadow .15s}
+.content .map-row a:hover{border-color:var(--accent);box-shadow:0 3px 12px rgba(0,0,0,.09);text-decoration:none}
+.content .map .ic{width:42px;height:42px;color:var(--accent);margin:0 0 10px;flex:none}
+.content .map .ic svg{width:42px;height:42px;display:block}
+.content .map .tx{display:flex;flex-direction:column;flex:1}
+.content .map .sn{font-size:11.5px;letter-spacing:.08em;color:var(--text-3);font-weight:600}
+.content .map .ttl{font-family:var(--font-title);font-size:16.5px;font-weight:700;line-height:1.45;margin:1px 0 5px}
+.content .map .dd{font-size:13.5px;color:var(--text-3);line-height:1.65;flex:1}
+.content .map .mm{font-size:12.5px;color:var(--accent);margin:9px 0 0;font-weight:600}
+.content .map-alt{display:flex;align-items:center;gap:9px;margin:11px 0 0;padding:10px 14px;
+  text-decoration:none;font-size:13.5px;background:var(--bg-2);
+  border:1px dashed var(--line-2);border-radius:var(--radius-lg);color:var(--text-3)}
+.content .map-alt:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+.content .map-alt .ic{width:19px;height:19px;flex:none;color:#c9881e}
+.content .map-alt .ic svg{width:19px;height:19px;display:block}
+.content .map-alt b{color:var(--text)}
+.content .map-alt .go{margin-left:auto;color:var(--accent);white-space:nowrap}
+.content h2{scroll-margin-top:74px}
+
 /* 窄屏防横向溢出（既有问题，顺手修）：长行内代码、三列表格、.demo 内图片都会撑破 430px */
 .content code{overflow-wrap:anywhere}
 .content kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;
@@ -101,6 +128,13 @@
   .content table{display:block;overflow-x:auto;max-width:100%}
   .content .pairnav{padding:13px 14px 11px}
   .content .pn-card{padding:11px 13px}
+  .content .map-row{grid-template-columns:1fr;gap:9px}
+  .content .map-row a{flex-direction:row;align-items:flex-start;gap:12px;padding:12px 13px}
+  .content .map .ic{width:32px;height:32px;margin:2px 0 0}
+  .content .map .ic svg{width:32px;height:32px}
+  .content .map .mm{margin:6px 0 0}
+  .content .map-alt{flex-wrap:wrap;align-items:flex-start}
+  .content .map-alt .go{margin-left:0;width:100%}
 }
 </style>
 <script>
@@ -198,6 +232,48 @@
 <div class="pn-f">两种都<strong>不绕 VPN</strong>、都<strong>不用服务器装图形界面</strong>；区别只有两处：谁发起执行、你的电脑要不要一直开着。拿不准？看 <a href="dm-dts-agent-mode.html#compare">三问决策（一分钟选完）→</a></div>
 </div>
 
+<div class="map">
+<p class="map-h"><b>流程分 3 步，另有 1 节排障</b>：配一次、跑一次、验一遍。点卡片直接跳到对应章节。</p>
+<div class="map-row">
+
+<a href="#step1">
+<div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6.5h5M14 6.5h6M4 12h9M18 12h2M4 17.5h2M11 17.5h9"/><circle cx="11.5" cy="6.5" r="2.2"/><circle cx="15.5" cy="12" r="2.2"/><circle cx="8.5" cy="17.5" r="2.2"/></svg></div>
+<div class="tx">
+<div class="sn">STEP 1</div>
+<div class="ttl">在 Windows 上把任务画出来</div>
+<div class="dd">DTS 向导点 7 小步，最后切到「源代码」页复制 XML。</div>
+<div class="mm">7 小步 · 只在你的电脑上</div>
+</div>
+</a>
+
+<a href="#step2">
+<div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="13.5" width="17.6" height="7" rx="1.8"/><path d="M6.6 17h.01M9.4 17h.01"/><path d="M12 10V3.2M12 3.2 9.2 6M12 3.2 14.8 6"/></svg></div>
+<div class="tx">
+<div class="sn">STEP 2</div>
+<div class="ttl">传到服务器，跑一次</div>
+<div class="dd">一条命令跑起来，数据走服务器内网，敲完就能关机。</div>
+<div class="mm">1 条命令 · 时长看数据量</div>
+</div>
+</a>
+
+<a href="#step3">
+<div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.6s7.6-3.4 7.6-9V5.6L12 2.8 4.4 5.6v7c0 5.6 7.6 9 7.6 9Z"/><path d="m8.7 11.7 2.5 2.5 4.4-4.7"/></svg></div>
+<div class="tx">
+<div class="sn">STEP 3</div>
+<div class="ttl">验数、留档、防挂死</div>
+<div class="dd">对数、存日志报告，补 <code>timeout</code> 和判据再收工。</div>
+<div class="mm">3 件事 · 别省这一步</div>
+</div>
+</a>
+</div>
+
+<a class="map-alt" href="#pit">
+<div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4 21.6 20H2.4Z"/><path d="M12 9.6v4.3M12 17h.01"/></svg></div>
+<span><b>4 类坑先看这里</b>：进度没有百分比、退出码不可信、重跑会重复写入、OOM 后假死</span>
+<span class="go">跳到踩坑 →</span>
+</a>
+</div>
+
 <h2>先说清楚：慢在哪、卡在哪</h2>
 <p>很多人做达梦数据迁移，是在自己电脑上打开 DTS 图形工具，隔着 VPN 连生产库。于是数据得绕这么一大圈：</p>
 
@@ -222,7 +298,7 @@
 
 <p class="cap">数据全程在服务器内网流动，客户端只在配置那几分钟在线；命令敲下去之后关电脑都不影响</p>
 
-<h2>第一步：在图形界面里"画"出任务</h2>
+<h2 id="step1">第一步：在图形界面里"画"出任务</h2>
 
 <p>下面是整段流程的 7 步，画面全部来自真机截图，非示意绘制。<strong>它会自动往前走</strong>——想停就按「暂停」，想回头按「上一步」，点下面的小格能直接跳到某一步。第 ⑦ 步是整件事的关键：复制「源代码」页的 XML，而不是点「完成」。</p>
 
@@ -241,13 +317,7 @@
 </div>
 </div>
 
-<details>
-<summary>想存一份发给同事？同一套 7 步的动图在这（可右键另存 / 单独打开）</summary>
-<div class="demo">
-  <img class="gif" src="../assets/dts/xml-config-flow.gif" alt="DTS 配置 XML 的 7 步流程动图">
-  <p class="cap">循环播放，不能暂停；也可以<a href="../assets/dts/xml-config-flow.gif" target="_blank">单独打开 GIF</a>（2.5 MB）再右键另存</p>
-</div>
-</details>
+<p class="goto"><strong>速览就到这。</strong>下面按 ① 到 ⑦ 的顺序逐步拆开——点哪里、界面上填什么、哪一步容易错。</p>
 
 <div class="steps">
 <div class="step">
@@ -288,6 +358,14 @@
 </div>
 </div>
 
+<details>
+<summary>想存一份发给同事？同一套 7 步的动图在这（可右键另存 / 单独打开）</summary>
+<div class="demo">
+  <img class="gif" src="../assets/dts/xml-config-flow.gif" alt="DTS 配置 XML 的 7 步流程动图">
+  <p class="cap">循环播放，不能暂停；也可以<a href="../assets/dts/xml-config-flow.gif" target="_blank">单独打开 GIF</a>（2.5 MB）再右键另存</p>
+</div>
+</details>
+
 <div class="pairnav">
 <p class="pn-t">拿到 XML 有两条路。本文走 A；你平时习惯 B 就走 B——<strong>后面步骤完全一样</strong>，不用从头再学一遍。</p>
 <div class="pn-grid">
@@ -318,7 +396,7 @@
 <img src="../assets/dts/s7-warning.png" alt="配置文件为空的提示" style="max-width:min(420px,100%)">
 <p class="cap">走 B 而任务还没保存时，点「导出配置文件」就是这个提示。顺带看图里的工程树：<strong>「迁移」下面的 <code>dm2dm_demo</code> 就是任务节点</strong>，右键的是它，不是「迁移」这层目录</p>
 
-<h2>第二步：把 XML 放到服务器上跑</h2>
+<h2 id="step2">第二步：把 XML 放到服务器上跑</h2>
 
 <p>复制出来的文本在 Windows 上是 <code>\r\r\n</code> 行尾，上传前先转成 LF（本轮踩过：只去一层 <code>\r\n</code> 会剩一层 <code>\r</code>）。用 <code>dos2unix</code>，或者传的时候直接按二进制转成 <code>\n</code>。</p>
 
@@ -347,7 +425,7 @@ su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
 
 <div class="ok"><strong>本轮真机实测结果：</strong><code>RC=0</code>、总耗时 67 秒、任务本体 22.4 秒、<code>total task:5, completed:5, error:0</code>，目标库查到 1000 行，报告 xlsx 正常生成。剩下的 45 秒是 JVM 启动 + 插件加载 + 报告导出的固定开销——<strong>每次调用都有，跟数据量无关</strong>。</div>
 
-<h2>第三步：收尾——留痕、重跑、防挂死</h2>
+<h2 id="step3">第三步：收尾——留痕、重跑、防挂死</h2>
 
 <p>一次性同步最怕的是"跑完说不清跑没跑对"。做完这三件小事再收工：</p>
 <ol>
@@ -365,7 +443,7 @@ su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
   log=/data/dts_jobs/log err_log=/data/dts_jobs/log &gt; /dev/null 2&gt;&amp;1</code></pre>
 </details>
 
-<h2>踩过的坑，一次列全</h2>
+<h2 id="pit">踩过的坑，一次列全</h2>
 <table>
 <tr><th>现象</th><th>原因 / 处置</th></tr>
 <tr><td>向导报"连接数据库失败 / 网络通信异常"</td><td>服务器防火墙没放行数据库端口。<code>firewall-cmd --add-port=5236/tcp</code> 临时放行，或让网络管理员开白名单</td></tr>

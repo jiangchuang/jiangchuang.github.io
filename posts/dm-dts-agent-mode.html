@@ -53,6 +53,7 @@
 .content .dots span{height:5px;flex:1;background:var(--line-2);border-radius:3px;cursor:pointer}
 .content .dots span.on{background:var(--accent)}
 .content .goto{font-size:14px;color:var(--text-3);margin:10px 0 0}
+.content .goto strong{color:var(--text-2)}
 .content .pc{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}
 .content .pc>div{border:1px solid var(--line);border-radius:var(--radius-lg);padding:13px 16px;background:var(--bg-2)}
 .content .pc>div.good{border-top:3px solid var(--accent)}
@@ -91,6 +92,32 @@
   border-top:1px dashed var(--line)}
 @media(max-width:640px){.content .pn-grid{grid-template-columns:1fr}}
 
+/* 全文路线图：开头先交代「一共几步」，点卡片直接跳到对应章节 */
+.content .map{margin:22px 0 8px}
+.content .map-h{font-size:14px;color:var(--text-3);margin:0 0 12px;font-weight:600}
+.content .map-h b{color:var(--text)}
+.content .map-row{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.content .map-row a{display:flex;flex-direction:column;text-decoration:none;color:var(--text);
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-lg);padding:15px 15px 13px;
+  transition:border-color .15s,box-shadow .15s}
+.content .map-row a:hover{border-color:var(--accent);box-shadow:0 3px 12px rgba(0,0,0,.09);text-decoration:none}
+.content .map .ic{width:42px;height:42px;color:var(--accent);margin:0 0 10px;flex:none}
+.content .map .ic svg{width:42px;height:42px;display:block}
+.content .map .tx{display:flex;flex-direction:column;flex:1}
+.content .map .sn{font-size:11.5px;letter-spacing:.08em;color:var(--text-3);font-weight:600}
+.content .map .ttl{font-family:var(--font-title);font-size:16.5px;font-weight:700;line-height:1.45;margin:1px 0 5px}
+.content .map .dd{font-size:13.5px;color:var(--text-3);line-height:1.65;flex:1}
+.content .map .mm{font-size:12.5px;color:var(--accent);margin:9px 0 0;font-weight:600}
+.content .map-alt{display:flex;align-items:center;gap:9px;margin:11px 0 0;padding:10px 14px;
+  text-decoration:none;font-size:13.5px;background:var(--bg-2);
+  border:1px dashed var(--line-2);border-radius:var(--radius-lg);color:var(--text-3)}
+.content .map-alt:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+.content .map-alt .ic{width:19px;height:19px;flex:none;color:#c9881e}
+.content .map-alt .ic svg{width:19px;height:19px;display:block}
+.content .map-alt b{color:var(--text)}
+.content .map-alt .go{margin-left:auto;color:var(--accent);white-space:nowrap}
+.content h2{scroll-margin-top:74px}
+
 /* 窄屏防横向溢出（既有问题，顺手修）：长行内代码、三列表格、.demo 内图片都会撑破 430px */
 .content code{overflow-wrap:anywhere}
 .content kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;
@@ -101,6 +128,13 @@
   .content table{display:block;overflow-x:auto;max-width:100%}
   .content .pairnav{padding:13px 14px 11px}
   .content .pn-card{padding:11px 13px}
+  .content .map-row{grid-template-columns:1fr;gap:9px}
+  .content .map-row a{flex-direction:row;align-items:flex-start;gap:12px;padding:12px 13px}
+  .content .map .ic{width:32px;height:32px;margin:2px 0 0}
+  .content .map .ic svg{width:32px;height:32px}
+  .content .map .mm{margin:6px 0 0}
+  .content .map-alt{flex-wrap:wrap;align-items:flex-start}
+  .content .map-alt .go{margin-left:0;width:100%}
 }
 </style>
 <script>
