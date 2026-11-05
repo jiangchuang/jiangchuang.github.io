@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>界面照旧点点点，数据不绕 VPN：达梦 DTS 代理模式 · 达梦手记</title>
+<meta name="description" content="服务器没有图形界面、或者不想让数据绕 VPN？在服务器起一个 DTS 代理，Windows 界面只当遥控器，数据全程在服务器内网流动。含端口怎么挑、防火墙怎么放行、代理节点在哪，以及与「命令行跑 XML」的优劣势对照与选型判据。">
+<link rel="stylesheet" href="../assets/site.css">
+<style>
+/* ---- 本文补充组件（用站点主题变量，ink / dark 两套配色都成立）---- */
+.content .lead{background:var(--accent-soft);border-left:3px solid var(--accent);padding:15px 19px;
+  border-radius:0 var(--radius-lg) var(--radius-lg) 0;margin:24px 0;font-size:15.5px}
+.content .lead p{margin:8px 0 0}
+.content .warn,.content .ok{border-left:3px solid var(--line-2);background:var(--bg-2);
+  padding:13px 17px;border-radius:0 var(--radius-lg) var(--radius-lg) 0;margin:20px 0;font-size:15px}
+.content .warn{border-left-color:#c9881e}
+.content .ok{border-left-color:var(--accent)}
+.content .warn p:first-child,.content .ok p:first-child{margin-top:0}
+.content .warn p:last-child,.content .ok p:last-child{margin-bottom:0}
+.content .cap{font-size:13px;color:var(--text-3);text-align:center;margin:4px 0 26px;line-height:1.7}
+.content img{margin-left:auto;margin-right:auto}
+.content pre{background:var(--code-bg);color:var(--code-fg);padding:18px 20px;
+  border-radius:var(--radius-lg);overflow-x:auto;margin:20px 0;border-left:3px solid var(--accent);line-height:1.7}
+.content pre code{background:none;color:inherit;padding:0;font-size:13.5px;white-space:pre}
+.content .flow{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:18px 12px;margin:22px 0}
+.content .flow .box{background:var(--bg);border:1.5px solid var(--accent);color:var(--accent);
+  border-radius:var(--radius);padding:8px 13px;font-size:14px;font-weight:600;white-space:nowrap}
+.content .flow .box.bad{border-color:var(--line-2);color:var(--text-3)}
+.content .flow .arw{color:var(--text-3);font-size:18px}
+.content .steps{counter-reset:s}
+.content .step{position:relative;padding-left:44px;margin:26px 0}
+.content .step::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:3px;
+  width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--bg);
+  font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.content .demo{margin:18px 0 8px;padding:14px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:var(--radius-lg)}
+.content .demo .gif{width:100%;margin:0}
+.content .demo .cap{margin:10px 0 0}
+.content details{margin:16px 0 26px;border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:10px 14px;background:var(--bg-2)}
+.content summary{cursor:pointer;color:var(--accent);font-size:14.5px;font-weight:600}
+.content .stepper{margin-top:14px}
+.content .stepper img{width:100%;margin:0;background:var(--bg)}
+.content .stepper .tt{font-weight:700;margin:10px 0 2px;color:var(--text)}
+.content .stepper .ss{color:var(--text-3);font-size:14px;margin:0}
+.content .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+.content .bar button{border:1px solid var(--accent);background:var(--bg);color:var(--accent);
+  border-radius:var(--radius);padding:5px 12px;font-size:13.5px;cursor:pointer;font-family:inherit}
+.content .bar button:hover{background:var(--accent-soft)}
+.content .bar .idx{color:var(--text-3);font-size:13.5px;margin-left:auto}
+.content .dots{display:flex;gap:5px;margin-top:9px}
+.content .dots span{height:5px;flex:1;background:var(--line-2);border-radius:3px;cursor:pointer}
+.content .dots span.on{background:var(--accent)}
+.content .goto{font-size:14px;color:var(--text-3);margin:10px 0 0}
+.content .pc{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}
+.content .pc>div{border:1px solid var(--line);border-radius:var(--radius-lg);padding:13px 16px;background:var(--bg-2)}
+.content .pc>div.good{border-top:3px solid var(--accent)}
+.content .pc>div.bad{border-top:3px solid #c9881e}
+.content .pc h3{margin:0 0 8px;font-size:16.5px;padding-left:0}
+.content .pc h3::before{display:none}
+.content .pc ul{margin:0;padding-left:20px}
+.content .pc li{font-size:14.5px;line-height:1.7;margin:5px 0}
+.content .decide{margin:16px 0}
+.content .decide .q{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  flex-wrap:wrap;border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:0 var(--radius) var(--radius) 0;padding:9px 14px;margin:8px 0;
+  background:var(--bg-2);font-size:15px}
+.content .decide .q b{color:var(--accent);white-space:nowrap}
+@media(max-width:640px){.content .pc{grid-template-columns:1fr}}
+</style>
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="./">图文版</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-11-04 &nbsp;·&nbsp; 迁移同步</div>
+    <h1>界面照旧点点点，数据不绕 VPN：<br>达梦 DTS 代理模式</h1>
+    <span class="cat">迁移同步</span>
+  </div>
+  <div class="content">
+<div class="lead"><strong>一句话：</strong>在服务器上起一个 DTS 代理服务，Windows 上的 DTS 界面只当"遥控器"。真正读写数据库的是服务器上的 Java 进程，数据不出内网，你的电脑和 VPN 都不在数据通路上。<p class="goto">急着选型？<a href="#compare">直接看两种方式的优劣势、适用场景与决策 →</a></p></div>
+
+<div class="ok" style="margin-top:18px"><strong>说白了：</strong>你原来怎么用 DTS，现在还怎么用——照样图形界面点点点、看进度、看报错；唯一的变化是<strong>数据不再经过你的电脑</strong>。不用学命令行、不用配 XML、不用去日志里翻错误码。所以它<strong>对不熟悉命令行的人最友好</strong>。</div>
+
+<h2>为什么需要"代理"</h2>
+<p>默认用 DTS 图形工具迁移时，你的电脑是<strong>数据中转站</strong>：从源库读出来，经过网络送到本机内存，再写进目标库。隔着 VPN 就等于让所有数据绕一大圈。</p>
+
+<div class="flow">
+  <div class="box">源库</div><span class="arw">→</span>
+  <div class="box bad">VPN → 你的电脑 → VPN</div><span class="arw">→</span>
+  <div class="box">目标库</div>
+</div>
+
+<p>代理模式把它改成这样：客户端只发"开始迁移"这类指令和接收进度，数据搬运全在服务器侧完成。</p>
+
+<div class="flow">
+  <div class="box host">服务器本地：源库 → DTS 代理 → 目标库</div><span class="arw">⇅ 只传指令/进度</span>
+  <div class="box">Windows 上的 DTS 界面</div>
+</div>
+
+<p>顺带解决另一个老问题：<strong>数据库服务器是纯命令行 Linux，装不了图形界面</strong>。代理服务是命令行起的，不需要桌面。</p>
+
+<h2>服务端：两条命令</h2>
+<p>用 <code>dmdba</code> 用户登录数据库服务器，进入达梦安装目录的 <code>tool/</code>。这两个子命令藏得比较深，<code>help</code> 里能看到但官方文档很少提：</p>
+
+<pre><code>cd /home/dmdba/dmdbms/tool
+
+# ① 设置代理校验码（自定义，客户端要填一样的）
+./dts_cmd_run.sh install_service_key '&lt;你的KEY&gt;'
+
+# ② 启动代理监听，端口自定义，例如 9099
+nohup ./dts_cmd_run.sh agent 9099 &gt; agent.log 2&gt;&amp;1 &amp;</code></pre>
+
+<p><strong>端口不用非得是 9099。</strong>它是自定义的，挑服务器上没人占用的一个就行。很多机房早就按段放行过端口（比如 <code>5200-5299</code>），<strong>直接挑段里空着的一个</strong>，就不用再找人改防火墙策略——下面示例统一写 9099，只是方便对照。</p>
+
+<p>本轮真机输出（可直接对照）：</p>
+<pre><code>Key file: ".../tool/workspace/temp_data/temp/project/service.key" generated.
+Total time: 1.010 seconds
+
+$ tail -1 agent.log
+DtsAgent Start!
+
+$ ss -ltnp | grep 9099
+LISTEN  0  50  *:9099  *:*  users:(("java",pid=22688,fd=253))</code></pre>
+
+<div class="warn"><strong>防火墙按实际端口放行。</strong>本轮第一次从 Windows 连服务器就吃了闭门羹：Linux 的 firewalld 默认把非白名单端口 REJECT，DTS 报的是很含糊的"网络通信异常 / 连接数据库失败"。放行你实际用的那个端口：<code>firewall-cmd --add-port=9099/tcp</code>（<strong>换成你的端口</strong>）；<strong>已经开过端口段的，直接用段内端口</strong>，别再单独开洞。生产上只对客户端 IP 开放。</div>
+
+<h2>客户端：三下点击</h2>
+
+<div class="steps">
+<div class="step">
+<strong>找到"代理"节点——它藏在树的最下面一项。</strong>左侧工程树展开后，从"迁移 / 评估 / 对比 / 转换 / 数据类型映射 / 作业"一路往下，<strong>最后一个「代理」</strong>就是（下图红框）。平时用得少，所以最容易找不到。
+<img src="../assets/dts/p1-tree-proxy-marked.png" alt="工程树里的代理节点（红框标出）">
+<p class="cap">找不到就往树的最下面看：代理和"迁移""作业"是同级节点</p>
+</div>
+
+<div class="step">
+<strong>右键 → 添加代理。</strong>填四项：名称（自己看得懂就行）、主机、端口、校验 KEY。
+<img src="../assets/dts/p2-add.png" alt="添加代理对话框">
+<p class="cap">KEY 就是上一步 <code>install_service_key</code> 设的那个</p>
+</div>
+
+<div class="step">
+<strong>先点"测试"，绿了再"确定"。</strong>本轮实测提示"远程主机…连接成功!"，说明客户端到代理、代理到服务端的链路都通了。
+<img src="../assets/dts/p3-ok.png" alt="代理测试连接成功">
+<p class="cap">示例地址已脱敏；KEY 在界面上以圆点显示</p>
+</div>
+
+<div class="step">
+<strong>保存后打开代理节点，能看到远程主机的实时状态。</strong>CPU、内存、磁盘读写、网络收发都有曲线——这也是确认"活儿真的在服务器上干"的最直观证据。
+<img src="../assets/dts/p4-monitor.png" alt="代理监控页">
+</div>
+</div>
+
+<p>保存的代理会写进 DTS 工作区的 <code>dts.xml</code>（<code>&lt;agents&gt;&lt;agent host=... port="9099" .../&gt;</code>），下次打开工具还在，不用重配。</p>
+
+<h2>执行任务时怎么用它</h2>
+<p>照常新建迁移任务，走到<strong>最后执行那一步</strong>时，在<strong>执行方式</strong>里选刚添加的代理，再点开始。之后界面照常显示进度，但数据流走的是服务器本地，不再经过你的电脑。</p>
+
+<div class="warn"><strong>这一步没有截图，原因说清楚：</strong>本轮实测停在「服务端起 agent + 客户端测试连接成功 + 监控页正常」，<strong>没有走到真正执行迁移那一步</strong>，所以给不出这一步的界面截图——也不拿示意图冒充截图。入口在<strong>执行时的对话框（执行方式 / 使用代理）</strong>里，不同小版本措辞略有差异，以你装的版本为准；正式用之前，先用一张小表走一遍完整链路。</div>
+
+<p><strong>没有截图也能确认它真的生效</strong>，看三件事就够：</p>
+<table>
+<tr><th>看哪里</th><th>应该看到</th></tr>
+<tr><td>你的电脑 · 任务管理器 → 网络</td><td>迁移期间只有很小的指令流量（几十 KB/s 级），<strong>不是</strong>几十上百 MB/s 的数据流——这是"数据不绕 VPN"最直接的证据</td></tr>
+<tr><td>服务器 · <code>ss -ltnp | grep 9099</code></td><td>除了 LISTEN，还能看到客户端 IP 的 <code>ESTABLISHED</code> 连接，说明是客户端在指挥它</td></tr>
+<tr><td>客户端 · 代理监控页</td><td>迁移一开始，CPU / 磁盘 / 网络曲线明显抬起来，说明活儿在服务器上干</td></tr>
+</table>
+
+<h2>端口与网络：一张表对齐</h2>
+<table>
+<tr><th>谁 → 谁</th><th>端口</th><th>说明</th></tr>
+<tr><td>代理服务器 → 源库 / 目标库</td><td>数据库端口（如 5236）</td><td>代理必须能直连两端数据库。这是"数据不出内网"的前提</td></tr>
+<tr><td>Windows 客户端 → 代理服务器</td><td>代理端口<br>（示例 9099，可自定义）</td><td>只传指令、配置和进度，数据量很小。<strong>换端口时，客户端「添加代理」里的端口要填同一个</strong></td></tr>
+<tr><td>Windows 客户端 → 数据库</td><td>5236</td><td>配置向导阶段要连库读元数据；配完可以不再需要</td></tr>
+</table>
+
+<h2>几条容易忽略的安全事项</h2>
+<table>
+<tr><th>事项</th><th>建议</th></tr>
+<tr><td>校验 KEY</td><td>别用 <code>666666</code> 这类示例值；用完换掉。它是明文写在 <code>service.key</code> 里的，顺手检查文件权限</td></tr>
+<tr><td>代理端口（示例 9099）</td><td>只对运维客户端 IP 开放；<strong>代理不是加密通道</strong>，别直接暴露到公网。已经开过端口段的，复用段内端口</td></tr>
+<tr><td>用完即停</td><td>代理是常驻 Java 进程，占约 1 GB 堆。迁完 <code>kill &lt;pid&gt;</code> 并撤掉防火墙放行规则</td></tr>
+<tr><td>内存</td><td>代理跑在数据库服务器上，会跟数据库抢内存。小内存机器上别同时开多个迁移任务（DTS 默认并发数 2）</td></tr>
+</table>
+
+<h2 id="compare">两种方式怎么选：优劣势、场景与决策</h2>
+
+<p>两种办法<strong>都不绕 VPN、都不需要服务器图形界面</strong>，共同点先摆这儿。真正的分野只有两句：<strong>谁发起执行</strong>、<strong>你的电脑要不要一直在线</strong>。</p>
+
+<div class="lead" style="font-size:15px">
+<strong>① 命令行：</strong>把任务固化成 <code>sync_job.xml</code> 交给服务器，配完就能关机。换来的是<strong>可复跑、可留痕</strong>，代价是看不到实时进度、改配置要回 GUI。<br>
+<strong>② 代理：</strong>GUI 只当遥控器，活儿在服务器干，但客户端得全程连着收进度。换来的是<strong>看得见、调得动</strong>，代价是多一个常驻进程、一个端口、一次值守。
+</div>
+<p>翻译成一句人话：<strong>代理 ≈ 你原来的用法，只是数据不再经过你的电脑</strong>；命令行则是把整个动作"脚本化"，换来可复跑、可审计。</p>
+<p class="cap">两种方式都是一次性同步，不是常驻定时任务</p>
+
+<h3>硬指标对比</h3>
+<table>
+<tr><th>维度</th><th>① GUI 配 XML + 服务器命令行<br>（<a href="dm-dts-once-sync.html">上篇</a>）</th><th>② 代理模式（本篇）</th></tr>
+<tr><td>谁发起执行</td><td>服务器上的 <code>dts_cmd_run.sh</code>；客户端已下线</td><td>服务器上的 agent，但由 GUI 点「开始」触发</td></tr>
+<tr><td>客户端全程在线</td><td>不用，配完可关机</td><td>要，执行期间断不得（只收进度也得连着）</td></tr>
+<tr><td>数据绕 VPN / 服务器图形界面</td><td>不绕 / 不要</td><td>不绕 / 不要</td></tr>
+<tr><td>实时进度</td><td><strong>弱</strong>：每 10 秒两行文本，粒度是「任务数」不是行数；大表阶段 Total 恒 0，看着像卡死</td><td><strong>强</strong>：界面进度 + 代理监控页 CPU / 内存 / 磁盘 / 网络曲线</td></tr>
+<tr><td>中途调整</td><td>不能，改表或改策略要回 GUI 重导 XML、重跑</td><td>能，边看边调，适合第一次搬心里没底</td></tr>
+<tr><td>留痕 / 交接</td><td><strong>强</strong>：XML + 日志 + 报告 xlsx + 三条判据</td><td><strong>弱</strong>：靠界面看结果，得自己截图导报告</td></tr>
+<tr><td>失败诊断</td><td>退出码不可信；OOM 或配置错误可能挂死不退，要靠日志判据 + <code>timeout</code></td><td>界面直接报错，但客户端一断现场就难复现</td></tr>
+<tr><td>重跑</td><td>默认追加写入，<strong>重跑前要清目标表</strong></td><td>同样有重复写入风险，界面里能改表策略</td></tr>
+<tr><td>服务器额外负担</td><td>无</td><td>agent 常驻 Java，约 1 GB 堆；用完要 <code>kill</code></td></tr>
+<tr><td>安全面</td><td>XML 内是加密口令串，别外发；目录权限给 dmdba</td><td>代理端口要开防火墙，<strong>不是加密通道</strong>；<code>service.key</code> 明文存 KEY</td></tr>
+<tr><td>本轮实测覆盖</td><td><strong>端到端跑通</strong>：1000 行、<code>completed:5 error:0</code>、报告生成</td><td><strong>只到连接 + 监控页</strong>，勾代理后真跑一次迁移未实跑</td></tr>
+</table>
+
+<h3>优势与短板，摊开说</h3>
+<div class="pc">
+<div class="good"><h3>① 命令行 · 优势</h3><ul>
+<li>无人值守，配完就能关机</li>
+<li>配置即文档：XML + 日志 + 报告 + 三条判据，可交付可审计</li>
+<li>服务器零额外进程，交接给运维只要一个 XML + 一条命令</li>
+</ul></div>
+<div class="good"><h3>② 代理 · 优势</h3><ul>
+<li><strong>跟以前用法几乎一样</strong>：还是界面点点点，不用学命令行、不用配 XML，<strong>对不熟悉命令行的人最友好</strong></li>
+<li><strong>结果直观</strong>：迁了多少、哪张表失败，界面上直接看，不用去日志里找判据</li>
+<li><strong>报错不用看命令行</strong>：错误直接弹在界面上，少一层"看不懂的日志"</li>
+<li>还能看服务器 CPU / 内存 / 磁盘 / 网络曲线，边跑边调</li>
+</ul></div>
+<div class="bad"><h3>① 命令行 · 短板 / 别用它</h3><ul>
+<li>进度只有任务级文本，没有行数百分比</li>
+<li>改一次配置要回 GUI 重导；口令是加密串，不能手改</li>
+<li>失败会假死不退，必须外面包 <code>timeout</code> + <code>flock</code>；重跑会重复写</li>
+<li>要会看日志判据、会写 <code>timeout</code> + <code>flock</code> 那层壳，<strong>对不熟悉命令行的人门槛偏高</strong></li>
+<li><strong>别用它的场合</strong>：表还没挑定、想看实时进度、第一次搬不熟悉的库</li>
+</ul></div>
+<div class="bad"><h3>② 代理 · 短板 / 别用它</h3><ul>
+<li>客户端必须全程在线；多一个约 1 GB 堆的常驻进程和一个 9099 端口</li>
+<li>跑完容易忘了 <code>kill</code> 和撤防火墙；留痕靠人</li>
+<li><strong>本轮未做端到端实跑</strong>（见下方证据说明）</li>
+<li><strong>别用它的场合</strong>：割接窗口无人值守、客户要留可复跑证据、VPN 不稳、服务器内存紧张、没人愿意盯几小时</li>
+</ul></div>
+</div>
+
+<h3>场景对号入座</h3>
+<table>
+<tr><th>你手上的情况</th><th>选</th><th>为什么</th></tr>
+<tr><td>割接在凌晨，没人盯</td><td>①</td><td>配完就能关机，服务器自己跑完</td></tr>
+<tr><td>要交日志 / 报告，或以后同一规则再跑一次</td><td>①</td><td>XML + 报告可复跑、可审计</td></tr>
+<tr><td>Windows 电脑要合盖、VPN 会断</td><td>①</td><td>执行不依赖客户端在线</td></tr>
+<tr><td>第一次搬陌生库，表要临时挑</td><td>②</td><td>界面里勾、边跑边改</td></tr>
+<tr><td>想看进度和资源占用，随时调并发</td><td>②</td><td>监控页曲线是现成的</td></tr>
+<tr><td>卡在某张表，要现场排错</td><td>②</td><td>界面直接告诉你哪一步出错</td></tr>
+<tr><td>临时搬一次，有人值守，不需要留档</td><td>②</td><td>省掉配 XML 那几步</td></tr>
+<tr><td><strong>不熟悉命令行，只想点几下</strong></td><td>②</td><td>用法跟以前一样，报错也在界面上</td></tr>
+</table>
+
+<h3>三个问题定下来</h3>
+<div class="decide">
+<div class="q"><span>1. 这次有人全程盯着吗？</span><b>没有 → ① 命令行</b></div>
+<div class="q"><span>2. 事后要能复跑 / 交报告吗？</span><b>要 → ① 命令行</b></div>
+<div class="q"><span>3. 表还没挑定、想边跑边调吗？</span><b>是 → ② 代理</b></div>
+</div>
+
+<p>还有一条不算"技术"的判据：<strong>谁去操作</strong>。自己人点几下就能跑 → ②；要交给运维按手册执行、事后还要查 → ①。</p>
+
+<div class="ok">第 1 条和第 3 条打架时别硬选：<strong>先用 ② 拿一张小表试跑</strong>（摸清表策略、并发、内存），确认无误后回 GUI 导出 XML，<strong>正式那次用 ① 跑并留档</strong>。两篇不是二选一，是先后两步 —— 「心里有底」和「留痕可复跑」可以都要。</div>
+
+<div class="warn"><strong>证据强度不一样，得说清楚：</strong>① 是端到端跑通的（1000 行、<code>completed:5 error:0</code>、报告 xlsx）；② 只验证到「服务端起 agent + 客户端测试连接成功 + 监控页曲线」，<strong>"勾选代理后实际执行一次迁移"本轮没实跑</strong>。所以上表里 ② 的优劣判断来自界面能力与服务端行为，不是压测结论；上生产前请先用一张小表走完整链路。</div>
+
+<div class="ok"><strong>共同点，也是这两篇最想说的一句：</strong>不管哪种，<strong>数据搬运都发生在服务器内网</strong>。图形界面只是配置工具，不该出现在数据通路上。想明白这一点，VPN 慢和无图形界面这两个问题就一起解决了。</div>
+
+</div>
+  <section class="contact" hidden>
+    <div class="contact-body">
+      <h3>卡在某一步了？</h3>
+      <p>把这三样发我：<b>卡在第几步</b>、报错原文、<code>DM</code> 与 DTS 的版本号。不用发库里的数据，也不用发口令。</p>
+      <details class="contact-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="./">← 返回图文版目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>

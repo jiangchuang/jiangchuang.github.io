@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>没有图形界面的服务器，怎么把达梦的数据搬过去？ · 达梦手记</title>
+<meta name="description" content="服务器没装图形界面、隔着 VPN 迁库又慢，怎么办：在 Windows 上把达梦 DTS 任务配好，复制它生成的 XML，传到服务器用命令行跑一次。含 8 步动图、4 条踩坑（进度无百分比、退出码不可信、重跑会重复写入、OOM 后假死）与实跑输出。">
+<link rel="stylesheet" href="../assets/site.css">
+<style>
+/* ---- 本文补充组件（用站点主题变量，ink / dark 两套配色都成立）---- */
+.content .lead{background:var(--accent-soft);border-left:3px solid var(--accent);padding:15px 19px;
+  border-radius:0 var(--radius-lg) var(--radius-lg) 0;margin:24px 0;font-size:15.5px}
+.content .lead p{margin:8px 0 0}
+.content .warn,.content .ok{border-left:3px solid var(--line-2);background:var(--bg-2);
+  padding:13px 17px;border-radius:0 var(--radius-lg) var(--radius-lg) 0;margin:20px 0;font-size:15px}
+.content .warn{border-left-color:#c9881e}
+.content .ok{border-left-color:var(--accent)}
+.content .warn p:first-child,.content .ok p:first-child{margin-top:0}
+.content .warn p:last-child,.content .ok p:last-child{margin-bottom:0}
+.content .cap{font-size:13px;color:var(--text-3);text-align:center;margin:4px 0 26px;line-height:1.7}
+.content img{margin-left:auto;margin-right:auto}
+.content pre{background:var(--code-bg);color:var(--code-fg);padding:18px 20px;
+  border-radius:var(--radius-lg);overflow-x:auto;margin:20px 0;border-left:3px solid var(--accent);line-height:1.7}
+.content pre code{background:none;color:inherit;padding:0;font-size:13.5px;white-space:pre}
+.content .flow{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:18px 12px;margin:22px 0}
+.content .flow .box{background:var(--bg);border:1.5px solid var(--accent);color:var(--accent);
+  border-radius:var(--radius);padding:8px 13px;font-size:14px;font-weight:600;white-space:nowrap}
+.content .flow .box.bad{border-color:var(--line-2);color:var(--text-3)}
+.content .flow .arw{color:var(--text-3);font-size:18px}
+.content .steps{counter-reset:s}
+.content .step{position:relative;padding-left:44px;margin:26px 0}
+.content .step::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:3px;
+  width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--bg);
+  font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.content .demo{margin:18px 0 8px;padding:14px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:var(--radius-lg)}
+.content .demo .gif{width:100%;margin:0}
+.content .demo .cap{margin:10px 0 0}
+.content details{margin:16px 0 26px;border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:10px 14px;background:var(--bg-2)}
+.content summary{cursor:pointer;color:var(--accent);font-size:14.5px;font-weight:600}
+.content .stepper{margin-top:14px}
+.content .stepper img{width:100%;margin:0;background:var(--bg)}
+.content .stepper .tt{font-weight:700;margin:10px 0 2px;color:var(--text)}
+.content .stepper .ss{color:var(--text-3);font-size:14px;margin:0}
+.content .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+.content .bar button{border:1px solid var(--accent);background:var(--bg);color:var(--accent);
+  border-radius:var(--radius);padding:5px 12px;font-size:13.5px;cursor:pointer;font-family:inherit}
+.content .bar button:hover{background:var(--accent-soft)}
+.content .bar .idx{color:var(--text-3);font-size:13.5px;margin-left:auto}
+.content .dots{display:flex;gap:5px;margin-top:9px}
+.content .dots span{height:5px;flex:1;background:var(--line-2);border-radius:3px;cursor:pointer}
+.content .dots span.on{background:var(--accent)}
+.content .goto{font-size:14px;color:var(--text-3);margin:10px 0 0}
+.content .pc{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}
+.content .pc>div{border:1px solid var(--line);border-radius:var(--radius-lg);padding:13px 16px;background:var(--bg-2)}
+.content .pc>div.good{border-top:3px solid var(--accent)}
+.content .pc>div.bad{border-top:3px solid #c9881e}
+.content .pc h3{margin:0 0 8px;font-size:16.5px;padding-left:0}
+.content .pc h3::before{display:none}
+.content .pc ul{margin:0;padding-left:20px}
+.content .pc li{font-size:14.5px;line-height:1.7;margin:5px 0}
+.content .decide{margin:16px 0}
+.content .decide .q{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  flex-wrap:wrap;border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:0 var(--radius) var(--radius) 0;padding:9px 14px;margin:8px 0;
+  background:var(--bg-2);font-size:15px}
+.content .decide .q b{color:var(--accent);white-space:nowrap}
+@media(max-width:640px){.content .pc{grid-template-columns:1fr}}
+</style>
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="./">图文版</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-11-04 &nbsp;·&nbsp; 迁移同步</div>
+    <h1>没有图形界面的服务器，<br>怎么把达梦的数据搬过去？</h1>
+    <span class="cat">迁移同步</span>
+  </div>
+  <div class="content">
+<div class="lead"><strong>一句话：</strong>图形界面只负责把任务"画"出来，真正干活的是服务器——在你自己电脑上配好、复制它生成的 XML，传到服务器上<strong>跑一次</strong>，验完数就收工。<br><span style="color:var(--text-3);font-size:14.5px">先说定位：这套办法一般用于<strong>一次性同步</strong>——割接前搬历史数据、给测试库拉一份快照、临时补一批数据。不是常驻定时任务，也不用配 cron；真要周期跑，文末给了一句可选做法。</span></div>
+
+<h2>先说清楚：慢在哪、卡在哪</h2>
+<p>很多人做达梦数据迁移，是在自己电脑上打开 DTS 图形工具，隔着 VPN 连生产库。于是数据得绕这么一大圈：</p>
+
+<div class="flow">
+  <div class="box">源库</div><span class="arw">→</span>
+  <div class="box bad">VPN</div><span class="arw">→</span>
+  <div class="box bad">你的 Windows 电脑</div><span class="arw">→</span>
+  <div class="box bad">VPN</div><span class="arw">→</span>
+  <div class="box">目标库</div>
+</div>
+
+<p>两个麻烦：<strong>① 服务器常常根本没装图形界面</strong>，DTS 打不开；<strong>② 数据来回穿 VPN</strong>，搬一次几百万行能耗掉半天，还一直占着你的电脑。</p>
+
+<p>其实 DTS 自带一个很朴素的解法：<strong>图形向导只用来生成配置文件，真正干活的是服务器上的命令行</strong>。</p>
+
+<div class="flow">
+  <div class="box">Windows 向导</div><span class="arw">→</span>
+  <div class="box">sync_job.xml</div><span class="arw">→</span>
+  <div class="box">服务器本地跑一次</div><span class="arw">→</span>
+  <div class="box">校验收工</div>
+</div>
+
+<p class="cap">数据全程在服务器内网流动，客户端只在配置那几分钟在线；命令敲下去之后关电脑都不影响</p>
+
+<h2>第一步：在图形界面里"画"出任务</h2>
+
+<p><strong>先看一遍动图</strong>（约 24 秒，8 步，画面全部来自真机截图逐帧合成，非示意绘制）。第 ⑦ 步是整件事的关键：复制「源代码」页的 XML，而不是点「完成」。</p>
+
+<div class="demo">
+  <img class="gif" src="../assets/dts/xml-config-flow.gif" alt="DTS 配置 XML 的 8 步流程动图">
+  <p class="cap">动图循环播放；看不到动画可<a href="../assets/dts/xml-config-flow.gif" target="_blank">单独打开 GIF</a>（2.9 MB）</p>
+</div>
+
+<details>
+<summary>想自己控制节奏？展开逐步播放器（8 步，可暂停 / 上一步 / 下一步）</summary>
+<div class="stepper">
+  <img id="stImg" src="../assets/dts/p1-tree.png" alt="当前步骤截图">
+  <p class="tt" id="stTitle">① 新建工程，再新建迁移</p>
+  <p class="ss" id="stSub">左侧「迁移管理」右键新建工程；展开后右键「迁移」→ 新建迁移</p>
+  <div class="bar">
+    <button id="stPrev">上一步</button>
+    <button id="stPlay">暂停</button>
+    <button id="stNext">下一步</button>
+    <span class="idx" id="stIdx">1 / 8</span>
+  </div>
+  <div class="dots" id="stDots"></div>
+</div>
+</details>
+
+<div class="steps">
+<div class="step">
+<strong>新建工程，再新建迁移。</strong>左侧"迁移管理"里右键工程 → 新建工程；展开后右键"迁移" → 新建迁移，起个名字。
+<img src="../assets/dts/p1-tree.png" alt="迁移管理树">
+<p class="cap">工程底下有"迁移 / 评估 / 对比 / 转换 / 作业 / 代理"等分类</p>
+</div>
+
+<div class="step">
+<strong>选迁移方式。</strong>我们做达梦到达梦，选 <code>DM ==&gt; DM</code>。Oracle、MySQL、SQL Server 到 DM 也在同一页。
+<img src="../assets/dts/s1-wizard.png" alt="选择迁移方式">
+<p class="cap">向导第一步：从列表里选源端与目标端的组合</p>
+</div>
+
+<div class="step">
+<strong>填源库、目标库。</strong>主机名、端口、用户名、口令；下面的 JDBC URL 会自动跟着变。
+<img src="../assets/dts/s2-source.png" alt="数据源配置页">
+<p class="cap">默认 localhost / 5236，按实际改</p>
+<img src="../assets/dts/s3-source-filled.png" alt="填好连接的源库页">
+<p class="cap">填完点"下一步"，目标库页是同样四个框（示例地址已脱敏）</p>
+</div>
+
+<div class="step">
+<strong>迁移选项用默认就行。</strong>这一页最值得瞄一眼的是"迁移任务最大并发数"，默认 2；机器内存小就别往上调。
+<img src="../assets/dts/s4-options.png" alt="迁移选项页">
+</div>
+
+<div class="step">
+<strong>勾选模式和表。</strong>先勾源模式（比如 SYSDBA），再在"指定对象"页勾真正要迁的表。注意别把系统统计表一起勾上。
+<img src="../assets/dts/s5-tables.png" alt="指定迁移对象">
+<p class="cap">这里只勾了业务表 T_DEMO</p>
+</div>
+
+<div class="step">
+<strong>关键动作：切到底部"源代码"，全选复制。</strong>不要点"完成"——点完就当场执行了，而我们要的是配置文件。把复制出来的内容存成 <code>sync_job.xml</code>。
+<img src="../assets/dts/s6-xml-tab-marked.png" alt="源代码页签位置（红框标出）">
+<p class="cap">红框就是「源代码」页签——它在窗口<strong>最底下那一行</strong>，不看这一眼很容易漏掉（截图已脱敏为示例值）</p>
+</div>
+</div>
+
+<div class="warn"><strong>别手写 XML。</strong>里面有加密后的口令串和一堆 <code>Strategy</code> 策略，手工拼极易漏字段。让向导生成，是这件事最省心的部分。另外：右键任务的"导出配置文件"也能导出，但<strong>前提是任务已经保存过</strong>；没保存会直接弹"配置文件为空!"（本轮实测）。<br><img src="../assets/dts/s7-warning.png" alt="配置文件为空的提示" style="max-width:420px"></div>
+
+<h2>第二步：把 XML 放到服务器上跑</h2>
+
+<p>复制出来的文本在 Windows 上是 <code>\r\r\n</code> 行尾，上传前先转成 LF（本轮踩过：只去一层 <code>\r\n</code> 会剩一层 <code>\r</code>）。用 <code>dos2unix</code>，或者传的时候直接按二进制转成 <code>\n</code>。</p>
+
+<pre><code># 1. 建目录、给 dmdba 权限
+mkdir -p /data/dts_jobs/{report,log}
+chown -R dmdba:dinstall /data/dts_jobs
+
+# 2. 上传 sync_job.xml 到 /data/dts_jobs/（保持 LF）
+
+# 3. 以 dmdba 身份跑这一次，验证连通与结果
+su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
+  ./dts_cmd_run.sh config \
+    file=/data/dts_jobs/sync_job.xml \
+    report=/data/dts_jobs/report \
+    log=/data/dts_jobs/log \
+    err_log=/data/dts_jobs/log"</code></pre>
+
+<p>跑完别只看退出码。DTS 的退出码会骗人（配置不存在也可能是 0），真正的成功要同时满足三条：</p>
+
+<table>
+<tr><th>判据</th><th>长什么样</th></tr>
+<tr><td>有完成标志</td><td><code>Execute finished.</code>（<strong>不是</strong> 网上流传的 "run finish!"）</td></tr>
+<tr><td>状态行计数对得上</td><td><code>Status: total task:5, completed:5, error:0, ...</code></td></tr>
+<tr><td>业务数据对得上</td><td>目标库 <code>select count(*)</code> 与源库一致</td></tr>
+</table>
+
+<div class="ok"><strong>本轮真机实测结果：</strong><code>RC=0</code>、总耗时 67 秒、任务本体 22.4 秒、<code>total task:5, completed:5, error:0</code>，目标库查到 1000 行，报告 xlsx 正常生成。剩下的 45 秒是 JVM 启动 + 插件加载 + 报告导出的固定开销——<strong>每次调用都有，跟数据量无关</strong>。</div>
+
+<h2>第三步：收尾——留痕、重跑、防挂死</h2>
+
+<p>一次性同步最怕的是"跑完说不清跑没跑对"。做完这三件小事再收工：</p>
+<ol>
+<li><strong>留档</strong>：把 <code>sync_job.xml</code>、当次日志、报告 xlsx 放在同一目录，按日期建子目录。以后复盘或复跑，靠这三样就够。</li>
+<li><strong>重跑先想清楚</strong>：DTS 默认追加写入。同一个 XML 再跑一遍，目标表可能多出一份重复数据；重跑前先清空目标表，或在向导里把表处理策略改成覆盖。</li>
+<li><strong>别让它挂着</strong>：DTS 出错时可能不退出（实测 OOM 后进程存活 2 分 47 秒）。手工跑也加一层 <code>timeout 3600</code>，再配 <code>flock</code> 防误开第二个实例；失败留 <code>*.ERROR</code> 标记，别只盯退出码。</li>
+</ol>
+
+<details>
+<summary>如果你确实要周期跑（可选，不是本文默认场景）</summary>
+<p>一条 cron 就够，但务必保留 <code>timeout</code> + <code>flock</code>，否则失败任务会越堆越多；另外周期跑会放大重复写入的问题，先确认目标表的清空或覆盖策略。</p>
+<pre><code>0 2 * * * flock -n /tmp/dts.lock timeout 3600 \
+  /home/dmdba/dmdbms/tool/dts_cmd_run.sh config \
+  file=/data/dts_jobs/sync_job.xml report=/data/dts_jobs/report \
+  log=/data/dts_jobs/log err_log=/data/dts_jobs/log &gt; /dev/null 2&gt;&amp;1</code></pre>
+</details>
+
+<h2>踩过的坑，一次列全</h2>
+<table>
+<tr><th>现象</th><th>原因 / 处置</th></tr>
+<tr><td>向导报"连接数据库失败 / 网络通信异常"</td><td>服务器防火墙没放行数据库端口。<code>firewall-cmd --add-port=5236/tcp</code> 临时放行，或让网络管理员开白名单</td></tr>
+<tr><td>XML 传上去解析报错</td><td>CRLF 行尾。转 LF；本轮剪贴板出来的是 <code>\r\r\n</code>，要清干净</td></tr>
+<tr><td>右键"导出配置文件"提示"配置文件为空!"</td><td>任务没保存。要么在向导点一次"完成"保存，要么直接用"源代码"页复制</td></tr>
+<tr><td>改了数据库口令，任务跑不通</td><td>XML 里口令是加密串，别手改。回 GUI 重新填一次口令、重新导出</td></tr>
+<tr><td>看起来成功，数据却没到</td><td>退出码不可信，必须看状态行计数 + 目标库校验</td></tr>
+<tr><td>大表跑到一半 OOM</td><td>启动脚本把堆写死 <code>-Xms1024m -Xmx1024m</code>；拆批或成对调大 Xms/Xmx（只改 Xmx 会让 JVM 起不来）</td></tr>
+<tr><td>单次执行卡住不退</td><td>DTS 出错可能挂死不退出，加 <code>timeout</code> + <code>flock</code></td></tr>
+</table>
+
+<h2>小结</h2>
+<p>这套办法的价值不在"能跑"，而在于<strong>把一次点的鼠标变成一次配置、一次执行、有据可查</strong>：服务器不需要图形界面，客户端不需要一直连着 VPN，数据也不绕道，跑完还有日志和报告能交差。</p>
+<div class="warn"><strong>但别把它当万能药。</strong>这三种情况它并不合适：<br>
+• <strong>表还没挑定、想边跑边调</strong>：XML 是快照，改一次要回 GUI 重新导出。<br>
+• <strong>想看到行级实时进度</strong>：命令行每 10 秒只给「任务数」级文本，大表阶段看着像卡住。<br>
+• <strong>第一次搬不熟悉的库</strong>：先得有个人盯着排错，而不是配完就关机。</div>
+<p>这几种更适合<strong>代理模式</strong>（GUI 当遥控器、执行仍在服务器本地），它也是一次性同步，只是操作方式不同。<strong>尤其是你不熟悉命令行、或者操作的人不是 DBA</strong>——代理模式基本就是你原来的用法：界面点点点，进度和报错都在界面上，不用去日志里找判据。</p>
+<p>两种方式各自的优势、短板和适用场景，我整理成了对照表：<a href="dm-dts-agent-mode.html#compare">《两种方式怎么选：优劣势、场景与决策》</a>，另见<a href="dm-dts-agent-mode.html">代理模式全文</a>。</p>
+
+
+<script>
+(function(){
+  var steps=[
+    ['../assets/dts/p1-tree.png','① 新建工程，再新建迁移','左侧「迁移管理」右键新建工程；展开后右键「迁移」→ 新建迁移'],
+    ['../assets/dts/s1-wizard.png','② 选迁移方式：DM ==> DM','达梦到达梦；Oracle / MySQL / SQLServer → DM 也在同一页'],
+    ['../assets/dts/s2-source.png','③ 填源库连接信息','主机名 / 端口 / 用户名 / 口令，JDBC URL 会自动跟着变'],
+    ['../assets/dts/s3-source-filled.png','④ 同样填好目标库，点「下一步」','示例地址已脱敏为 RFC 5737 文档地址 192.0.2.x'],
+    ['../assets/dts/s4-options.png','⑤ 迁移选项保持默认','「迁移任务最大并发数」默认 2，机器内存小别往上调'],
+    ['../assets/dts/s5-tables.png','⑥ 勾选模式和要迁的表','先勾源模式，再在「指定对象」页勾业务表，别带上系统统计表'],
+    ['../assets/dts/s6-xml.png','⑦ 关键：切到底部「源代码」，全选复制','存成 sync_job.xml —— 千万别点「完成」，点完就当场执行了'],
+    ['../assets/dts/s7-warning.png','⑧ 注意：「导出配置文件」要求任务已保存','没保存会弹「配置文件为空!」，所以用「源代码」页最省事']
+  ];
+  var i=0,timer=null;
+  var img=document.getElementById('stImg'),tt=document.getElementById('stTitle'),
+      ss=document.getElementById('stSub'),idx=document.getElementById('stIdx'),
+      dots=document.getElementById('stDots'),btn=document.getElementById('stPlay');
+  for(var k=0;k<steps.length;k++){var e=document.createElement('span');e.setAttribute('data-i',k);dots.appendChild(e);}
+  function render(){
+    img.src=steps[i][0]; tt.textContent=steps[i][1]; ss.textContent=steps[i][2];
+    idx.textContent=(i+1)+' / '+steps.length;
+    var ds=dots.children; for(var k=0;k<ds.length;k++) ds[k].className=(k===i?'on':'');
+  }
+  function go(n){i=(n+steps.length)%steps.length;render();}
+  function play(){if(timer)return;timer=setInterval(function(){go(i+1);},2600);btn.textContent='暂停';}
+  function pause(){clearInterval(timer);timer=null;btn.textContent='播放';}
+  document.getElementById('stPrev').onclick=function(){pause();go(i-1);};
+  document.getElementById('stNext').onclick=function(){pause();go(i+1);};
+  btn.onclick=function(){timer?pause():play();};
+  dots.onclick=function(ev){if(ev.target.getAttribute('data-i')!==null){pause();go(+ev.target.getAttribute('data-i'));}};
+  render();play();
+})();
+</script>
+
+</div>
+  <section class="contact" hidden>
+    <div class="contact-body">
+      <h3>卡在某一步了？</h3>
+      <p>把这三样发我：<b>卡在第几步</b>、报错原文、<code>DM</code> 与 DTS 的版本号。不用发库里的数据，也不用发口令。</p>
+      <details class="contact-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="./">← 返回图文版目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
