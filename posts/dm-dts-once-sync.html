@@ -68,6 +68,38 @@
   background:var(--bg-2);font-size:15px}
 .content .decide .q b{color:var(--accent);white-space:nowrap}
 @media(max-width:640px){.content .pc{grid-template-columns:1fr}}
+
+/* 兄弟链接：两篇互为「另一种做法」，按场景分流 */
+.content .pairnav{margin:24px 0 26px;padding:15px 18px 13px;background:var(--bg-2);
+  border:1px solid var(--line);border-radius:var(--radius-lg)}
+.content .pairnav .pn-t{font-size:13.5px;color:var(--text-3);margin:0 0 11px;font-weight:600}
+.content .pn-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.content .pn-card{display:block;background:var(--bg);border:1px solid var(--line);
+  border-radius:var(--radius);padding:12px 15px;text-decoration:none;color:var(--text);
+  transition:border-color .15s,box-shadow .15s}
+.content .pn-card .pn-k{font-size:15.5px;font-weight:700;margin:0 0 5px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--text)}
+.content .pn-card .pn-d{font-size:13.5px;color:var(--text-3);margin:0 0 7px;line-height:1.6}
+.content .pn-card ul{margin:0;padding-left:18px}
+.content .pn-card li{font-size:13.5px;line-height:1.65;margin:2px 0}
+.content .pn-card.cur{border-color:var(--accent);background:var(--accent-soft)}
+.content .pn-card.nxt:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(0,0,0,.09)}
+.content .pn-you{font-size:11.5px;font-weight:600;color:var(--bg);background:var(--accent);
+  border-radius:20px;padding:1px 8px}
+.content .pn-go{font-size:12.5px;font-weight:600;color:var(--accent);margin-left:auto}
+.content .pn-f{font-size:13px;color:var(--text-3);margin:11px 0 0;padding-top:10px;
+  border-top:1px dashed var(--line)}
+@media(max-width:640px){.content .pn-grid{grid-template-columns:1fr}}
+
+/* 窄屏防横向溢出（既有问题，顺手修）：长行内代码、三列表格、.demo 内图片都会撑破 430px */
+.content code{overflow-wrap:anywhere}
+.content .demo{box-sizing:border-box}
+.content .demo img,.content .stepper img{box-sizing:border-box;max-width:100%}
+@media(max-width:640px){
+  .content table{display:block;overflow-x:auto;max-width:100%}
+  .content .pairnav{padding:13px 14px 11px}
+  .content .pn-card{padding:11px 13px}
+}
 </style>
 <script>
 (function(){
@@ -138,6 +170,31 @@
   </div>
   <div class="content">
 <div class="lead"><strong>一句话：</strong>图形界面只负责把任务"画"出来，真正干活的是服务器——在你自己电脑上配好、复制它生成的 XML，传到服务器上<strong>跑一次</strong>，验完数就收工。<br><span style="color:var(--text-3);font-size:14.5px">先说定位：这套办法一般用于<strong>一次性同步</strong>——割接前搬历史数据、给测试库拉一份快照、临时补一批数据。不是常驻定时任务，也不用配 cron；真要周期跑，文末给了一句可选做法。</span></div>
+
+<div class="pairnav">
+<div class="pn-t">这两篇是一对 · 先对号入座，再点进去（另一篇是另一种做法，不是续集）</div>
+<div class="pn-grid">
+<div class="pn-card cur">
+<div class="pn-k">① 命令行跑 XML<span class="pn-you">你正在看</span></div>
+<p class="pn-d">配一次，把 XML 丢给服务器跑，配完就能关机。</p>
+<ul>
+<li>割接前搬历史数据、给测试库拉快照</li>
+<li>事后要交日志和报告</li>
+<li>以后还想照这份配置再跑一次</li>
+</ul>
+</div>
+<a class="pn-card nxt" href="dm-dts-agent-mode.html">
+<div class="pn-k">② 代理模式<span class="pn-go">换这篇 →</span></div>
+<p class="pn-d">界面照旧点点点，活儿在服务器干，数据不经过你的电脑。</p>
+<ul>
+<li>不想碰命令行，会点鼠标就行</li>
+<li>想看着进度跑，随时能停能调</li>
+<li>第一次搬不熟的库，怕出错</li>
+</ul>
+</a>
+</div>
+<div class="pn-f">两种都<strong>不绕 VPN</strong>、都<strong>不用服务器装图形界面</strong>；区别只有两处：谁发起执行、你的电脑要不要一直开着。拿不准？看 <a href="dm-dts-agent-mode.html#compare">三问决策（一分钟选完）→</a></div>
+</div>
 
 <h2>先说清楚：慢在哪、卡在哪</h2>
 <p>很多人做达梦数据迁移，是在自己电脑上打开 DTS 图形工具，隔着 VPN 连生产库。于是数据得绕这么一大圈：</p>
@@ -227,7 +284,7 @@
 </div>
 </div>
 
-<div class="warn"><strong>别手写 XML。</strong>里面有加密后的口令串和一堆 <code>Strategy</code> 策略，手工拼极易漏字段。让向导生成，是这件事最省心的部分。另外：右键任务的"导出配置文件"也能导出，但<strong>前提是任务已经保存过</strong>；没保存会直接弹"配置文件为空!"（本轮实测）。<br><img src="../assets/dts/s7-warning.png" alt="配置文件为空的提示" style="max-width:420px"></div>
+<div class="warn"><strong>别手写 XML。</strong>里面有加密后的口令串和一堆 <code>Strategy</code> 策略，手工拼极易漏字段。让向导生成，是这件事最省心的部分。另外：右键任务的"导出配置文件"也能导出，但<strong>前提是任务已经保存过</strong>；没保存会直接弹"配置文件为空!"（本轮实测）。<br><img src="../assets/dts/s7-warning.png" alt="配置文件为空的提示" style="max-width:min(420px,100%)"></div>
 
 <h2>第二步：把 XML 放到服务器上跑</h2>
 
@@ -296,6 +353,8 @@ su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
 • <strong>第一次搬不熟悉的库</strong>：先得有个人盯着排错，而不是配完就关机。</div>
 <p>这几种更适合<strong>代理模式</strong>（GUI 当遥控器、执行仍在服务器本地），它也是一次性同步，只是操作方式不同。<strong>尤其是你不熟悉命令行、或者操作的人不是 DBA</strong>——代理模式基本就是你原来的用法：界面点点点，进度和报错都在界面上，不用去日志里找判据。</p>
 <p>两种方式各自的优势、短板和适用场景，我整理成了对照表：<a href="dm-dts-agent-mode.html#compare">《两种方式怎么选：优劣势、场景与决策》</a>，另见<a href="dm-dts-agent-mode.html">代理模式全文</a>。</p>
+
+<p class="cap">上面三条正好命中你？<a href="dm-dts-agent-mode.html">换这篇：《界面照旧点点点，数据不绕 VPN》</a> —— 还是点点点，只是数据不再经过你的电脑。</p>
 
 
 <script>

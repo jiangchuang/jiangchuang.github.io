@@ -120,6 +120,38 @@ EXTRA_CSS = '''
   background:var(--bg-2);font-size:15px}
 .content .decide .q b{color:var(--accent);white-space:nowrap}
 @media(max-width:640px){.content .pc{grid-template-columns:1fr}}
+
+/* 兄弟链接：两篇互为「另一种做法」，按场景分流 */
+.content .pairnav{margin:24px 0 26px;padding:15px 18px 13px;background:var(--bg-2);
+  border:1px solid var(--line);border-radius:var(--radius-lg)}
+.content .pairnav .pn-t{font-size:13.5px;color:var(--text-3);margin:0 0 11px;font-weight:600}
+.content .pn-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.content .pn-card{display:block;background:var(--bg);border:1px solid var(--line);
+  border-radius:var(--radius);padding:12px 15px;text-decoration:none;color:var(--text);
+  transition:border-color .15s,box-shadow .15s}
+.content .pn-card .pn-k{font-size:15.5px;font-weight:700;margin:0 0 5px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--text)}
+.content .pn-card .pn-d{font-size:13.5px;color:var(--text-3);margin:0 0 7px;line-height:1.6}
+.content .pn-card ul{margin:0;padding-left:18px}
+.content .pn-card li{font-size:13.5px;line-height:1.65;margin:2px 0}
+.content .pn-card.cur{border-color:var(--accent);background:var(--accent-soft)}
+.content .pn-card.nxt:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(0,0,0,.09)}
+.content .pn-you{font-size:11.5px;font-weight:600;color:var(--bg);background:var(--accent);
+  border-radius:20px;padding:1px 8px}
+.content .pn-go{font-size:12.5px;font-weight:600;color:var(--accent);margin-left:auto}
+.content .pn-f{font-size:13px;color:var(--text-3);margin:11px 0 0;padding-top:10px;
+  border-top:1px dashed var(--line)}
+@media(max-width:640px){.content .pn-grid{grid-template-columns:1fr}}
+
+/* 窄屏防横向溢出（既有问题，顺手修）：长行内代码、三列表格、.demo 内图片都会撑破 430px */
+.content code{overflow-wrap:anywhere}
+.content .demo{box-sizing:border-box}
+.content .demo img,.content .stepper img{box-sizing:border-box;max-width:100%}
+@media(max-width:640px){
+  .content table{display:block;overflow-x:auto;max-width:100%}
+  .content .pairnav{padding:13px 14px 11px}
+  .content .pn-card{padding:11px 13px}
+}
 '''
 
 HEAD_TPL = '''<!DOCTYPE html>

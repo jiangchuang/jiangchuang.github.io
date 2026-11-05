@@ -68,6 +68,38 @@
   background:var(--bg-2);font-size:15px}
 .content .decide .q b{color:var(--accent);white-space:nowrap}
 @media(max-width:640px){.content .pc{grid-template-columns:1fr}}
+
+/* 兄弟链接：两篇互为「另一种做法」，按场景分流 */
+.content .pairnav{margin:24px 0 26px;padding:15px 18px 13px;background:var(--bg-2);
+  border:1px solid var(--line);border-radius:var(--radius-lg)}
+.content .pairnav .pn-t{font-size:13.5px;color:var(--text-3);margin:0 0 11px;font-weight:600}
+.content .pn-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.content .pn-card{display:block;background:var(--bg);border:1px solid var(--line);
+  border-radius:var(--radius);padding:12px 15px;text-decoration:none;color:var(--text);
+  transition:border-color .15s,box-shadow .15s}
+.content .pn-card .pn-k{font-size:15.5px;font-weight:700;margin:0 0 5px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--text)}
+.content .pn-card .pn-d{font-size:13.5px;color:var(--text-3);margin:0 0 7px;line-height:1.6}
+.content .pn-card ul{margin:0;padding-left:18px}
+.content .pn-card li{font-size:13.5px;line-height:1.65;margin:2px 0}
+.content .pn-card.cur{border-color:var(--accent);background:var(--accent-soft)}
+.content .pn-card.nxt:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(0,0,0,.09)}
+.content .pn-you{font-size:11.5px;font-weight:600;color:var(--bg);background:var(--accent);
+  border-radius:20px;padding:1px 8px}
+.content .pn-go{font-size:12.5px;font-weight:600;color:var(--accent);margin-left:auto}
+.content .pn-f{font-size:13px;color:var(--text-3);margin:11px 0 0;padding-top:10px;
+  border-top:1px dashed var(--line)}
+@media(max-width:640px){.content .pn-grid{grid-template-columns:1fr}}
+
+/* 窄屏防横向溢出（既有问题，顺手修）：长行内代码、三列表格、.demo 内图片都会撑破 430px */
+.content code{overflow-wrap:anywhere}
+.content .demo{box-sizing:border-box}
+.content .demo img,.content .stepper img{box-sizing:border-box;max-width:100%}
+@media(max-width:640px){
+  .content table{display:block;overflow-x:auto;max-width:100%}
+  .content .pairnav{padding:13px 14px 11px}
+  .content .pn-card{padding:11px 13px}
+}
 </style>
 <script>
 (function(){
@@ -137,7 +169,32 @@
     <span class="cat">迁移同步</span>
   </div>
   <div class="content">
-<div class="lead"><strong>一句话：</strong>在服务器上起一个 DTS 代理服务，Windows 上的 DTS 界面只当"遥控器"。真正读写数据库的是服务器上的 Java 进程，数据不出内网，你的电脑和 VPN 都不在数据通路上。<p class="goto">急着选型？<a href="#compare">直接看两种方式的优劣势、适用场景与决策 →</a></p></div>
+<div class="lead"><strong>一句话：</strong>在服务器上起一个 DTS 代理服务，Windows 上的 DTS 界面只当"遥控器"。真正读写数据库的是服务器上的 Java 进程，数据不出内网，你的电脑和 VPN 都不在数据通路上。</div>
+
+<div class="pairnav">
+<div class="pn-t">这两篇是一对 · 先对号入座，再点进去（另一篇是另一种做法，不是续集）</div>
+<div class="pn-grid">
+<a class="pn-card nxt" href="dm-dts-once-sync.html">
+<div class="pn-k">① 命令行跑 XML<span class="pn-go">换这篇 →</span></div>
+<p class="pn-d">配一次，把 XML 丢给服务器跑，配完就能关机。</p>
+<ul>
+<li>割接前搬历史数据、给测试库拉快照</li>
+<li>事后要交日志和报告</li>
+<li>以后还想照这份配置再跑一次</li>
+</ul>
+</a>
+<div class="pn-card cur">
+<div class="pn-k">② 代理模式<span class="pn-you">你正在看</span></div>
+<p class="pn-d">界面照旧点点点，活儿在服务器干，数据不经过你的电脑。</p>
+<ul>
+<li>不想碰命令行，会点鼠标就行</li>
+<li>想看着进度跑，随时能停能调</li>
+<li>第一次搬不熟的库，怕出错</li>
+</ul>
+</div>
+</div>
+<div class="pn-f">两种都<strong>不绕 VPN</strong>、都<strong>不用服务器装图形界面</strong>；区别只有两处：谁发起执行、你的电脑要不要一直开着。拿不准？看 <a href="#compare">三问决策（一分钟选完）→</a></div>
+</div>
 
 <div class="ok" style="margin-top:18px"><strong>说白了：</strong>你原来怎么用 DTS，现在还怎么用——照样图形界面点点点、看进度、看报错；唯一的变化是<strong>数据不再经过你的电脑</strong>。不用学命令行、不用配 XML、不用去日志里翻错误码。所以它<strong>对不熟悉命令行的人最友好</strong>。</div>
 
@@ -325,6 +382,8 @@ LISTEN  0  50  *:9099  *:*  users:(("java",pid=22688,fd=253))</code></pre>
 <div class="warn"><strong>证据强度不一样，得说清楚：</strong>① 是端到端跑通的（1000 行、<code>completed:5 error:0</code>、报告 xlsx）；② 只验证到「服务端起 agent + 客户端测试连接成功 + 监控页曲线」，<strong>"勾选代理后实际执行一次迁移"本轮没实跑</strong>。所以上表里 ② 的优劣判断来自界面能力与服务端行为，不是压测结论；上生产前请先用一张小表走完整链路。</div>
 
 <div class="ok"><strong>共同点，也是这两篇最想说的一句：</strong>不管哪种，<strong>数据搬运都发生在服务器内网</strong>。图形界面只是配置工具，不该出现在数据通路上。想明白这一点，VPN 慢和无图形界面这两个问题就一起解决了。</div>
+
+<p class="cap">还没看另一种做法？<a href="dm-dts-once-sync.html">《没有图形界面的服务器，怎么把达梦的数据搬过去？》</a> —— 配一次 XML，服务器跑一次，留日志和报告。</p>
 
 </div>
   <section class="contact" hidden>
