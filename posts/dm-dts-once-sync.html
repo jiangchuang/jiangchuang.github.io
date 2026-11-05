@@ -321,7 +321,7 @@ su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
 <ol>
 <li><strong>留档</strong>：把 <code>sync_job.xml</code>、当次日志、报告 xlsx 放在同一目录，按日期建子目录。以后复盘或复跑，靠这三样就够。</li>
 <li><strong>重跑先想清楚</strong>：DTS 默认追加写入。同一个 XML 再跑一遍，目标表可能多出一份重复数据；重跑前先清空目标表，或在向导里把表处理策略改成覆盖。</li>
-<li><strong>别让它挂着</strong>：DTS 出错时可能不退出（实测 OOM 后进程存活 2 分 47 秒）。手工跑也加一层 <code>timeout 3600</code>，再配 <code>flock</code> 防误开第二个实例；失败留 <code>*.ERROR</code> 标记，别只盯退出码。</li>
+<li><strong>别让它挂着</strong>：DTS 出错时不会退出——100 万行 OOM 那次，日志 <code>Total time: 186.573 seconds</code> 才等到 <code>Killed</code>，中间没有一行新输出。手工跑也加一层 <code>timeout 3600</code>，再配 <code>flock</code> 防误开第二个实例；失败留 <code>*.ERROR</code> 标记，别只盯退出码。</li>
 </ol>
 
 <details>
@@ -344,6 +344,13 @@ su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
 <tr><td>大表跑到一半 OOM</td><td>启动脚本把堆写死 <code>-Xms1024m -Xmx1024m</code>；拆批或成对调大 Xms/Xmx（只改 Xmx 会让 JVM 起不来）</td></tr>
 <tr><td>单次执行卡住不退</td><td>DTS 出错可能挂死不退出，加 <code>timeout</code> + <code>flock</code></td></tr>
 </table>
+
+<h3>这两个坑长什么样：15 秒看完那 186 秒</h3>
+<p>「OOM」和「假死」光看文字很难有体感。下面这段动画是用 100 万行那次的<strong>真实日志</strong>逐帧做的——盯着秒表看：秒数一直在涨，日志区却一个字都不动。</p>
+<img src="../assets/dts/oom-timeline.gif" alt="100 万行 OOM 的 186 秒时间轴（真实日志）">
+<p class="cap">开头几行正常输出 → 一段 Exception → 之后 180 多秒什么都没有 → 最后才等到 <code>Killed</code>。源日志：<code>DTS实测证据/OOM/OOM-1M@1G.log</code></p>
+
+<div class="warn"><strong>为什么这条比别的坑更危险：</strong>它<strong>不报错、不退出、也不写新日志</strong>。你盯屏幕看到的是「还在跑」，调度器看到的也是「还在跑」，直到 <code>timeout</code> 到点才被杀——要是没设 <code>timeout</code>，它能一直耗在那儿占着内存和连接。所以判据得落成可执行的检查（比如 <code>grep -c OutOfMemoryError</code>），不能靠人瞅一眼说"好像还在跑"。</div>
 
 <h2>小结</h2>
 <p>这套办法的价值不在"能跑"，而在于<strong>把一次点的鼠标变成一次配置、一次执行、有据可查</strong>：服务器不需要图形界面，客户端不需要一直连着 VPN，数据也不绕道，跑完还有日志和报告能交差。</p>
