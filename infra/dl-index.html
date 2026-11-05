@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>达梦现场工具 · 下载</title>
+<title>达梦现场工具 · dmkit 下载与能力总览</title>
 <style>
   :root { --ink:#1f2430; --sub:#5b6472; --line:#e3e6ec; --brand:#2b5fd9; }
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -24,42 +24,69 @@
   .desc { color:var(--sub); font-size:14px; margin-top:6px; }
   .row { display:flex; flex-wrap:wrap; gap:10px; margin:16px 0 12px; }
   .row a {
-    flex:1 1 0; min-width:150px; text-align:center; text-decoration:none;
+    flex:1 1 0; min-width:150px; text-decoration:none;
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
     padding:11px 14px; border-radius:9px; font-weight:700; font-size:14px;
     background:var(--brand); color:#fff; border:1px solid var(--brand);
   }
   .row a.alt { background:#fff; color:var(--brand); }
   .row a:hover { opacity:.9; }
+  .ic { width:15px; height:15px; flex:none; }
   .meta { font-size:13px; color:var(--sub); }
   .meta a { color:var(--brand); text-decoration:none; }
+  .caphead { font-size:13px; font-weight:700; margin:18px 0 8px; color:var(--ink); }
+  .caps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+  .cap { border:1px solid var(--line); border-radius:9px; padding:10px 12px; background:#fafbfd; }
+  .cap b { display:block; font-size:13px; color:var(--ink); margin-bottom:2px; }
+  .cap span { font-size:12.5px; color:var(--sub); line-height:1.75; }
+  .tip { margin-top:16px; padding:11px 13px; background:#f2f6ff; border-radius:9px; font-size:13px; color:var(--sub); }
+  .tip b { color:var(--ink); }
+  .links { margin-top:12px; font-size:13px; color:var(--sub); }
+  .links a { color:var(--brand); text-decoration:none; }
   code {
     background:#eef1f6; padding:1px 5px; border-radius:4px;
     font-family:ui-monospace,Consolas,"Courier New",monospace; font-size:12.5px;
   }
   footer { margin-top:32px; font-size:13px; color:var(--sub); text-align:center; }
   footer a { color:var(--sub); }
-  @media (max-width:640px) { .row a { flex:1 1 100%; } }
+  @media (max-width:640px) {
+    .row a { flex:1 1 100%; }
+    .caps { grid-template-columns:1fr; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <h1>达梦现场工具 · 下载</h1>
-  <p class="sub">单文件、免安装、零依赖。直连下载，无需注册登录；下面的地址长期有效，升级后仍是同一个链接。</p>
+  <h1>达梦现场工具 · dmkit</h1>
+  <p class="sub">单文件、免安装、零依赖。直连下载，无需注册登录。</p>
 
   <div class="item">
     <h2>dmkit <small>V0.7.44 · 2026-11-05</small></h2>
-    <p class="desc">达梦运维诊断工具箱：P0 巡检、ASH 体检、锁阻塞树、慢查询采集（只读档默认不执行 SQL）、执行计划、故障取证包。</p>
+    <p class="desc">达梦 DM8 运维诊断工具箱，23 个命令覆盖巡检、锁、执行计划、取证、网络与集群。绿色免安装，不需要管理员权限。</p>
     <div class="row">
-      <a href="/dl/dmkit/dmkit-windows-x64.zip">Windows x64 · 11 MB</a>
-      <a class="alt" href="/dl/dmkit/dmkit-linux-x64.zip">Linux x64 · 5.5 MB</a>
-      <a class="alt" href="/dl/dmkit/dmkit-linux-arm64.zip">Linux arm64 · 5 MB</a>
+      <a href="/dl/dmkit/dmkit-windows-x64.zip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Windows x64 · 11 MB</a>
+      <a class="alt" href="/dl/dmkit/dmkit-linux-x64.zip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Linux x64 · 5.5 MB</a>
+      <a class="alt" href="/dl/dmkit/dmkit-linux-arm64.zip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Linux arm64 · 5 MB</a>
     </div>
     <p class="meta">
       解压后先看包里的 <code>README.md</code>　·　
       <a href="/dl/dmkit/CHECKSUMS.txt">SHA256 校验值</a>　·　
       <a href="https://gitee.com/jiangchuang/dm-tools">历史版本与问题反馈</a>
     </p>
+
+    <div class="caphead">这 23 个命令在做什么</div>
+    <div class="caps">
+      <div class="cap"><b>先看有没有事</b><span><code>check</code> P0 巡检一屏结论 · <code>ash</code> 6 段定性 · <code>perf</code> CPU 热点采样</span></div>
+      <div class="cap"><b>卡在哪、谁挡谁</b><span><code>wait</code> 锁阻塞树 · <code>stack</code> 多轮判真卡点 · <code>dns</code> 解析计时探针</span></div>
+      <div class="cap"><b>SQL 与执行计划</b><span><code>at</code> 慢查询采集 · <code>report</code> 预估 vs 实际 · <code>qopt</code> 一键报告 · <code>stat</code> 统计 · <code>ix</code> 索引建议 · <code>ora2dm</code> 迁移对比</span></div>
+      <div class="cap"><b>现场留证据</b><span><code>dump</code> 环境+DB+锁+堆栈+IO 打包 · <code>fault</code> 故障时间窗切片 · <code>remote</code> 远程采集回传</span></div>
+      <div class="cap"><b>网络与集群</b><span><code>netwatch</code> 进程连哪 · <code>probe</code> 端口矩阵 · <code>dpc</code> DMDPC 实例 · <code>q --ping</code> 连不上分层诊断</span></div>
+      <div class="cap"><b>日常查数与速查</b><span><code>q</code> 交互终端（Tab 补全、<code>\d</code>） · <code>c</code> 8 类高频命令 · <code>doc</code> 21 本官方手册按章检索</span></div>
+    </div>
+
+    <div class="tip"><b>不知道从哪开始：</b><code>dmkit</code> 不带参数进交互向导（选场景编号，只问必须的参数）；<code>dmkit help</code> 看全部命令；<code>dmkit check</code> 先做一次 P0 巡检。首次连库会自动做一次只读健康巡检。</div>
+    <div class="links">分步操作手册：<a href="/interactive/dmkit-slow-query-handbook.html">慢查询采集（交互版）</a>　·　<a href="/posts/dmkit-slow-query-collect.html">慢查询采集（长文版）</a></div>
   </div>
 
   <footer>

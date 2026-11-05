@@ -107,6 +107,10 @@ if [ -f infra/dl-index.html ]; then
   ssh "$TARGET" "mkdir -p $DL_DIR"
   scp -q infra/dl-index.html "$TARGET:$DL_DIR/index.html" \
     || die "下载站首页同步失败（站点本体已发布，仅这一页没更新）"
+  # 有人会把 zip 直链往回删一段来「找目录」，别让他撞见 403：
+  # /dl/dmkit/ 复用同一页，软链只建一次、内容随上面那份自动更新。
+  ssh "$TARGET" "mkdir -p $DL_DIR/dmkit && ln -sfn ../index.html $DL_DIR/dmkit/index.html" \
+    || log "警告：/dl/dmkit/ 索引页软链未更新（不影响下载）"
 fi
 
 # ---- 5. 抽样验收（不是 echo done）----

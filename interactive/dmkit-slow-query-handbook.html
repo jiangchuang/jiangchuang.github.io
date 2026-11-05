@@ -168,15 +168,20 @@
   /* ── 下载条 ── */
   .dl-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 10px; }
   .dl-row a {
-    flex: 1 1 0; min-width: 140px; text-align: center; text-decoration: none;
+    flex: 1 1 0; min-width: 140px; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     padding: 12px 16px; border-radius: 10px; font-weight: 700; font-size: 15px;
     background: var(--brand); color: #fff; border: 1px solid var(--brand);
     transition: transform .12s ease, box-shadow .12s ease;
   }
+  .dl-ic { width: 17px; height: 17px; flex: none; }
   .dl-row a:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(43,95,217,.25); }
   .dl-row a.alt { background: #fff; color: var(--brand); }
   .dl-note { font-size: 13px; color: var(--sub); line-height: 1.9; }
   .dl-note a { color: var(--brand); }
+  .dl-more { font-size: 13px; color: var(--sub); line-height: 1.8; margin-top: 8px; }
+  .dl-more a { color: var(--brand); text-decoration: none; font-weight: 600; white-space: nowrap; }
+  .dl-print { display: none; font-size: 13px; color: var(--sub); margin-top: 8px; }
   @media (max-width: 640px) { .dl-row a { flex: 1 1 100%; } }
 
   /* ── 打印 ── */
@@ -184,6 +189,7 @@
     body { background: #fff; padding: 0; max-width: none; }
     .layout { display: block; max-width: none; }
     nav.toc, .codebox .cp, .sitebar, .dl-row { display: none !important; }
+    .dl-print { display: block !important; }
     .card, .quick, .tier { break-inside: avoid; }
     header { background: #2b5fd9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .codebox pre { background: #f4f6f9; color: #1f2430; border: 1px solid #ddd; }
@@ -205,7 +211,7 @@
 
 <nav class="toc">
   <div class="t">目 录</div>
-  <a href="#download" class="hot">⬇ 下载 dmkit</a>
+  <a href="#download" class="hot">⬇ 安装 dmkit</a>
   <a href="#boundary" class="hot">⚠️ 使用前必读</a>
   <a href="#quick" class="hot">⚡ 两分钟版</a>
   <a href="#why">0 · 为什么需要</a>
@@ -235,20 +241,25 @@
 
 <!-- ══════ 下载 ══════ -->
 <section id="download">
-  <div class="card" style="border:2px solid var(--brand);background:linear-gradient(180deg,#f7faff,#fff)">
-    <h2><span class="num">↓</span>先把 dmkit 拿到手</h2>
-    <p style="color:var(--sub);margin-top:4px">单文件 · 免安装 · 零依赖，解压就能跑，不需要管理员权限。手册里所有命令都靠它执行。</p>
+  <div class="card" style="border-left:3px solid var(--brand)">
+    <h2><span class="num">↓</span>本手册需要 dmkit</h2>
+    <p style="color:var(--sub);margin-top:4px">单文件 · 免安装 · 零依赖，解压就能跑，不需要管理员权限。按你机器的平台选一个包。</p>
     <div class="dl-row">
-      <a href="/dl/dmkit/dmkit-windows-x64.zip">Windows x64</a>
-      <a class="alt" href="/dl/dmkit/dmkit-linux-x64.zip">Linux x64</a>
-      <a class="alt" href="/dl/dmkit/dmkit-linux-arm64.zip">Linux arm64</a>
+      <a href="/dl/dmkit/dmkit-windows-x64.zip"><svg class="dl-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Windows x64</a>
+      <a class="alt" href="/dl/dmkit/dmkit-linux-x64.zip"><svg class="dl-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Linux x64</a>
+      <a class="alt" href="/dl/dmkit/dmkit-linux-arm64.zip"><svg class="dl-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Linux arm64</a>
     </div>
     <div class="dl-note">
       当前 <b>V0.7.44</b>　Windows 包 11 MB / Linux 包 5.5 MB　·　
       <a href="/dl/dmkit/CHECKSUMS.txt">SHA256 校验值</a>　·　
-      <a href="https://gitee.com/jiangchuang/dm-tools">历史版本与问题反馈</a><br>
-      下载地址 <code class="inl">www.jiangchuang.top/dl/dmkit/</code>　直连，无需注册登录；长期有效，升级后仍是同一个链接。
+      <a href="https://gitee.com/jiangchuang/dm-tools">历史版本与问题反馈</a>
     </div>
+    <div class="dl-more">
+      dmkit 是达梦运维诊断工具箱，共 23 个命令（巡检体检 / 锁与卡顿 / 执行计划 / 现场取证 / 网络与集群 / 日常速查）。
+      <strong>本手册只讲慢查询采集这一件。</strong>
+      <a href="/dl/">看全部能力与下载 →</a>
+    </div>
+    <p class="dl-print">下载地址：www.jiangchuang.top/dl/　（打开后选 dmkit 对应平台）</p>
   </div>
 </section>
 
@@ -360,7 +371,7 @@
     <h2><span class="num">1</span>安装 · 做一次，约 5 分钟</h2>
 
     <h3>1.1 你拿到的文件</h3>
-    <p class="ink">按平台分三个包，<strong>只下你需要的那个</strong>（下载地址见页首）：</p>
+    <p class="ink">按平台分三个包，<strong>只下你需要的那个</strong>（下载按钮见页首）：</p>
     <div class="tbl-wrap">
     <table>
       <tr><th>平台</th><th>下载文件</th><th>大小</th></tr>
