@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>达梦现场工具 · 下载</title>
+<style>
+  :root { --ink:#1f2430; --sub:#5b6472; --line:#e3e6ec; --brand:#2b5fd9; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+    background:#f5f6f8; color:var(--ink); line-height:1.7;
+    padding:48px 20px 72px;
+  }
+  .wrap { max-width:760px; margin:0 auto; }
+  h1 { font-size:26px; letter-spacing:-.3px; }
+  .sub { color:var(--sub); font-size:14px; margin-top:8px; }
+  .item {
+    background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:22px 22px 18px; margin-top:22px;
+  }
+  .item h2 { font-size:19px; }
+  .item h2 small { font-size:12px; color:var(--sub); font-weight:500; margin-left:6px; }
+  .desc { color:var(--sub); font-size:14px; margin-top:6px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; margin:16px 0 12px; }
+  .row a {
+    flex:1 1 0; min-width:150px; text-align:center; text-decoration:none;
+    padding:11px 14px; border-radius:9px; font-weight:700; font-size:14px;
+    background:var(--brand); color:#fff; border:1px solid var(--brand);
+  }
+  .row a.alt { background:#fff; color:var(--brand); }
+  .row a:hover { opacity:.9; }
+  .meta { font-size:13px; color:var(--sub); }
+  .meta a { color:var(--brand); text-decoration:none; }
+  code {
+    background:#eef1f6; padding:1px 5px; border-radius:4px;
+    font-family:ui-monospace,Consolas,"Courier New",monospace; font-size:12.5px;
+  }
+  footer { margin-top:32px; font-size:13px; color:var(--sub); text-align:center; }
+  footer a { color:var(--sub); }
+  @media (max-width:640px) { .row a { flex:1 1 100%; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>达梦现场工具 · 下载</h1>
+  <p class="sub">单文件、免安装、零依赖。直连下载，无需注册登录；下面的地址长期有效，升级后仍是同一个链接。</p>
+
+  <div class="item">
+    <h2>dmkit <small>V0.7.44 · 2026-11-05</small></h2>
+    <p class="desc">达梦运维诊断工具箱：P0 巡检、ASH 体检、锁阻塞树、慢查询采集（只读档默认不执行 SQL）、执行计划、故障取证包。</p>
+    <div class="row">
+      <a href="/dl/dmkit/dmkit-windows-x64.zip">Windows x64 · 11 MB</a>
+      <a class="alt" href="/dl/dmkit/dmkit-linux-x64.zip">Linux x64 · 5.5 MB</a>
+      <a class="alt" href="/dl/dmkit/dmkit-linux-arm64.zip">Linux arm64 · 5 MB</a>
+    </div>
+    <p class="meta">
+      解压后先看包里的 <code>README.md</code>　·　
+      <a href="/dl/dmkit/CHECKSUMS.txt">SHA256 校验值</a>　·　
+      <a href="https://gitee.com/jiangchuang/dm-tools">历史版本与问题反馈</a>
+    </p>
+  </div>
+
+  <footer>
+    <a href="/">返回达梦手记</a>
+  </footer>
+
+</div>
+</body>
+</html>
