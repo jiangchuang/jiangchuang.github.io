@@ -169,7 +169,9 @@
   @media print {
     body { background: #fff; padding: 0; }
     .layout { display: block; max-width: none; }
-    nav.toc, .codebox .cp { display: none; }
+    nav.toc, .codebox .cp, .sitebar { display: none !important; }
+    .layout { max-width: none; }
+    body { max-width: none; }
     .card, .quick, .tier { break-inside: avoid; }
     header { background: #2b5fd9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .codebox pre { background: #f4f6f9; color: #1f2430; border: 1px solid #ddd; }
@@ -178,7 +180,7 @@
 </style>
 </head>
 <body>
-<div style="max-width:1180px;margin:0 auto 16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px;line-height:1.6">
+<div class="sitebar" style="max-width:1180px;margin:0 auto 16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px;line-height:1.6">
   <a href="../index.html" style="color:#2b5fd9;text-decoration:none;font-weight:600">← 达梦手记</a>
   <span style="color:#c8cdd6">|</span>
   <a href="../posts/dmkit-slow-query-collect.html" style="color:#e8732a;text-decoration:none">图文版（可搜索 / 可转载）</a>
