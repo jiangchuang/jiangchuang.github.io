@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦慢查询：一条命令把现场拍清楚，再去谈优化（dmkit）· 达梦手记</title>
+<meta name="description" content="手上只有一句「这条 SQL 很慢」：用 dmkit 分只读档/完整档两档把现场拍清楚——执行计划、涉及表索引、索引建议一条命令出，要实测耗时逻辑读再加 --run。含三处与流传写法不一致的实测更正（V$SESSIONS / SQL_ID / V$SQL_STAT 只留缓存）、PowerShell 吃 $ 的实证、判读五个方向的优先级，以及两条实测结论：收统计只降 0.5%，谓词改写降 92%。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../interactive/dmkit-slow-query-handbook.html">交互版</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">  <div class="art-head">
+    <div class="meta">2026-11-05 &nbsp;·&nbsp; 性能优化</div>
+    <h1>达梦慢查询：一条命令把现场拍清楚，再去谈优化</h1>
+    <span class="cat">性能优化</span>
+  </div>
+  <div class="content">
+<blockquote><p>📋 <strong>想照着敲？</strong>这篇有 <strong>交互操作版</strong>——左侧目录、命令一键复制，现场对着敲更顺手：<a href="../interactive/dmkit-slow-query-handbook.html">打开交互操作版 →</a></p></blockquote>
+<blockquote><p>文中每条命令、每个输出都是真机跑出来的，跑不了的地方标了「未实测」。三处视图用法和网上流传的写法不一致，我是实测之后才敢写——差异都列出来了，你可以自己复核。</p></blockquote>
+
+<h2>你接到的求助，通常只有一句话</h2>
+<p>「这条 SQL 很慢，你给看看。」</p>
+<p>然后就没了。没有 SQL 全文，没有执行计划，不知道表有多大，也不知道是一直这么慢还是今天突然慢。你在电话里问一句「执行计划能发我吗」，对面沉默三秒，回你「那是什么」。</p>
+<p>远程连过去看一眼，卡得你想砸键盘；跑一趟现场，来回半天。于是这件事就悬在那儿——<strong>不是你不会调，是拿不到能调的料。</strong></p>
+<p>所以下面这套东西，解决的不是「怎么优化」，而是<strong>怎么用最低的代价，把判断瓶颈需要的那几样凑齐</strong>。凑齐之后，判断本身反而是快的。</p>
+
+<h2>为什么定位不了：信息量差了一个数量级</h2>
+<p>同样一句「慢」，不同信息量能推出的结论差很远：</p>
+<table>
+<tr><th style="width:46%">你手上有的</th><th>能判断出什么</th></tr>
+<tr><td>「有个查询很慢」</td><td>什么也判断不了</td></tr>
+<tr><td>「这条 SQL 很慢」</td><td>能猜，但猜不准</td></tr>
+<tr><td><strong>SQL 全文 + 执行计划 + 实测指标 + 表规模</strong></td><td><strong>能指出瓶颈在第几步、该改什么</strong></td></tr>
+</table>
+<p>这四样里，最常被漏掉的是最后一样：<strong>表有多大</strong>。同一个执行计划，1 万行全扫是正常的，1 亿行全扫就是灾难。没有表规模，前面三样都可能被误读。</p>
+<p>而这四样，恰好都能从库里取出来，不需要人肉问、不需要装客户端、不需要 SSH 登服务器。</p>
+
+<h2>先分清：哪些动作会真的跑一遍 SQL</h2>
+<p>讲命令之前先把边界摆出来，因为这里最容易出事。慢查询采集分两档，<strong>默认那一档不执行你的 SQL</strong>：</p>
+<table>
+<tr><th style="width:22%">档位</th><th style="width:26%">命令</th><th style="width:14%">执行 SQL</th><th>拿到什么</th></tr>
+<tr><td><strong>只读档</strong>（默认）</td><td><code>at --file slow.sql</code></td><td><strong>不执行</strong></td><td>执行计划、涉及表、关键列索引、索引建议</td></tr>
+<tr><td><strong>完整档</strong></td><td><code>at --file slow.sql --run</code></td><td>执行一遍</td><td>上面全部 + 实测耗时 / 逻辑读 / 物理读</td></tr>
+</table>
+<p>只读档走的是 <code>EXPLAIN FOR</code>：只让优化器给个计划，不取数据、不锁行、不触发函数副作用。生产库上午高峰我也敢跑它。</p>
+<p>完整档必须真跑一次，才有真实耗时和逻辑读——这是它的价值，也是它的代价。这四类语句尤其要小心：大表全扫、<code>SELECT ... FOR UPDATE</code>（持锁）、含自定义函数（可能有副作用）、跨表 JOIN 大结果集。</p>
+<blockquote><p><strong>判断标准很简单</strong>：这条 SQL 现在再跑一次，业务上允许吗？允许就 <code>--run</code>，犹豫就别加。</p></blockquote>
+
+<h2>只读档到底能看到什么</h2>
+<p>这是真实输出，5 万行表、<code>CODE</code> 列无索引、查 <code>WHERE CODE='CODE500'</code>：</p>
+<pre class="code"><code>◆ 实测（⊘ 只读档 · 未执行原 SQL）
+  无实测耗时/逻辑读/真实扫描行数——这些只有真跑一次才有。
+  计划、涉及表、索引建议照常可用，判瓶颈通常够用。
+  要真实指标：在命令末尾加 --run（原句执行一遍，慢 SQL 会花掉它真实的耗时）
+
+◆ 计划（EXPLAIN FOR，关键行）
+  4 #CSCN2 T_RO_TEST(INDEX33555503)  [全扫] 预估50,000
+
+◆ 涉及表与关键列索引
+  T_RO_TEST（行数未知：未收集统计；dmkit stat --table T_RO_TEST 可补）
+    CODE     VARCHAR        无索引 ←
+
+◆ 索引建议（依据自行取舍；批量复核用 dmkit ix）
+  ✗ T_RO_TEST(CODE)  ←  预估全表扫描 50,000 行（ROW_NUMS）
+  CREATE INDEX IDX_T_RO_TEST_CODE ON "SYSDBA"."T_RO_TEST" ("CODE");</code></pre>
+<p>加 <code>--run</code> 之后，只多出这一行：</p>
+<pre class="code"><code>◆ 实测（真实执行）
+  耗时 6ms ｜ 逻辑读 72 ｜ 物理读 0 ｜ 返回 1 行 ｜ SQL_ID 219</code></pre>
+<p>所以取舍很清楚：<strong>判「瓶颈在第几步」用只读档就够；要「改完快了多少」的对比数据，才需要完整档。</strong></p>
+<p>顺带解释两个容易看错的地方：</p>
+<p>「行数未知」不是表空，是<strong>这张表还没收集过统计信息</strong>。<code>USER_TABLES.NUM_ROWS</code> 是空的，工具如实说未知，而不是编一个数给你。</p>
+<p><code>[全扫]</code> 却写「索引建议：无」，也不是矛盾——见后面那一节。</p>
+
+<h2>三处网上写法，实测对不上</h2>
+<p>采集这件事最怕照抄旧文章。下面三条是我在 DM8 真机上逐条验证的，都跟流传的写法有出入：</p>
+<table>
+<tr><th style="width:34%">流传的写法</th><th>实测结果</th></tr>
+<tr><td><code>V$SESSION</code></td><td><strong>不存在</strong>，达梦是复数 <code>V$SESSIONS</code>，直接报 <code>[-2106]</code> 表或视图不存在</td></tr>
+<tr><td>用 <code>SQL_TEXT_ID</code> 关联历史 SQL、计划、统计</td><td><code>V$SQL_HISTORY</code> 里<strong>没有这一列</strong>。跨视图的通用键是数字 <code>SQL_ID</code></td></tr>
+<tr><td>用 <code>V$SQL_STAT</code> 查历史慢 SQL</td><td>它只保留当前缓存里的少量语句，我这台实测<strong>只有 4 行</strong>。查历史必须用 <code>V$SQL_HISTORY</code></td></tr>
+</table>
+<p>另一个流传很广的说法是「SQL 全文只有 dmsql 日志里才有，视图里会被截到 1000 字符」。这条也站不住：<code>V$SQLTEXT</code> 存的是全文。我造了一条 1333 字符的语句跑进去，查出来 <code>LENGTH(SQL_TEXT) = 1332</code>，没截断。</p>
+<p>但截断确实存在，只是在别的地方：<code>V$PLN_HISTORY.TOP_SQL_TEXT</code> 是截断的。所以正确姿势是——<strong>从 <code>V$SQL_HISTORY</code> 拿到慢 SQL 的 <code>SQL_ID</code>，再用它去 <code>V$SQLTEXT</code> 取全文</strong>，而不是从计划的 <code>TOP_SQL_TEXT</code> 里凑。</p>
+<pre class="code"><code class="lang-sql">-- 1. 谁最慢（按累计耗时和逻辑读一起看）
+select sql_id, time_used, n_logic_read, substr(top_sql_text,1,80)
+  from v$sql_history
+ order by time_used desc
+ limit 20;
+
+-- 2. 拿全文（这一步不会被截断）
+select sql_id, sql_text from v$sqltext where sql_id = '上一步的ID';
+
+-- 3. 拿执行计划
+select sql_id, sql_plan from v$pln_history where sql_id = '上一步的ID';</code></pre>
+<p>上面这三条只是把链路讲清楚。<strong>日常不用手敲</strong>，一条 <code>dmkit at</code> 就把这三步连同索引情况一起做完了。</p>
+
+<h2>三条铁律，不遵守会白忙</h2>
+<p>这三条都来自真实翻车，不是凑数。</p>
+
+<h3>第一：SQL 一律走文件，别写在命令行里</h3>
+<p>达梦的动态视图名和列名里带 <code>$</code> 的一堆：<code>V$SQL_HISTORY</code>、<code>V$SESSIONS</code>、<code>STATUS$</code>。在 PowerShell 里用双引号包 SQL，<code>$SQL_HISTORY</code> 会被当成变量替换成空。</p>
+<table>
+<tr><th style="width:46%">你在 PowerShell 里敲的</th><th style="width:26%">实际传给程序的</th><th>结果</th></tr>
+<tr><td><code>--sql 'SELECT 1 FROM V$SQL_HISTORY'</code></td><td><code>SELECT 1 FROM V$SQL_HISTORY</code></td><td>✅</td></tr>
+<tr><td><code>--sql "SELECT 1 FROM V$SQL_HISTORY"</code></td><td><code>SELECT 1 FROM V</code></td><td>❌ <code>$SQL_HISTORY</code> 被吃掉</td></tr>
+</table>
+<p>阴险的地方在于报错：它会告诉你「表或视图不存在」，于是你以为库有问题，其实命令早就残了。所以规矩定死——<strong>SQL 存成 <code>slow.sql</code>（UTF-8），用 <code>--file</code></strong>。文件里写什么就收到什么，cmd / PowerShell / Linux 全都不打架。</p>
+<blockquote><p>顺带说一句，cmd 不认单引号。要发命令给同事，别默认对方和你用的是同一个 shell。</p></blockquote>
+
+<h3>第二：DSN 用单引号</h3>
+<p><code>dm://SYSDBA@192.0.2.10:5236</code> 这种串本身不带 <code>$</code>，但它经常跟别的东西拼在一起传。统一用单引号，少一类事故。</p>
+
+<h3>第三：尽量用一个 DBA 只读账号</h3>
+<p>普通账号能拿到执行计划和表结构，但<strong>拿不到 <code>V$SQL_HISTORY</code> 里的逻辑读</strong>，等于少了一半证据。工具遇到权限不足会自动降级并如实提示，不会假装采到了——但你最好别让它降级。</p>
+
+<h2>拿到执行计划之后，按这个顺序看</h2>
+<p>计划里能出问题的方向就五个。<strong>顺序有讲究</strong>：先改天花板，再看放大系数，最后才怀疑统计。顺序错了会白折腾几小时——比如先去收统计，结果发现瓶颈是缺索引。</p>
+<table>
+<tr><th style="width:5%">序</th><th style="width:31%">计划里的信号</th><th style="width:32%">说明</th><th>动作</th></tr>
+<tr><td>①</td><td><code>CSCN2</code> 全表扫 + 行数巨大</td><td>没索引，在读全表</td><td>建索引</td></tr>
+<tr><td>②</td><td>有索引但仍 <code>CSCN2</code></td><td>谓词写法让索引用不上（列上函数 / 隐式转换 / <code>LIKE '%x'</code>）</td><td>改写谓词</td></tr>
+<tr><td>③</td><td><code>NL</code> 方向反 / 多余物化</td><td>驱动表选错</td><td>调连接顺序 / 换 <code>HASH</code></td></tr>
+<tr><td>④</td><td>预估行数 vs 实际差一个数量级</td><td>统计信息过期</td><td>收统计（<strong>先验证逻辑读是否真降</strong>）</td></tr>
+<tr><td>⑤</td><td>计划正常但仍慢</td><td>锁等待 / 高水位 / 资源竞争</td><td>查锁、查资源</td></tr>
+</table>
+<p>为什么 ① 在 ② 前面？因为「读多少行」由谓词和访问路径决定，「怎么读」才轮到索引和连接方式。先堵最大的漏，再看放大。</p>
+
+<h2>两条实测结论，省你两天</h2>
+<p>这两条都是同一个案例上跑出来的：一条前缀匹配的慢查询，测试环境复现，5921 ms。</p>
+<p><strong>一、收统计不是万能药。</strong>从「无统计」收到「精确」，耗时 5921 → 5894 ms，<strong>只降了 0.5%</strong>，逻辑读 15,596,271 一点没动。收统计只解决「估算错」，不解决「该读的数据本来就多」。</p>
+<p><strong>二、谓词改写才是大头。</strong>同一句，把 <code>LIKE CONCAT(前缀,'%')</code> 改成 <code>SUBSTR(CODE,1,4)=前缀</code>，耗时 5921 → 462 ms（<strong>-92%</strong>），逻辑读降了 98.7%。</p>
+<blockquote><p>一句话记：<strong>「读多少」由谓词决定，「怎么读」由索引决定——先改谓词，再谈索引。</strong></p></blockquote>
+<p>补一句边界：<code>SUBSTR(CODE,1,4)=...</code> 这种改写的前提是<strong>前缀长度固定</strong>，能写成常数。变长前缀就回到原来的问题，别硬套。</p>
+
+<h2>一个反直觉的坑：全表扫，却告诉你「不用建索引」</h2>
+<p>这个我是拿一张 30 万行、<code>CODE</code> 列没索引的表测出来的，第一版就翻了车。</p>
+<p>计划里明明是 <code>CSCN2</code> 全扫 30 万行，工具结尾却写「索引建议：无（未发现达阈值的全表扫描，或现有索引已覆盖）」。前后矛盾，而且误导性极强——客户会以为「数据库说不用建索引」。</p>
+<p>原因是达梦全表扫的时候，计划节点上的 <code>IDX_NAME</code> 不是空，而是填了表自带的聚集索引名，形如 <code>INDEX33568143</code>。判「是否全扫」的逻辑如果要求「索引列为空」才算全扫，就会把全扫认成走索引，于是建议被吞掉。</p>
+<p>修完之后，同一个场景正常给出：</p>
+<pre class="code"><code>◆ 索引建议（依据自行取舍；批量复核用 dmkit ix）
+  ✗ T_SLOW_TEST(CODE)  ←  预估全表扫描 300,000 行（ROW_NUMS）
+  CREATE INDEX IDX_T_SLOW_TEST_CODE ON "SYSDBA"."T_SLOW_TEST" ("CODE");</code></pre>
+<p>写这件事不是为了说工具多靠谱，反过来——<strong>这类「看起来正常、结论反了」的显示，比直接报错危险得多</strong>。报错你会去查，温和的错误结论你会直接拿去用。所以工具给的建议只当参考，<code>CREATE INDEX</code> 只打印不执行，落库前你自己判断：会不会拖慢写入、跟现有索引重不重复。</p>
+<p>还有一种情况工具会故意不给建议：谓词上套了函数（<code>SUBSTR(col,1,4)=...</code>、<code>NVL(...)</code>、<code>col+1</code>）。这时候普通索引天然用不上，硬给一个 <code>CREATE INDEX</code> 是害人，正确动作是改写谓词或建函数索引。所以它会在结论下面补两行说明<strong>为什么这里给不出普通索引建议</strong>——看到「索引建议：无」时别只看那一句，下面那两行的解释才是重点。</p>
+
+<h2>什么时候需要更重的采集</h2>
+<p>只读档 + 完整档解决八成问题。剩下两成，是需要别人在你不在场时也能重建现场的：</p>
+<table>
+<tr><th style="width:24%">场景</th><th>用什么</th></tr>
+<tr><td>快档看不出原因、要交给专家深挖</td><td><code>qopt</code>：8 段完整病历（环境与参数、DDL、统计、预估 vs 实际、10053 判读、复现指引）</td></tr>
+<tr><td>怀疑优化器选错计划，想看它怎么想的</td><td><code>qopt --with-10053</code>，把决策过程翻成人话</td></tr>
+<tr><td>手上有 <code>dmsqlq</code> 导出的 top SQL 清单</td><td><code>ix</code> 批量扫，找漏建索引的</td></tr>
+<tr><td>要留证据、事后复盘</td><td><code>dump</code> 把周边环境一起打包</td></tr>
+</table>
+<p>两个坑先说在前面：</p>
+<p><code>--with-10053</code> 依赖一个 <code>UTL_FILE</code> 目录对象 <code>PLN_TRC</code>，<strong>首次使用要先跑一次 <code>qopt --setup-dir</code> 把它建出来</strong>——这是库级写操作，需要 DBA 权限。不先建的话它只会告警、跳过这一段，不会偷偷替你建。</p>
+<p><code>ix</code> 的输入是 <code>dmsqlq -o</code> 导出的清单格式，<strong>不是随便一个 <code>.sql</code> 文件</strong>。而且它会逐条真实执行，清单里混着 <code>UPDATE</code>/<code>DELETE</code> 的话，先剔掉再喂。</p>
+
+<h2>发出去之前，四样东西建议处理掉</h2>
+<p>采集报告里必然带环境和业务痕迹。对外发之前过一遍：</p>
+<ul>
+<li><strong>具体数据值</strong>（身份证、手机号、金额）→ 替换或删掉</li>
+<li><strong>IP、主机名、实例名</strong> → 建议替换</li>
+<li><strong>账号密码</strong> → 永远不要发</li>
+<li>表名/字段名 → 不影响判断，可保留；涉及敏感业务就换成 <code>T1/T2</code>、<code>C1/C2</code></li>
+</ul>
+<p>这一条不是客套。报告里带着客户内网 IP 和库名发到群里，出事的是你。</p>
+
+<h2>常见问题</h2>
+
+<h3>密码里有 <code>@</code>，DSN 怎么写？</h3>
+<p>不用转义，驱动按最后一个 <code>@</code> 切分账号和主机。含 <code>?</code> 结尾的补一个 <code>?</code>；不要用 <code>%40</code> 这种 URL 编码。</p>
+
+<h3>只有普通账号，还能采吗？</h3>
+<p>能，但会降级：拿到执行计划、表结构、索引情况，拿不到逻辑读和真实耗时。工具会明确写「逻辑读/物理读未取到（需 DBA 类账号）」，不会给你 0 让你误以为是好事。</p>
+
+<h3>表显示「行数未知」怎么办？</h3>
+<p>这张表没收集统计信息。补一条：<code>dmkit stat --table T_RO_TEST</code>。但注意——按前面第二条实测铁律，收统计未必能提速，它只让估算变准。</p>
+
+<h3>报「表或视图不存在」，是不是版本不兼容？</h3>
+<p>先怀疑命令被打残了，尤其是 SQL 写在命令行里、或者用了双引号。先把 SQL 存文件重试一次，再考虑版本。确认视图名的话，查一句就知道本机有什么：</p>
+<pre class="code"><code class="lang-sql">select view_name from all_views where view_name like 'V$SQL%' order by 1;</code></pre>
+
+<h3>Mac 能用吗？</h3>
+<p>没有专门的二进制包。Intel Mac 可以试 Linux 版，不保证跑得起来；Apple 芯片跑不了。替代方案是拿一台 Windows 机器，或者直接在数据库所在的 Linux 服务器上跑。</p>
+
+<h3>能不能离线判读别人发来的文件？</h3>
+<p>能。<code>qopt --trace-file xxx.trc</code> 不连库，直接读 10053 跟踪文件。</p>
+
+<h2>最后</h2>
+<p>这套流程只解决一件事：<strong>把「很慢」变成一份能直接判断的东西，成本压到当事人十分钟内能做完。</strong></p>
+<p>它做不到的也说清楚：不替你判断这条 SQL 业务上该不该存在，不替你决定索引要不要建，也不保证每个结论都对——启发式规则不理解你的业务语义。它给你证据和优先级，判断还是人做。</p>
+<blockquote><p>用着有问题，或者你手上的库它采不出来，<a href="https://gitee.com/jiangchuang/dm-tools/issues">提个 issue</a>，把命令原文、报错原文、<code>dmkit version</code> 的输出贴上就够定位。</p></blockquote>
+</div>
+  <section class="contact" hidden>
+    <div class="contact-body">
+      <h3>卡在某一步了？</h3>
+      <p>先翻 <a href="../interactive/dmkit-slow-query-handbook.html">交互操作版</a>，六节都有实跑输出，多数坑在「SQL 写在命令行里」这一步。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、<code>dmkit version</code> 的输出。不用发完整报告，也不用发库里的数据。</p>
+      <details class="contact-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
