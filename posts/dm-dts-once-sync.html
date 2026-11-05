@@ -224,15 +224,9 @@
 
 <h2>第一步：在图形界面里"画"出任务</h2>
 
-<p><strong>先看一遍动图</strong>（约 24 秒，8 步，画面全部来自真机截图逐帧合成，非示意绘制）。第 ⑦ 步是整件事的关键：复制「源代码」页的 XML，而不是点「完成」。</p>
+<p>下面是整段流程的 7 步，画面全部来自真机截图，非示意绘制。<strong>它会自动往前走</strong>——想停就按「暂停」，想回头按「上一步」，点下面的小格能直接跳到某一步。第 ⑦ 步是整件事的关键：复制「源代码」页的 XML，而不是点「完成」。</p>
 
 <div class="demo">
-  <img class="gif" src="../assets/dts/xml-config-flow.gif" alt="DTS 配置 XML 的 8 步流程动图">
-  <p class="cap">动图循环播放；看不到动画可<a href="../assets/dts/xml-config-flow.gif" target="_blank">单独打开 GIF</a>（2.9 MB）</p>
-</div>
-
-<details>
-<summary>想自己控制节奏？展开逐步播放器（8 步，可暂停 / 上一步 / 下一步）</summary>
 <div class="stepper">
   <img id="stImg" src="../assets/dts/p1-tree.png" alt="当前步骤截图">
   <p class="tt" id="stTitle">① 新建工程，再新建迁移</p>
@@ -241,9 +235,17 @@
     <button id="stPrev">上一步</button>
     <button id="stPlay">暂停</button>
     <button id="stNext">下一步</button>
-    <span class="idx" id="stIdx">1 / 8</span>
+    <span class="idx" id="stIdx">1 / 7</span>
   </div>
   <div class="dots" id="stDots"></div>
+</div>
+</div>
+
+<details>
+<summary>想存一份发给同事？同一套 7 步的动图在这（可右键另存 / 单独打开）</summary>
+<div class="demo">
+  <img class="gif" src="../assets/dts/xml-config-flow.gif" alt="DTS 配置 XML 的 7 步流程动图">
+  <p class="cap">循环播放，不能暂停；也可以<a href="../assets/dts/xml-config-flow.gif" target="_blank">单独打开 GIF</a>（2.5 MB）再右键另存</p>
 </div>
 </details>
 
@@ -403,8 +405,7 @@ su - dmdba -c "cd /home/dmdba/dmdbms/tool &amp;&amp; \
     ['../assets/dts/s3-source-filled.png','④ 同样填好目标库，点「下一步」','示例地址已脱敏为 RFC 5737 文档地址 192.0.2.x'],
     ['../assets/dts/s4-options.png','⑤ 迁移选项保持默认','「迁移任务最大并发数」默认 2，机器内存小别往上调'],
     ['../assets/dts/s5-tables.png','⑥ 勾选模式和要迁的表','先勾源模式，再在「指定对象」页勾业务表，别带上系统统计表'],
-    ['../assets/dts/s6-xml.png','⑦ 关键：切到底部「源代码」，全选复制','存成 sync_job.xml —— 千万别点「完成」，点完就当场执行了'],
-    ['../assets/dts/s7-warning.png','⑧ 另一条路：右键任务「导出配置文件」','前提是任务已保存；没保存会弹「配置文件为空!」，那就走「源代码」页']
+    ['../assets/dts/s6-xml-tab-marked.png','⑦ 关键：切到底部「源代码」，全选复制','存成 sync_job.xml —— 千万别点「完成」，点完就当场执行了']
   ];
   var i=0,timer=null;
   var img=document.getElementById('stImg'),tt=document.getElementById('stTitle'),
