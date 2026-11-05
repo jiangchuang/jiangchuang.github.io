@@ -184,7 +184,7 @@
   <a href="../posts/dmkit-slow-query-collect.html" style="color:#e8732a;text-decoration:none">图文版（可搜索 / 可转载）</a>
   <span style="color:#c8cdd6">|</span>
   <a href="../search.html" style="color:#5b6472;text-decoration:none">站内搜索</a>
-  <span style="color:#a8b0bc;margin-left:auto">适用 dmkit V0.7.43+ · 达梦 DM8</span>
+  <span style="color:#a8b0bc;margin-left:auto">适用 dmkit V0.7.44+ · 达梦 DM8</span>
 </div>
 
 <div class="layout">
@@ -211,7 +211,7 @@
   <h1>dmkit 慢查询采集操作手册</h1>
   <p class="sub">你不用会调优，只要会「把问题拍清楚」。照本手册敲 3 条命令，产出一份信息足够全的采集结果——拿到它的人不用连你的库，就能判断瓶颈在哪。</p>
   <div class="meta">
-    <span>适用 dmkit V0.7.43+</span>
+    <span>适用 dmkit V0.7.44+</span>
     <span>达梦 DM8</span>
     <span>Windows / Linux</span>
     <span>绿色免安装</span>
@@ -267,6 +267,8 @@
         <div class="body">
           <div class="h">采集（一条命令，几秒）——<strong>默认只读，不会执行你的 SQL</strong></div>
           <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe at --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> slow.sql <span class="k">--out</span> at_report.md</pre></div>
+          <div class="h" style="margin-top:12px">表不在当前模式（报 <code class="inl">-2106 Invalid table or view name</code>）？在端口后面带 <code class="inl">?schema=模式名</code></div>
+          <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe at --dsn</span> 'dm://SYSDBA@192.0.2.10:5236?schema=APPUSER' <span class="k">--file</span> slow.sql <span class="k">--out</span> at_report.md</pre></div>
           <div class="h" style="margin-top:12px">看完觉得「还想要实测耗时 / 逻辑读」，再加 <code class="inl">--run</code>（会真实执行一遍）</div>
           <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe at --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> slow.sql <span class="k">--run --out</span> at_report.md</pre></div>
         </div>
@@ -285,8 +287,18 @@
     <div class="laws">
       <div class="law"><div class="i">1</div><div class="tx">SQL 一律走 <code class="inl">--file</code>，别写在命令行里<em>视图名里的 <code class="inl">$</code> 会被 PowerShell 当变量吃掉，报错还看不出原因</em></div></div>
       <div class="law"><div class="i">2</div><div class="tx">DSN 用单引号包住 <code class="inl">'dm://...'</code><em>PowerShell 双引号会展开 <code class="inl">$</code>；cmd 里反过来要用双引号</em></div></div>
-      <div class="law"><div class="i">3</div><div class="tx">尽量要一个 DBA 只读账号<em>普通账号采不到逻辑读，等于少了一半证据</em></div></div>
+      <div class="law"><div class="i">3</div><div class="tx">尽量要一个 DBA 只读账号<em>普通账号查 <code class="inl">V$SQL_HISTORY</code> 会直接报 <code class="inl">-5504</code> 无权限——那不是 SQL 写错，是权限不够（见 §2.4）</em></div></div>
     </div>
+
+    <h3 style="margin-top:20px">两个报错，一眼分清 · 别在这耗时间</h3>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:34%">报错</th><th style="width:33%">真实原因</th><th>怎么改</th></tr>
+      <tr><td><code class="inl">-2106</code> Invalid table or view name</td><td>表在别的模式、SQL 没写前缀；或视图名写错</td><td>端口后带 <code class="inl">?schema=模式名</code>；或 SQL 里写全 <code class="inl">模式名.表名</code></td></tr>
+      <tr><td><code class="inl">-5504</code> No select privilege</td><td>账号没权限</td><td>换 DBA 账号，或让 DBA 授权（§2.4）</td></tr>
+    </table>
+    </div>
+    <p class="ink"><strong><code class="inl">?schema=</code> 只能写在 <code class="inl">--dsn</code> 里</strong>，<code class="inl">at</code> 没有 <code class="inl">--schema</code> 参数（<code class="inl">q</code> 才有）。写成 <code class="inl">at --schema</code> 会报「没有 --schema 这个参数」。</p>
   </div>
 </section>
 
@@ -337,7 +349,7 @@
 
     <p class="ink"><strong>第 3 步 · 验证能跑</strong></p>
     <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe</span> version</pre></div>
-    <p>看到版本号（形如 <code class="inl">dmkit v0.7.42</code>）就成功了。</p>
+    <p>看到版本号（形如 <code class="inl">dmkit v0.7.44</code>）就成功了。</p>
 
     <div class="warn"><span class="tag">不要双击</span>双击 exe 会开一个窗口、跑完立刻关闭，你什么都看不到。<strong>必须在终端里敲命令。</strong></div>
     <div class="warn"><span class="tag">前缀</span>PowerShell 里运行当前目录的程序要加 <code class="inl">.\</code>（<code class="inl">.\dmkit.exe</code>）；<strong>cmd 里不加</strong>。搞混会报「不是内部或外部命令」。</div>
@@ -422,6 +434,28 @@
     </div>
     <p>dmkit 遇到普通账号会<strong>自动降级并如实提示</strong>，不会假装采到了。</p>
     <div class="ok"><span class="tag">建议</span>使用一个「<strong>有 DBA 角色的只读账号</strong>」——既能采全，又不担心误操作。</div>
+
+    <p style="margin-top:18px"><strong>普通账号到底能查什么</strong>（DM8 默认配置实测，仅 RESOURCE 角色）：</p>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:60%">视图</th><th>普通账号</th></tr>
+      <tr><td><code class="inl">V$INSTANCE</code>、<code class="inl">V$VERSION</code>、<code class="inl">V$DATABASE</code></td><td>✅ 可查（默认对 PUBLIC 开放）</td></tr>
+      <tr><td><code class="inl">USER_TABLES</code>、<code class="inl">ALL_TABLES</code></td><td>✅ 可查（只含自己有权限的）</td></tr>
+      <tr><td><code class="inl">V$SESSIONS</code>、<code class="inl">V$SQL_HISTORY</code>、<code class="inl">V$SQL_STAT</code>、<code class="inl">V$SQL_PLAN</code>、<code class="inl">V$TRXWAIT</code>、<code class="inl">V$LOCK</code>、<code class="inl">V$DM_INI</code></td><td>❌ <code class="inl">-5504</code></td></tr>
+      <tr><td><code class="inl">DBA_TABLES</code>、<code class="inl">DBA_USERS</code>、<code class="inl">DBA_INDEXES</code>、<code class="inl">DBA_SEGMENTS</code>、<code class="inl">DBA_DATA_FILES</code></td><td>❌ <code class="inl">-5504</code></td></tr>
+    </table>
+    </div>
+    <p>也就是说：<strong>慢查询采集靠的视图，普通账号一个都查不到。</strong>报 <code class="inl">-5504</code> 不是 SQL 写错，加 <code class="inl">SET SCHEMA</code> 也没用——那是权限，不是模式。</p>
+
+    <p><strong>确实只能用业务账号时</strong>，让 DBA 执行这一条（实测可覆盖上述全部视图，不必给 DBA 角色）：</p>
+    <div class="codebox"><button class="cp">复制</button><pre>GRANT SELECT ANY DICTIONARY TO 你的账号名;</pre></div>
+    <p>用完想收回：</p>
+    <div class="codebox"><button class="cp">复制</button><pre>REVOKE SELECT ANY DICTIONARY FROM 你的账号名;
+<span class="c">-- 撤完核对一眼，确认真的没了</span>
+SELECT GRANTEE, PRIVILEGE FROM DBA_SYS_PRIVS WHERE GRANTEE='你的账号名';</pre></div>
+    <div class="note"><span class="tag">注意</span>授权 / 撤销后要<strong>重新连接</strong>才生效，已有连接仍是旧权限。</div>
+
+    <p style="margin-top:18px"><strong>表不在当前模式</strong>是另一种报错：<code class="inl">-2106 Invalid table or view name</code>，跟权限无关——表确实存在，只是不在登录用户的默认模式里。两种修法：SQL 里写全 <code class="inl">模式名.表名</code>，或在 <code class="inl">--dsn</code> 端口后加 <code class="inl">?schema=模式名</code>（<code class="inl">at</code> 只能走后者，它没有 <code class="inl">--schema</code> 参数）。</p>
   </div>
 </section>
 
@@ -713,7 +747,7 @@
 </section>
 
 <footer>
-  dmkit 慢查询采集操作手册 · 适用 dmkit V0.7.43+ / 达梦 DM8 · 参数以 <code class="inl">dmkit help</code> 为准
+  dmkit 慢查询采集操作手册 · 适用 dmkit V0.7.44+ / 达梦 DM8 · 参数以 <code class="inl">dmkit help</code> 为准
   <div style="margin-top:8px;font-size:13px">
     <a href="../index.html" style="color:#2b5fd9;text-decoration:none">← 返回目录</a>
     &nbsp;·&nbsp;

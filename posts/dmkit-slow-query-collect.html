@@ -169,7 +169,7 @@ select sql_id, sql_plan from v$pln_history where sql_id = '上一步的ID';</cod
 <p><code>dm://SYSDBA@192.0.2.10:5236</code> 这种串本身不带 <code>$</code>，但它经常跟别的东西拼在一起传。统一用单引号，少一类事故。</p>
 
 <h3>第三：尽量用一个 DBA 只读账号</h3>
-<p>普通账号能拿到执行计划和表结构，但<strong>拿不到 <code>V$SQL_HISTORY</code> 里的逻辑读</strong>，等于少了一半证据。工具遇到权限不足会自动降级并如实提示，不会假装采到了——但你最好别让它降级。</p>
+<p>普通账号能拿到执行计划和表结构，但<strong>拿不到 <code>V$SQL_HISTORY</code> 里的逻辑读</strong>，等于少了一半证据。而且不是「少一点」——实测业务账号查 <code>V$SQL_HISTORY</code> 直接报 <code>-5504</code> 无权限，一条都拿不到。工具遇到权限不足会自动降级并如实提示，不会假装采到了——但你最好别让它降级。</p>
 
 <h2>拿到执行计划之后，按这个顺序看</h2>
 <p>计划里能出问题的方向就五个。<strong>顺序有讲究</strong>：先改天花板，再看放大系数，最后才怀疑统计。顺序错了会白折腾几小时——比如先去收统计，结果发现瓶颈是缺索引。</p>
@@ -231,12 +231,26 @@ select sql_id, sql_plan from v$pln_history where sql_id = '上一步的ID';</cod
 
 <h3>只有普通账号，还能采吗？</h3>
 <p>能，但会降级：拿到执行计划、表结构、索引情况，拿不到逻辑读和真实耗时。工具会明确写「逻辑读/物理读未取到（需 DBA 类账号）」，不会给你 0 让你误以为是好事。</p>
+<p>实测（DM8 默认配置，只有 RESOURCE 角色）：普通账号能查的只有 <code>V$INSTANCE</code>、<code>V$VERSION</code>、<code>V$DATABASE</code>，加上自己的 <code>USER_TABLES</code>/<code>ALL_TABLES</code>；<code>V$SESSIONS</code>、<code>V$SQL_HISTORY</code>、<code>V$SQL_STAT</code>、<code>V$SQL_PLAN</code>、<code>DBA_TABLES</code> 全部 <code>-5504</code>。也就是说，<strong>慢查询靠的视图一个都查不到</strong>。</p>
+<p>确实只能用业务账号，让 DBA 加一条就够（不用给 DBA 角色）：</p>
+<pre class="code"><code class="lang-sql">GRANT SELECT ANY DICTIONARY TO 你的账号名;</code></pre>
+<p>用完回收，撤完记得核一眼：</p>
+<pre class="code"><code class="lang-sql">REVOKE SELECT ANY DICTIONARY FROM 你的账号名;
+SELECT GRANTEE, PRIVILEGE FROM DBA_SYS_PRIVS WHERE GRANTEE='你的账号名';</code></pre>
+<p>授权和撤销都要<strong>重新连接</strong>才生效，已有连接还是旧权限。</p>
 
 <h3>表显示「行数未知」怎么办？</h3>
 <p>这张表没收集统计信息。补一条：<code>dmkit stat --table T_RO_TEST</code>。但注意——按前面第二条实测铁律，收统计未必能提速，它只让估算变准。</p>
 
 <h3>报「表或视图不存在」，是不是版本不兼容？</h3>
-<p>先怀疑命令被打残了，尤其是 SQL 写在命令行里、或者用了双引号。先把 SQL 存文件重试一次，再考虑版本。确认视图名的话，查一句就知道本机有什么：</p>
+<p>先看错误码，这两类完全不是一回事，处理方向相反：</p>
+<table>
+<tr><th style="width:24%">错误码</th><th style="width:36%">真实原因</th><th>怎么改</th></tr>
+<tr><td><code>-2106</code> Invalid table or view name</td><td>表在别的模式、SQL 没写前缀；或视图名写错（达梦是 <code>V$SESSIONS</code> 复数，不是 <code>V$SESSION</code>）</td><td>端口后带 <code>?schema=模式名</code>，或 SQL 里写全 <code>模式名.表名</code></td></tr>
+<tr><td><code>-5504</code> No select privilege</td><td>账号没权限，对象其实存在</td><td>换 DBA 账号，或让 DBA 授 <code>SELECT ANY DICTIONARY</code></td></tr>
+</table>
+<p>顺带说一句：<strong>加 <code>SET SCHEMA SYS</code> 解决不了 <code>-5504</code></strong>。达梦的报错里已经写明 <code>[SYS.V$SQL_HISTORY]</code>——它早就找到对象了，是在告诉你「你没权限」。切模式改的是名字往哪儿找，不是能不能看。</p>
+<p>如果确实怀疑命令被打残（SQL 写在命令行、或用了双引号），先把 SQL 存文件重试一次；再查本机有哪些视图：</p>
 <pre class="code"><code class="lang-sql">select view_name from all_views where view_name like 'V$SQL%' order by 1;</code></pre>
 
 <h3>Mac 能用吗？</h3>
