@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 协作的两把钥匙：判断与验证 · 达梦手记</title>
+<meta name="description" content="不是「懂原理 vs 能验证」，是「原理 × 验证」——乘法，不是加法。含判断六步（第 6 步「什么条件下改判」是分水岭）、验证三层、AI 幻觉的四条结构性成因、该学与不该学对照、两周练习法、输出分级 A/B/C，以及一页速记。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){ window.__applyTheme(cur); });
+})();
+</script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-工作方法">工作方法</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-11-06 &nbsp;·&nbsp; 工作方法</div>
+    <h1>AI 协作的两把钥匙：判断与验证</h1>
+    <span class="cat">工作方法</span>
+  </div>
+  <div class="content">
+
+<p>你有没有过这种时候：AI 给了三个方案，看着都挺像样，但你不知道该信哪个。或者它把达梦某个参数的默认值编得一本正经，等你照着敲进去才发现不对。</p>
+<p><b>这篇不涉及达梦的具体命令</b>，讲的是「怎么跟 AI 协作才不吃亏」，案例来自达梦现场的活。</p>
+<blockquote><p>缘起是一句原话：<b>「不是黑盒子，要用好一个东西，起码要知道它的基本原理，这是未来 AI 时代拉开差距的地方。」</b>下面是从这句追问出来的全部结论。</p></blockquote>
+<hr>
+
+<h3>一、先纠一个说法：不是「懂原理 vs 能验证」</h3>
+<p>有个流行说法是「AI 时代拉开差距的不是懂原理，是能验证」。这句话<b>只对了一半</b>，而且把互补关系说成了替代关系。</p>
+<div class="tbl-wrap"><table><thead><tr><th>组合</th><th>结果</th></tr></thead><tbody>
+<tr><td>有原理，没验证</td><td>纸上谈兵——想得对，落不了地</td></tr>
+<tr><td>有验证，没原理</td><td><b>形式主义</b>——验得勤，抓不住要害</td></tr>
+<tr><td>两者都有</td><td>才叫能力</td></tr>
+</tbody></table></div>
+<blockquote><p><b>原理 × 验证 = 能力。乘法，不是加法。任一为零，结果为零。</b></p></blockquote>
+<p>三条推导：</p>
+<ol>
+<li><b>稀缺性位移，不是价值下降</b>。类比计算器：心算没变得不重要（估算、检查按错全靠它），但「算得快」不再是竞争力。原理在 AI 时代也是位移——从「记得住」变成「用得上」。</li>
+<li><b>验证是原理的函数</b>。你知道 <code>%util</code> 恒等式会骗人，才能验出「盘饱和了」是假的；你知道达梦驱动自带 30 秒 socket 超时，才能验出「传 <code>--timeout 3</code> 就生效」是假的。<b>没有原理，连「该验什么」都不知道。</b></li>
+<li><b>验证的前提是有 oracle</b>（一个能告诉你「什么算对」的东西）。通用领域 oracle 现成（文档全、报错能搜到），黑盒验就行；达梦这种冷门领域没有 oracle，<b>原理是你自己造 oracle 的唯一材料</b>。</li>
+</ol>
+<p>一句话：<b>验证能替代「知道答案」，替代不了「知道该怎么验」。</b></p>
+<hr>
+
+<h3>二、失去原理的代价：验证会退化成「形式验证」</h3>
+<div class="tbl-wrap"><table><thead><tr><th style="width:50%">没原理的人验什么</th><th>有原理的人验什么</th></tr></thead><tbody>
+<tr><td><code>V$DM_MAL_INI</code> 里有记录 → 配置对了</td><td>有记录 ≠ 生效，还要看 <code>MON_CONFIRM</code> 与 login 时序</td></tr>
+<tr><td>退出码 0 → 成功</td><td>退出码 0 可能是 <code>timeout 124</code> 被掩盖，要看输出里有没有「迁移完成.」</td></tr>
+</tbody></table></div>
+<p><b>没有原理支撑的验证，会伪装成「我已经验证过了」</b>——这种损失最难发现，因为它看起来最严谨。</p>
+<hr>
+
+<h3>三、判断路径：六步</h3>
+<p>样本是一次真实决策：判断某个知识仓该不该建定时同步。全程可复核。</p>
+<div class="tbl-wrap"><table><thead><tr><th>步</th><th>动作</th><th>一句话</th></tr></thead><tbody>
+<tr><td>1</td><td>先抓名词</td><td>「本地」指哪台机器？</td></tr>
+<tr><td>2</td><td>先看现状</td><td>它是活仓还是快照？查 <code>git log</code></td></tr>
+<tr><td>3</td><td>验前提</td><td>这结论成立需要什么条件？条件在不在？</td></tr>
+<tr><td>4</td><td>找宪法</td><td>这事有无既定规则？规则优先于偏好</td></tr>
+<tr><td>5</td><td>让规则做决定</td><td>结论要能指回条款</td></tr>
+<tr><td>6</td><td><b>给反方留门</b></td><td>什么条件下我会改判？</td></tr>
+</tbody></table></div>
+<blockquote><p><b>第 6 步是分水岭</b>：好的判断不是「我选 A」，是「我知道什么条件下我会改成 B」。<br>审 AI 的用法：它每次说「不该做 X」，你问一句「什么条件下你会改判」。答不上来的，多半在凭偏好说话。</p></blockquote>
+<hr>
+
+<h3>四、验证三层：按场景选，不必层层做满</h3>
+<div class="tbl-wrap"><table><thead><tr><th>层</th><th>问法</th><th>耗时</th><th>用在哪</th></tr></thead><tbody>
+<tr><td><b>L1 来源</b></td><td>「这条能指回哪个源？」手册第几章 / 哪个实测环境</td><td>30 秒</td><td><b>每次都问</b></td></tr>
+<tr><td><b>L2 复现</b></td><td>「给我一条能跑的命令」→ 自己重跑</td><td>2 分钟</td><td>要动手的活</td></tr>
+<tr><td><b>L3 边界</b></td><td>「什么条件下这条会失效？」换版本还成立吗</td><td>5 分钟</td><td>客户交付、方案定稿</td></tr>
+</tbody></table></div>
+<p>判据很简单：<b>不要每件事都做到三层（会累死），也不要永远停在一层（那是赌）。</b></p>
+<hr>
+
+<h3>五、AI 为什么会幻觉：四条结构性成因</h3>
+<ol>
+<li><b>本质是「预测下一个词」，不是「查数据库」</b>。优化的是「看起来像正确答案」，不是「是正确答案」。这两件事在小众领域会分叉。</li>
+<li><b>高频模式压倒低频事实</b>。达梦语料量远小于 MySQL，细节记不牢，模型就用「一般数据库常识」去填坑。这就是报错小本本存在的根本原因。</li>
+<li><b>没有天然的「我不知道」信号</b>。人不确定会犹豫；模型输出里「编一个像样的」往往比「说不知道」更顺畅。所以「未实测」必须刻意标注。</li>
+<li><b>上下文会自我污染</b>。前面聊错的一句，后面会被当成事实继续推。这就是「先查文件」有效的原因——用磁盘上的事实覆盖模型脑子里的印象。</li>
+</ol>
+<blockquote><p><b>三条推论</b>：越冷门越要查（达梦 &gt; MySQL）；越具体越要查（默认值 &gt; 大致原理）；<b>越自信越要查</b>（语气笃定是训练出来的，不是知识带来的）。</p></blockquote>
+<hr>
+
+<h3>六、哪些该学，哪些不该学</h3>
+<div class="tbl-wrap"><table><thead><tr><th style="width:50%">值得学</th><th>不该学（AI 特有，人硬学反受害）</th></tr></thead><tbody>
+<tr>
+<td>先抓名词 / 先看现状 / 找权威源<br>事实·判断·未实测分开说<br>能跑的不猜 / 失败先认 / 给下一条命令</td>
+<td>并行读一堆文件（人读完记不住，反而碎片化）<br>穷举所有方案再筛（人时间只够深挖 1 种）<br>快速产出再迭代（人的沉没成本高）<br>什么都要留痕（变成表演性勤奋）</td>
+</tr>
+</tbody></table></div>
+<p>差别在哪？<b>AI 的很多优势来自「成本低」，而你最大的约束恰恰是成本。</b></p>
+<hr>
+
+<h3>七、两周练习：三条，不额外花时间</h3>
+<ol>
+<li>每次 AI 给领域结论，挑一条问「<b>指回哪个源</b>」——练 L1。</li>
+<li>每周挑一个判断，问「<b>什么条件下你会改判</b>」——练第 6 步。</li>
+<li>自己做决定时，先写一句「<b>我的依据是 ___</b>」——把隐性判断显性化。</li>
+</ol>
+<p>最难坚持的是第 3 条：前两条是「审别人」，第 3 条是「审自己」。</p>
+<hr>
+
+<h3>八、输出分级：不每轮都贴执行计划树</h3>
+<p>「每次回答都加一棵计划树」成本收益不对等，会退化成表演。改成按级别触发：</p>
+<div class="tbl-wrap"><table><thead><tr><th>级别</th><th>触发</th><th>做法</th></tr></thead><tbody>
+<tr><td><b>A 必带</b></td><td>不可逆操作 / 跨机交付 / 反直觉结论 / 客户交付</td><td>末尾三行「依据 · 实测 · 排除」</td></tr>
+<tr><td><b>B 可选</b></td><td>分析、调研、方案</td><td>一行来源</td></tr>
+<tr><td><b>C 不带</b></td><td>事实问答、查询</td><td>直接给答案</td></tr>
+</tbody></table></div>
+<pre class="code"><code class="lang-text">—— 依据：SCHEMA.md §1 三层职责｜实测：git log 仅 1 条提交｜排除：本机无源目录</code></pre>
+<p>为什么不是树：<b>树记流水账，锚点只记「改变了结论的三件事」</b>，信息密度更高。它的价值也不是审计，是<b>教学</b>——看多了会长出模式识别。</p>
+<hr>
+
+<h3>九、一页速记</h3>
+<div class="tbl-wrap"><table><thead><tr><th style="width:50%">判断六步</th><th>验证三层 / 幻觉三查</th></tr></thead><tbody>
+<tr>
+<td>① 抓名词 ② 看现状 ③ 验前提<br>④ 找宪法 ⑤ 规则做决定 ⑥ 给反方留门</td>
+<td>L1 来源 · L2 复现 · L3 边界<br>越冷门 / 越具体 / 越自信 → 越要查</td>
+</tr>
+</tbody></table></div>
+<hr>
+
+<h3>十、常见问题</h3>
+<p><strong>Q1：精力全给验证，原理会荒废吗？</strong></p>
+<p>会，而且是非线性的：验证能力到 80 分就够用（边际收益递减），原理是复利资产（一个原理能解释一百个现象）。配比建议：<b>日常 90% 验证 + 10% 追原理</b>，但那 10% 决定上限。而且原理不要靠「系统学习」，靠<b>每次验证失败后往回追一层</b>——有动机、有边界、有验收。</p>
+<p><strong>Q2：格式能解决信任吗？</strong></p>
+<p>不能。真正让「凭什么信你」成立的只有三条：<b>可复现</b>（给的命令能重跑出同样结果）、<b>可证伪</b>（测不了就写「未实测」）、<b>认账</b>（错了先认）。锚点只是这三条的索引。</p>
+<p><strong>Q3：为什么这篇反复强调达梦？</strong></p>
+<p>因为它是「没有现成 oracle」的典型场景。在通用编程里，黑盒验证能替代大半原理；在达梦里不行——你得自己造判据，造判据要原理。</p>
+<p><strong>Q4：这套是定论吗？</strong></p>
+<p>不是。第一版曾写「差距不在懂原理，在能验证」，被三层追问戳破后才改成乘法模型。文里「四种难的占比」「练习法」都是经验估计，没有统计。<b>你按它试几次，哪条不成立就回来告诉我。</b></p>
+<hr>
+<p style="color:var(--text-2);font-size:14px">姊妹篇：<a href="how-to-decompose-hard-problems.html">《把「难」拆开：四种难，四种解法》</a> —— 这篇管「信不信」，那篇管「从哪下手」。</p>
+
+  </div>
+  <section class="contact" hidden>
+  <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <div class="contact-qr">
+        <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+        <span>扫了备注「达梦」<br>不备注我也加</span>
+      </div>
+    </details>
+  <div class="contact-body">
+    <h3>有不同看法？</h3>
+    <p>这篇是方法，不是标准答案。你要是按它试过、发现哪条不成立，把<b>具体那件事</b>和<b>你当时怎么处理的</b>说一下就行。</p>
+    <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p class="contact-fine">想让讨论别人也能看到？在 <a href="https://gitee.com/jiangchuang/blog/issues" target="_blank" rel="noopener">Gitee 仓库</a> 提 issue，回复公开可查。</p>
+  </div>
+</section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="how-to-decompose-hard-problems.html">把「难」拆开：四种难，四种解法 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+</body>
+</html>
