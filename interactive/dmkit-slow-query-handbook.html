@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dmkit 慢查询采集操作手册 · 交互版 · 达梦手记</title>
+<meta name="description" content="手上有一条慢 SQL，但不知道瓶颈在哪：用 dmkit 按「只读档 / 完整档」两档把现场拍清楚——执行计划、涉及表索引、索引建议一条命令出，需要实测耗时逻辑读再加 --run。含安装、连库、找慢 SQL、三档采集、故障对照与命令速查卡，20 个命令块可一键复制。">
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --ink: #1f2430;
+    --sub: #5b6472;
+    --line: #e3e6ec;
+    --brand: #2b5fd9;
+    --brand-soft: #eef3ff;
+    --accent: #e8732a;
+    --accent-soft: #fff3ea;
+    --ok: #1a9e6b;
+    --ok-soft: #eaf7f1;
+    --warn: #d9a514;
+    --warn-soft: #fffbec;
+    --danger: #d94b3a;
+    --danger-soft: #fdeeec;
+    --code-bg: #1e2430;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.65;
+    padding: 32px 20px 80px;
+  }
+  .layout { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 210px 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } nav.toc { display: none; } }
+
+  /* ── 侧栏目录 ── */
+  nav.toc {
+    position: sticky; top: 24px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 16px 12px; font-size: 13px;
+  }
+  nav.toc .t { font-weight: 700; color: var(--sub); font-size: 11px; letter-spacing: 1px; margin: 0 6px 10px; }
+  nav.toc a {
+    display: block; padding: 6px 10px; border-radius: 8px; color: var(--ink);
+    text-decoration: none; margin-bottom: 2px; transition: .15s;
+  }
+  nav.toc a:hover { background: var(--brand-soft); color: var(--brand); }
+  nav.toc a.hot { color: var(--accent); font-weight: 600; }
+
+  /* ── 头部 ── */
+  header {
+    background: linear-gradient(135deg, #1d3f8f 0%, #2b5fd9 60%, #3f6fe0 100%);
+    color: #fff; border-radius: 16px; padding: 30px 32px; margin-bottom: 24px;
+  }
+  header .kicker { font-size: 12px; letter-spacing: 2px; opacity: .75; text-transform: uppercase; }
+  header h1 { font-size: 25px; font-weight: 700; letter-spacing: .5px; margin-top: 6px; }
+  header p.sub { margin-top: 10px; font-size: 14px; opacity: .93; max-width: 680px; }
+  /* 全局 p 的 color 会盖掉 header 的白色继承，蓝底上会变成灰蓝色、几乎看不清 */
+  header p { color: #fff; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .meta span { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22); font-size: 12px; padding: 3px 10px; border-radius: 20px; }
+
+  /* ── 区块 ── */
+  section { margin-bottom: 22px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; }
+  h2 { font-size: 18px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+  h2 .num {
+    background: var(--brand); color: #fff; width: 27px; height: 27px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
+  }
+  h2 .num.alt { background: var(--accent); }
+  h3 { font-size: 14.5px; font-weight: 700; margin: 18px 0 8px; color: var(--ink); }
+  h3:first-of-type { margin-top: 4px; }
+  p { font-size: 14px; color: var(--sub); margin-bottom: 10px; }
+  p.ink { color: var(--ink); }
+  strong { color: var(--ink); font-weight: 600; }
+  ul, ol { margin: 8px 0 10px 20px; font-size: 14px; color: var(--sub); }
+  li { margin-bottom: 5px; }
+  a { color: var(--brand); }
+
+  /* ── 快速开始 ── */
+  .quick { background: #fff; border: 2px solid var(--accent); border-radius: 16px; padding: 24px 26px; }
+  .quick h2 { color: var(--accent); }
+  .quick h2 .num { background: var(--accent); }
+  .steps { counter-reset: s; margin-top: 6px; }
+  .step {
+    display: grid; grid-template-columns: 30px 1fr; gap: 12px; padding: 12px 0;
+    border-bottom: 1px dashed var(--line);
+  }
+  .step:last-child { border-bottom: none; padding-bottom: 0; }
+  .step::before {
+    counter-increment: s; content: counter(s);
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft);
+    color: var(--accent); font-weight: 700; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step .body { min-width: 0; }
+  .step .body .h { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+
+  /* ── 代码块 ── */
+  .codebox { position: relative; margin: 8px 0 12px; }
+  .codebox pre {
+    background: var(--code-bg); color: #e6edf3; border-radius: 10px;
+    padding: 14px 16px; font-size: 12.8px; line-height: 1.7; overflow-x: auto;
+    font-family: "Cascadia Code", "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
+  .codebox .cp {
+    position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,.12);
+    color: #c9d4e0; border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
+    font-size: 11px; padding: 3px 9px; cursor: pointer; transition: .15s; font-family: inherit;
+  }
+  .codebox .cp:hover { background: rgba(255,255,255,.24); color: #fff; }
+  .codebox .cp.done { background: var(--ok); border-color: var(--ok); color: #fff; }
+  pre .c { color: #7d8b9c; }      /* 注释 */
+  pre .k { color: #79c0ff; }      /* 命令 */
+  code.inl {
+    background: #eceff4; color: #b1382a; padding: 1.5px 6px; border-radius: 5px;
+    font-size: 12.6px; font-family: "Cascadia Code", Consolas, monospace;
+  }
+
+  /* ── 提示块 ── */
+  .note { border-left: 3px solid var(--brand); background: var(--brand-soft); padding: 11px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 13.2px; color: var(--ink); }
+  .warn { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 11px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 13.2px; color: var(--ink); }
+  .danger { border-left: 3px solid var(--danger); background: var(--danger-soft); padding: 11px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 13.2px; color: var(--ink); }
+  .ok { border-left: 3px solid var(--ok); background: var(--ok-soft); padding: 11px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 13.2px; color: var(--ink); }
+  .note .tag, .warn .tag, .danger .tag, .ok .tag { font-weight: 700; margin-right: 4px; }
+
+  /* ── 表格 ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13.2px; margin: 10px 0 14px; }
+  th { background: #f0f3f8; color: var(--ink); font-weight: 600; text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--line); color: var(--sub); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td strong { color: var(--ink); }
+  .tbl-wrap { overflow-x: auto; }
+  /* 档位对照表的前两列（档位/命令）不该折行：「只读档（默/认）」这种断法读起来很糟 */
+  #boundary table th:nth-child(-n+2), #boundary table td:nth-child(-n+2) { white-space: nowrap; }
+
+  /* ── 档位卡 ── */
+  .tiers { display: grid; gap: 12px; margin-top: 10px; }
+  .tier { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: #fbfcfe; }
+  .tier.top { border-color: var(--accent); background: var(--accent-soft); }
+  .tier .th { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .tier .th .name { font-weight: 700; font-size: 14.5px; color: var(--ink); }
+  .tier .th .pill { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .tier.top .th .pill { background: var(--accent); color: #fff; }
+  .tier .desc { font-size: 13px; color: var(--sub); }
+
+  /* ── 铁律 ── */
+  .laws { display: grid; gap: 10px; margin-top: 10px; }
+  .law { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; }
+  .law .i { width: 22px; height: 22px; border-radius: 6px; background: var(--danger-soft); color: var(--danger); font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  .law .tx { font-size: 13.2px; color: var(--ink); }
+  .law .tx em { font-style: normal; color: var(--sub); display: block; font-size: 12.5px; margin-top: 2px; }
+
+  /* ── 自检清单 ── */
+  .check { list-style: none; margin: 10px 0 0; }
+  .check li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; font-size: 13.5px; color: var(--ink); }
+  .check li input { margin-top: 4px; width: 15px; height: 15px; accent-color: var(--brand); flex-shrink: 0; }
+
+  .prompt {
+    background: #f7f9fc; border: 1px dashed var(--brand); border-radius: 10px;
+    padding: 14px 16px; font-size: 13px; color: var(--ink); white-space: pre-wrap;
+    font-family: "Cascadia Code", Consolas, monospace; line-height: 1.75;
+  }
+
+  footer { text-align: center; font-size: 12px; color: #97a0ad; margin-top: 30px; }
+
+  /* ── 下载条 ── */
+  .dl-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 10px; }
+  .dl-row a {
+    flex: 1 1 0; min-width: 140px; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 16px; border-radius: 10px; font-weight: 700; font-size: 15px;
+    background: var(--brand); color: #fff; border: 1px solid var(--brand);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .dl-ic { width: 17px; height: 17px; flex: none; }
+  .dl-row a:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(43,95,217,.25); }
+  .dl-row a.alt { background: #fff; color: var(--brand); }
+  .dl-note { font-size: 13px; color: var(--sub); line-height: 1.9; }
+  .dl-note a { color: var(--brand); }
+  .dl-more { font-size: 13px; color: var(--sub); line-height: 1.8; margin-top: 8px; }
+  .dl-more a { color: var(--brand); text-decoration: none; font-weight: 600; white-space: nowrap; }
+  .dl-print { display: none; font-size: 13px; color: var(--sub); margin-top: 8px; }
+  @media (max-width: 640px) { .dl-row a { flex: 1 1 100%; } }
+
+  /* ── 打印 ── */
+  @media print {
+    body { background: #fff; padding: 0; max-width: none; }
+    .layout { display: block; max-width: none; }
+    nav.toc, .codebox .cp, .sitebar, .dl-row { display: none !important; }
+    .dl-print { display: block !important; }
+    .card, .quick, .tier { break-inside: avoid; }
+    header { background: #2b5fd9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .codebox pre { background: #f4f6f9; color: #1f2430; border: 1px solid #ddd; }
+    pre .c { color: #8a94a3; } pre .k { color: #1d4ed8; }
+  }
+</style>
+</head>
+<body>
+<div class="sitebar" style="max-width:1180px;margin:0 auto 16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px;line-height:1.6">
+  <a href="../index.html" style="color:#2b5fd9;text-decoration:none;font-weight:600">← 达梦手记</a>
+  <span style="color:#c8cdd6">|</span>
+  <a href="../posts/dmkit-slow-query-collect.html" style="color:#e8732a;text-decoration:none">图文版（可搜索 / 可转载）</a>
+  <span style="color:#c8cdd6">|</span>
+  <a href="../search.html" style="color:#5b6472;text-decoration:none">站内搜索</a>
+  <span style="color:#a8b0bc;margin-left:auto">适用 dmkit V0.7.45+ · 达梦 DM8</span>
+</div>
+
+<div class="layout">
+
+<nav class="toc">
+  <div class="t">目 录</div>
+  <a href="#download" class="hot">⬇ 安装 dmkit</a>
+  <a href="#boundary" class="hot">⚠️ 使用前必读</a>
+  <a href="#quick" class="hot">⚡ 两分钟版</a>
+  <a href="#why">0 · 为什么需要</a>
+  <a href="#install">1 · 安装</a>
+  <a href="#connect">2 · 连上数据库</a>
+  <a href="#findsql">3 · 找到慢 SQL</a>
+  <a href="#collect">4 · 采集</a>
+  <a href="#toai">5 · 送出结果</a>
+  <a href="#trouble">6 · 故障对照</a>
+  <a href="#cheat">7 · 速查卡</a>
+  <a href="#appendix">附录 · 判读五方向</a>
+</nav>
+
+<div>
+
+<header>
+  <div class="kicker">DM8 · Slow Query Field Kit</div>
+  <h1>dmkit 慢查询采集操作手册</h1>
+  <p class="sub">你不用会调优，只要会「把问题拍清楚」。照本手册敲 3 条命令，产出一份信息足够全的采集结果——拿到它的人不用连你的库，就能判断瓶颈在哪。</p>
+  <div class="meta">
+    <span>适用 dmkit V0.7.45+</span>
+    <span>达梦 DM8</span>
+    <span>Windows / Linux</span>
+    <span>绿色免安装</span>
+  </div>
+</header>
+
+<!-- ══════ 下载 ══════ -->
+<section id="download">
+  <div class="card" style="border-left:3px solid var(--brand)">
+    <h2><span class="num">↓</span>本手册需要 dmkit</h2>
+    <p style="color:var(--sub);margin-top:4px">单文件 · 免安装 · 零依赖，解压就能跑，不需要管理员权限。按你机器的平台选一个包。</p>
+    <div class="dl-row">
+      <a href="/dl/dmkit/dmkit-windows-x64.zip"><svg class="dl-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Windows x64</a>
+      <a class="alt" href="/dl/dmkit/dmkit-linux-x64.zip"><svg class="dl-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Linux x64</a>
+      <a class="alt" href="/dl/dmkit/dmkit-linux-arm64.zip"><svg class="dl-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>Linux arm64</a>
+    </div>
+    <div class="dl-note">
+      当前 <b>V0.7.45</b>　Windows 包 11 MB / Linux 包 5.5 MB　·　
+      <a href="/dl/dmkit/CHECKSUMS.txt">SHA256 校验值</a>　·　
+      <a href="https://gitee.com/jiangchuang/dm-tools">历史版本与问题反馈</a>
+    </div>
+    <div class="dl-more">
+      dmkit 是达梦运维诊断工具箱，共 23 个命令（巡检体检 / 锁与卡顿 / 执行计划 / 现场取证 / 网络与集群 / 日常速查）。
+      <strong>本手册只讲慢查询采集这一件。</strong>
+      <a href="/dl/">看全部能力与下载 →</a>
+    </div>
+    <p class="dl-print">下载地址：www.jiangchuang.top/dl/　（打开后选 dmkit 对应平台）</p>
+  </div>
+</section>
+
+<!-- ══════ 使用前必读 ══════ -->
+<section id="boundary">
+  <div class="card" style="border:2px solid #e0b04a">
+    <h2><span class="num" style="background:var(--warn)">!</span>使用前必读 · 三条边界</h2>
+
+    <h3 style="margin-top:6px">1 · 采集分两个档位，默认是「不执行 SQL」的那一档</h3>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>档位</th><th>命令</th><th>会不会执行你的 SQL</th><th>拿到什么</th><th>少了什么</th></tr>
+      <tr><td><strong>只读档</strong>（默认）</td><td><code class="inl">at --file slow.sql</code></td><td><strong>不执行</strong></td><td>执行计划、涉及表、关键列索引、索引建议</td><td>实测耗时、逻辑读、真实扫描行数</td></tr>
+      <tr><td><strong>完整档</strong></td><td><code class="inl">at --file slow.sql --run</code></td><td>执行一遍</td><td>上面全部 + 实测耗时/逻辑读/物理读</td><td>无，但会付出真实耗时</td></tr>
+    </table>
+    </div>
+    <p>先在只读档跑，觉得信息不够再决定要不要 <code class="inl">--run</code>。<strong>只读档对生产库是安全的</strong>——它只让优化器给个计划（<code class="inl">EXPLAIN</code>），不取数据、不锁行、不触发函数副作用。</p>
+    <p><code class="inl">qopt</code> 同理：不带 <code class="inl">--run</code> 就是只读档，<code class="inl">--run</code> / <code class="inl">--with-10053</code> 才执行。<code class="inl">ix</code> 会逐条执行，属于完整档。</p>
+    <div class="danger"><strong>完整档会真实执行，跑之前先确认业务上能接受这段时间。</strong>这四类语句尤其要小心：大表全扫、<code class="inl">SELECT ... FOR UPDATE</code>（持锁）、含自定义函数（可能有副作用）、跨表 JOIN 大结果集。</div>
+
+    <h3>2 · 工具的建议是参考，不是结论</h3>
+    <p>索引建议按「全表扫描行数阈值」这类启发式规则给出，不理解业务语义。<code class="inl">CREATE INDEX</code> 语句<strong>只打印、不执行</strong>，落库前请人工判断：这个索引会不会影响写入性能、是否与既有索引重复。</p>
+
+    <h3>3 · 视图名可能随版本变化</h3>
+    <p>本手册的命令在 <strong>DM8</strong> 上验证。不同小版本的动态视图列名可能有差异，遇到「表或视图不存在」时，以本机实际视图为准：</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">SELECT</span> VIEW_NAME <span class="k">FROM</span> ALL_VIEWS <span class="k">WHERE</span> VIEW_NAME <span class="k">LIKE</span> 'V$SQL%' <span class="k">ORDER BY</span> 1;</pre></div>
+  </div>
+</section>
+
+<!-- ══════ 两分钟版 ══════ -->
+<section id="quick">
+  <div class="quick">
+    <h2><span class="num">⚡</span>两分钟版 · 赶时间只看这一块</h2>
+    <p class="ink"><strong>准备</strong>：解压到 <code class="inl">C:\dmkit</code>，在该目录打开 PowerShell，把慢 SQL 存成 <code class="inl">slow.sql</code>（UTF-8）。</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="body">
+          <div class="h">验证工具能跑</div>
+          <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe version</span></pre></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="body">
+          <div class="h">验证能连上库（回车后输密码，屏幕不显示是正常的）</div>
+          <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe q --ping --dsn</span> 'dm://SYSDBA@192.0.2.10:5236'</pre></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="body">
+          <div class="h">采集（一条命令，几秒）——<strong>默认只读，不会执行你的 SQL</strong></div>
+          <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe at --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> slow.sql <span class="k">--out</span> at_report.md</pre></div>
+          <div class="h" style="margin-top:12px">表不在当前模式（报 <code class="inl">-2106 Invalid table or view name</code>）？在端口后面带 <code class="inl">?schema=模式名</code></div>
+          <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe at --dsn</span> 'dm://SYSDBA@192.0.2.10:5236?schema=APPUSER' <span class="k">--file</span> slow.sql <span class="k">--out</span> at_report.md</pre></div>
+          <div class="h" style="margin-top:12px">看完觉得「还想要实测耗时 / 逻辑读」，再加 <code class="inl">--run</code>（会真实执行一遍）</div>
+          <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe at --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> slow.sql <span class="k">--run --out</span> at_report.md</pre></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="body">
+          <div class="h">把 <code class="inl">at_report.md</code> 发出去时，附上下面的说明</div>
+          <div class="prompt">【现象】这条 SQL 平时 X 秒，现在 Y 秒；（一直慢 / 最近突然变慢）
+【表规模】约 N 万行
+【想要】请判断瓶颈在第几步，给可执行动作和预期收益</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:20px">三条铁律 · 不遵守会白忙</h3>
+    <div class="laws">
+      <div class="law"><div class="i">1</div><div class="tx">SQL 一律走 <code class="inl">--file</code>，别写在命令行里<em>视图名里的 <code class="inl">$</code> 会被 PowerShell 当变量吃掉，报错还看不出原因</em></div></div>
+      <div class="law"><div class="i">2</div><div class="tx">DSN 用单引号包住 <code class="inl">'dm://...'</code><em>PowerShell 双引号会展开 <code class="inl">$</code>；cmd 里反过来要用双引号</em></div></div>
+      <div class="law"><div class="i">3</div><div class="tx">尽量要一个 DBA 只读账号<em>普通账号查 <code class="inl">V$SQL_HISTORY</code> 会直接报 <code class="inl">-5504</code> 无权限——那不是 SQL 写错，是权限不够（见 §2.4）</em></div></div>
+    </div>
+
+    <h3 style="margin-top:20px">两个报错，一眼分清 · 别在这耗时间</h3>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:34%">报错</th><th style="width:33%">真实原因</th><th>怎么改</th></tr>
+      <tr><td><code class="inl">-2106</code> Invalid table or view name</td><td>表在别的模式、SQL 没写前缀；或视图名写错</td><td>端口后带 <code class="inl">?schema=模式名</code>；或 SQL 里写全 <code class="inl">模式名.表名</code></td></tr>
+      <tr><td><code class="inl">-5504</code> No select privilege</td><td>账号没权限</td><td>换 DBA 账号，或让 DBA 授权（§2.4）</td></tr>
+    </table>
+    </div>
+    <p class="ink"><strong><code class="inl">?schema=</code> 只能写在 <code class="inl">--dsn</code> 里</strong>，<code class="inl">at</code> 没有 <code class="inl">--schema</code> 参数（<code class="inl">q</code> 才有）。写成 <code class="inl">at --schema</code> 会报「没有 --schema 这个参数」。</p>
+  </div>
+</section>
+
+<!-- ══════ 0 为什么 ══════ -->
+<section id="why">
+  <div class="card">
+    <h2><span class="num">0</span>先明确：为什么需要这个手册</h2>
+    <p>慢查询定位不了，通常不是技术不够，是<strong>信息不够</strong>。</p>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:52%">你手上有的</th><th>别人能判断出</th></tr>
+      <tr><td>「有个查询很慢」</td><td>什么也判断不了</td></tr>
+      <tr><td>「这条 SQL 很慢」</td><td>能猜，但猜不准</td></tr>
+      <tr><td><strong>SQL 全文 + 执行计划 + 实测指标 + 表规模</strong></td><td><strong>能指出瓶颈在第几步、该改什么</strong></td></tr>
+    </table>
+    </div>
+    <p>所以这份手册唯一的目标：<strong>用最低的操作成本，把这四样凑齐</strong>。</p>
+    <div class="note"><span class="tag">注意</span>「表有多大」常被忽略，但它直接决定该不该建索引——同样的 SQL，1 万行全扫是正常的，1 亿行全扫就是灾难。</div>
+  </div>
+</section>
+
+<!-- ══════ 1 安装 ══════ -->
+<section id="install">
+  <div class="card">
+    <h2><span class="num">1</span>安装 · 做一次，约 5 分钟</h2>
+
+    <h3>1.1 你拿到的文件</h3>
+    <p class="ink">按平台分三个包，<strong>只下你需要的那个</strong>（下载按钮见页首）：</p>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>平台</th><th>下载文件</th><th>大小</th></tr>
+      <tr><td><strong>Windows x64</strong></td><td><code class="inl">dmkit-windows-x64.zip</code></td><td>约 11 MB</td></tr>
+      <tr><td>Linux x86_64（Intel / AMD 服务器）</td><td><code class="inl">dmkit-linux-x64.zip</code></td><td>约 5.5 MB</td></tr>
+      <tr><td>Linux ARM64（鲲鹏 / 飞腾 / 倚天）</td><td><code class="inl">dmkit-linux-arm64.zip</code></td><td>约 5 MB</td></tr>
+    </table>
+    </div>
+    <p>每个包里三个文件：<code class="inl">dmkit.exe</code>（Linux 包为 <code class="inl">dmkit</code>）、<code class="inl">README.md</code>（完整说明，<strong>遇到问题先查它</strong>）、<code class="inl">CHANGELOG.md</code>（版本变更记录）。</p>
+    <div class="ok"><span class="tag">单文件</span>绿色免安装：不用装 Java、不用装 .NET、不用装达梦客户端、不写注册表。解压就能用。</div>
+    <div class="warn"><span class="tag">macOS</span>没有专门的二进制包。Intel Mac 可试 <code class="inl">dmkit-linux-x64.zip</code>，但不保证能跑；Apple 芯片跑不了 Linux 包。替代方案：直接在数据库服务器上跑 / 用一台 Windows 机器 / 开 Linux 虚拟机。</div>
+
+    <h3>1.2 Windows 安装</h3>
+    <p class="ink"><strong>第 1 步 · 解压到「干净」的目录</strong>，推荐 <code class="inl">C:\dmkit</code>。</p>
+    <div class="danger"><span class="tag">第一大坑</span><strong>路径里不要有中文、不要有空格。</strong><code class="inl">C:\Users\张三\桌面\新建文件夹 (2)\</code> 这种路径会引发各种「找不到文件」，而且报错信息很难懂。</div>
+
+    <p class="ink"><strong>第 2 步 · 打开终端并进入该目录</strong>：在 <code class="inl">C:\dmkit</code> 空白处 <strong>Shift + 右键</strong> →「在此处打开 PowerShell 窗口」；或 <code class="inl">Win + X</code> → 终端。</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">cd</span> C:\dmkit</pre></div>
+
+    <p class="ink"><strong>第 3 步 · 验证能跑</strong></p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">.\dmkit.exe</span> version</pre></div>
+    <p>看到版本号（形如 <code class="inl">dmkit v0.7.45</code>）就成功了。</p>
+
+    <div class="warn"><span class="tag">不要双击</span>双击 exe 会开一个窗口、跑完立刻关闭，你什么都看不到。<strong>必须在终端里敲命令。</strong></div>
+    <div class="warn"><span class="tag">前缀</span>PowerShell 里运行当前目录的程序要加 <code class="inl">.\</code>（<code class="inl">.\dmkit.exe</code>）；<strong>cmd 里不加</strong>。搞混会报「不是内部或外部命令」。</div>
+    <div class="warn"><span class="tag">乱码</span>中文显示乱码时，先执行 <code class="inl">chcp 65001</code> 切到 UTF-8，或直接加 <code class="inl">--out</code> 把结果写进文件再看。</div>
+
+    <h3>1.3 Linux 安装</h3>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="c"># 1) 解压到固定位置</span>
+<span class="k">mkdir</span> -p ~/dmkit && <span class="k">cd</span> ~/dmkit
+<span class="k">unzip</span> dmkit-linux-x64.zip      <span class="c"># ARM 机器换成 dmkit-linux-arm64.zip</span>
+<span class="k">chmod</span> +x dmkit
+
+<span class="c"># 2) 装进 PATH（可选，装完任意目录都能用）</span>
+<span class="k">./dmkit</span> install</pre></div>
+    <p><code class="inl">dmkit install</code> 会做三件事：拷二进制到 <code class="inl">~/.local/bin</code>、补 PATH、装 Tab 补全。幂等，重复执行安全；升级后重跑一次就同步。</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">hash</span> -r && <span class="k">dmkit</span> version</pre></div>
+
+    <h3>1.4 校验下载（跨网传输后建议做）</h3>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="c"># Windows PowerShell</span>
+<span class="k">Get-FileHash</span> .\dmkit-windows-x64.zip -Algorithm SHA256
+
+<span class="c"># Linux</span>
+<span class="k">sha256sum</span> dmkit-linux-x64.zip</pre></div>
+    <p>结果和 <code class="inl">CHECKSUMS.txt</code>（页首下载区有链接）里对应那行比对，一致就说明包没在传输中损坏。</p>
+  </div>
+</section>
+
+<!-- ══════ 2 连库 ══════ -->
+<section id="connect">
+  <div class="card">
+    <h2><span class="num">2</span>连上数据库 · 关键一步</h2>
+
+    <h3>2.1 先凑齐 4 个信息</h3>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>项</th><th>举例</th><th>从哪来</th></tr>
+      <tr><td>主机 IP</td><td><code class="inl">192.0.2.10</code></td><td>由 DBA 或运维提供</td></tr>
+      <tr><td>端口</td><td><code class="inl">5236</code>（达梦默认）</td><td>同上</td></tr>
+      <tr><td>账号</td><td><code class="inl">SYSDBA</code></td><td>同上</td></tr>
+      <tr><td>密码</td><td>——</td><td>同上</td></tr>
+    </table>
+    </div>
+    <p>本机安装的库，IP 填 <code class="inl">127.0.0.1</code> 即可。</p>
+
+    <h3>2.2 一条命令验证连通</h3>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">dmkit q --ping --dsn</span> 'dm://SYSDBA@192.0.2.10:5236'</pre></div>
+    <ul>
+      <li><strong>DSN 用单引号包起来</strong>——PowerShell 里必须这样（双引号会展开 <code class="inl">$</code>）。</li>
+      <li><strong>不写密码</strong>。回车后提示输入，屏幕不显示字符——这是<strong>故意的</strong>，不是卡住。好处：密码不进命令历史，也不会被 <code class="inl">ps</code> 看到。</li>
+      <li>用 <strong>cmd（黑窗口）</strong> 的话，cmd 不认单引号，要改成双引号；cmd 里 <code class="inl">$</code> 没有特殊含义。</li>
+    </ul>
+    <div class="note"><span class="tag">分辨终端</span>提示符以 <code class="inl">PS C:\&gt;</code> 开头 = PowerShell；以 <code class="inl">C:\&gt;</code> 开头 = cmd。<strong>图省事就用 PowerShell</strong>，本手册全部按 PowerShell 写。</div>
+
+    <p>密码确实要写进命令时（比如脚本），整个 DSN 用单引号包住：</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">dmkit q --ping --dsn</span> 'dm://SYSDBA:你的密码@192.0.2.10:5236'</pre></div>
+    <div class="warn"><span class="tag">密码特殊字符</span>
+      含 <code class="inl">@</code> 不用转义（驱动按最后一个 <code class="inl">@</code> 切分账号和主机）；
+      含 <code class="inl">?</code> 要在 DSN 末尾再补一个 <code class="inl">?</code>，否则报 9001；
+      <strong>不要用 <code class="inl">%40</code> 这类 URL 编码</strong>——驱动不解码，会当成密码的字面字符，直接认证失败。
+    </div>
+    <div class="warn"><span class="tag">脚本场景</span>「省略密码」只在<strong>交互终端</strong>有效。批处理脚本或用管道跑（<code class="inl">dmkit ... | tee log.txt</code>）时会被拒绝并明确提示——这时把密码写进 DSN，或加 <code class="inl">--password-stdin</code>。</div>
+
+    <h3>2.3 连不上怎么办</h3>
+    <p><code class="inl">--ping</code> 会分四层告诉你卡在哪，<strong>照着它给的结论走</strong>：</p>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>卡在</th><th>含义</th><th>你该做什么</th></tr>
+      <tr><td><strong>DNS</strong></td><td>主机名解析不了</td><td>把主机名换成 IP 试</td></tr>
+      <tr><td><strong>TCP</strong></td><td>端口不通</td><td>查防火墙、实例是否在跑、端口对不对</td></tr>
+      <tr><td><strong>握手 / 认证</strong></td><td>端口通但连不上 / 账号密码错</td><td>端口通 = 网络没问题，问题在实例或口令</td></tr>
+      <tr><td><strong>查询</strong></td><td>连上了但查询失败</td><td>权限问题或库状态异常</td></tr>
+    </table>
+    </div>
+    <div class="note"><span class="tag">边界</span><strong>端口通 ≠ 能连库。</strong>「telnet 通但库连不上」极常见（实例挂了、监听异常、认证失败），必须用 <code class="inl">--ping</code> 判断，不能用 telnet。</div>
+
+    <h3>2.4 账号权限：决定你能采到多少</h3>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>账号类型</th><th>能采到什么</th><th>影响</th></tr>
+      <tr><td><strong>DBA 类</strong>（SYSDBA 或带 DBA 角色）</td><td>全量：逻辑读、物理读、服务端耗时、10053 trace</td><td>推荐</td></tr>
+      <tr><td><strong>普通账号</strong></td><td>降级：只有客户端耗时 + 预估计划</td><td>少掉「真实疼在哪」的关键证据</td></tr>
+    </table>
+    </div>
+    <p>dmkit 遇到普通账号会<strong>自动降级并如实提示</strong>，不会假装采到了。</p>
+    <div class="ok"><span class="tag">建议</span>使用一个「<strong>有 DBA 角色的只读账号</strong>」——既能采全，又不担心误操作。</div>
+
+    <p style="margin-top:18px"><strong>普通账号到底能查什么</strong>（DM8 默认配置实测，仅 RESOURCE 角色）：</p>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:60%">视图</th><th>普通账号</th></tr>
+      <tr><td><code class="inl">V$INSTANCE</code>、<code class="inl">V$VERSION</code>、<code class="inl">V$DATABASE</code></td><td>✅ 可查（默认对 PUBLIC 开放）</td></tr>
+      <tr><td><code class="inl">USER_TABLES</code>、<code class="inl">ALL_TABLES</code></td><td>✅ 可查（只含自己有权限的）</td></tr>
+      <tr><td><code class="inl">V$SESSIONS</code>、<code class="inl">V$SQL_HISTORY</code>、<code class="inl">V$SQL_STAT</code>、<code class="inl">V$SQL_PLAN</code>、<code class="inl">V$TRXWAIT</code>、<code class="inl">V$LOCK</code>、<code class="inl">V$DM_INI</code></td><td>❌ <code class="inl">-5504</code></td></tr>
+      <tr><td><code class="inl">DBA_TABLES</code>、<code class="inl">DBA_USERS</code>、<code class="inl">DBA_INDEXES</code>、<code class="inl">DBA_SEGMENTS</code>、<code class="inl">DBA_DATA_FILES</code></td><td>❌ <code class="inl">-5504</code></td></tr>
+    </table>
+    </div>
+    <p>也就是说：<strong>慢查询采集靠的视图，普通账号一个都查不到。</strong>报 <code class="inl">-5504</code> 不是 SQL 写错，加 <code class="inl">SET SCHEMA</code> 也没用——那是权限，不是模式。</p>
+
+    <p><strong>确实只能用业务账号时</strong>，让 DBA 执行这一条（实测可覆盖上述全部视图，不必给 DBA 角色）：</p>
+    <div class="codebox"><button class="cp">复制</button><pre>GRANT SELECT ANY DICTIONARY TO 你的账号名;</pre></div>
+    <p>用完想收回：</p>
+    <div class="codebox"><button class="cp">复制</button><pre>REVOKE SELECT ANY DICTIONARY FROM 你的账号名;
+<span class="c">-- 撤完核对一眼，确认真的没了</span>
+SELECT GRANTEE, PRIVILEGE FROM DBA_SYS_PRIVS WHERE GRANTEE='你的账号名';</pre></div>
+    <div class="note"><span class="tag">注意</span>授权 / 撤销后要<strong>重新连接</strong>才生效，已有连接仍是旧权限。</div>
+
+    <p style="margin-top:18px"><strong>表不在当前模式</strong>是另一种报错：<code class="inl">-2106 Invalid table or view name</code>，跟权限无关——表确实存在，只是不在登录用户的默认模式里。两种修法：SQL 里写全 <code class="inl">模式名.表名</code>，或在 <code class="inl">--dsn</code> 端口后加 <code class="inl">?schema=模式名</code>（<code class="inl">at</code> 只能走后者，它没有 <code class="inl">--schema</code> 参数）。</p>
+  </div>
+</section>
+
+<!-- ══════ 3 找 SQL ══════ -->
+<section id="findsql">
+  <div class="card">
+    <h2><span class="num">3</span>找到那条慢 SQL</h2>
+
+    <h3>3.1 情况 A：你已经知道是哪条</h3>
+    <p>从这些地方拿：应用日志里的慢 SQL 记录 / 达梦管理工具的会话或历史 SQL / 使用者描述的「点这个按钮就卡」对应到的那条查询。</p>
+    <ul>
+      <li>✅ <strong>完整原文</strong>，从头到尾，包含所有 WHERE 条件</li>
+      <li>❌ <strong>不要只截图</strong>（别人没法复制复现，也容易被截断）</li>
+      <li>❌ <strong>不要只给前 1000 字符</strong>（<code class="inl">TOP_SQL_TEXT</code> 会截断，看不全就判断不了谓词写法）</li>
+    </ul>
+
+    <h3>3.2 情况 B：不知道是哪条，只知道「库慢」</h3>
+    <p>把它存成 <code class="inl">find_top20.sql</code>：</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">SELECT</span> SQL_ID, TIME_USED, N_LOGIC_READ, SUBSTR(TOP_SQL_TEXT,1,80) <span class="k">AS</span> SQL_HEAD
+  <span class="k">FROM</span> V$SQL_HISTORY
+ <span class="k">ORDER BY</span> TIME_USED <span class="k">DESC</span>
+ <span class="k">LIMIT</span> 20;</pre></div>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">dmkit q --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> find_top20.sql</pre></div>
+    <p>按 <code class="inl">TIME_USED</code>（总耗时）和 <code class="inl">N_LOGIC_READ</code>（逻辑读）排序，<strong>两个都高</strong>的那条最值得查。</p>
+
+    <div class="warn"><span class="tag">实测更正</span>
+      <strong>DM8 真机验证过的三处反直觉：</strong><br>
+      · <code class="inl">V$SQL_HISTORY</code> 里<strong>没有</strong> <code class="inl">SQL_TEXT_ID</code> 列，跨视图关联键是<strong>数字 <code class="inl">SQL_ID</code></strong><br>
+      · <code class="inl">V$SQL_STAT</code> 只保留当前缓存里的少量 SQL（实测只有 4 行），查<strong>历史</strong>慢 SQL 必须用 <code class="inl">V$SQL_HISTORY</code><br>
+      · 会话视图是 <code class="inl">V$SESSIONS</code>（<strong>复数</strong>），<code class="inl">V$SESSION</code> 不存在
+    </div>
+    <p>想看 SQL 全文（绕开 1000 字符截断）：</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">SELECT</span> SQL_ID, SQL_TEXT <span class="k">FROM</span> V$SQLTEXT <span class="k">WHERE</span> SQL_ID = '上一步的ID';</pre></div>
+
+    <h3>3.3 把 SQL 存成文件（★ 这一节能救你 90% 的报错）</h3>
+    <p><strong>为什么必须这么做</strong>：SQL 直接写在命令行里，会被终端「吃掉」字符，而且<strong>报错信息完全看不出原因</strong>。</p>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:38%">你在 PowerShell 里敲的</th><th style="width:30%">实际传给 dmkit 的</th><th>结果</th></tr>
+      <tr><td><code class="inl">--sql 'SELECT 1 FROM V$SQL_HISTORY'</code></td><td><code class="inl">SELECT 1 FROM V$SQL_HISTORY</code></td><td>✅ 正确</td></tr>
+      <tr><td><code class="inl">--sql "SELECT 1 FROM V$SQL_HISTORY"</code></td><td><code class="inl">SELECT 1 FROM V</code></td><td>❌ <strong><code class="inl">$SQL_HISTORY</code> 被当成变量，替换成空</strong></td></tr>
+    </table>
+    </div>
+    <p><code class="inl">V$SQL_HISTORY</code>、<code class="inl">V$SESSIONS</code>、<code class="inl">STATUS$</code> 这些名字<strong>全都有 <code class="inl">$</code></strong>，用双引号包等于自毁。而这时的报错通常表现为「表或视图不存在」——你会去怀疑库，实际是命令打错了。</p>
+    <p><strong>另外几个报错来源</strong>：SQL 里的字符串 <code class="inl">'CODE500'</code> 和单引号冲突、<code class="inl">&amp;</code> <code class="inl">%</code> <code class="inl">^</code> 被 shell 解释、换行丢失。</p>
+    <div class="ok"><span class="tag">解法</span><strong>把 SQL 存成文件，用 <code class="inl">--file</code>。</strong>文件里写什么，dmkit 就收到什么，跨 Windows / Linux / cmd / PowerShell 全都不出问题。</div>
+    <ol>
+      <li>用记事本或 VS Code 新建文件，存成 <code class="inl">slow.sql</code></li>
+      <li>把 SQL 原文<strong>原样粘进去</strong>，末尾加分号 <code class="inl">;</code></li>
+      <li>保存时编码选 <strong>UTF-8</strong></li>
+      <li>命令里写 <code class="inl">--file slow.sql</code></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ══════ 4 采集 ══════ -->
+<section id="collect">
+  <div class="card">
+    <h2><span class="num">4</span>采集 · 三种深度，按需要选</h2>
+    <p><strong>别一上来就用最重的。</strong>先看这张决策表：</p>
+
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>深度</th><th>命令</th><th>是否执行 SQL</th><th>耗时</th><th>什么时候用</th></tr>
+      <tr><td><strong>快档 · 只读</strong></td><td><code class="inl">dmkit at</code></td><td>否</td><td>几秒</td><td><strong>默认选这个</strong>，判瓶颈 80% 够用</td></tr>
+      <tr><td><strong>快档 · 完整</strong></td><td><code class="inl">dmkit at --run</code></td><td>是</td><td>几十秒起</td><td>需要「有多疼」的量化证据</td></tr>
+      <tr><td><strong>全档</strong></td><td><code class="inl">dmkit qopt</code></td><td>加 <code class="inl">--run</code> 才是</td><td>几分钟</td><td>快档看不出原因 / 要交给专家深挖</td></tr>
+      <tr><td><strong>进阶档</strong></td><td><code class="inl">dmkit ix</code></td><td><strong>是（逐条）</strong></td><td>视条数</td><td>手上有 <code class="inl">dmsqlq</code> 导出的清单，想批量排查</td></tr>
+    </table>
+    </div>
+
+    <h3 style="margin-top:22px">4.1 快档：一屏拍照（★ 首选）</h3>
+    <p>先跑默认的<strong>只读档</strong>：</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">dmkit at --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> slow.sql <span class="k">--out</span> at_report.md</pre></div>
+    <p>看完觉得还缺「到底有多疼」的量化证据，再补一次<strong>完整档</strong>：</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">dmkit at --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> slow.sql <span class="k">--run --out</span> at_report.md</pre></div>
+    <p>两档的差别只有一块——实测指标：</p>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>块</th><th>只读档</th><th>完整档</th></tr>
+      <tr><td>① 精简后的 SQL</td><td>✓</td><td>✓</td></tr>
+      <tr><td>② 实测指标（耗时/逻辑读/物理读）</td><td><strong>✗ 拿不到</strong></td><td>✓</td></tr>
+      <tr><td>③ 关键计划行</td><td>✓</td><td>✓</td></tr>
+      <tr><td>④ 涉及表与关键列索引</td><td>✓</td><td>✓</td></tr>
+      <tr><td>⑤ 索引建议（可执行的 <code class="inl">CREATE INDEX</code>）</td><td>✓</td><td>✓</td></tr>
+    </table>
+    </div>
+    <div class="note"><span class="tag">一句话</span>判「瓶颈在第几步」用只读档就够；要「改完快了多少」的对比数据，才需要完整档。</div>
+
+    <p class="ink"><strong>只读档真实输出</strong>（5 万行表、<code class="inl">CODE</code> 无索引、<code class="inl">WHERE CODE='CODE500'</code>）：</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="c">◆ 实测（⊘ 只读档 · 未执行原 SQL）</span>
+  无实测耗时/逻辑读/真实扫描行数——这些只有真跑一次才有。
+  计划、涉及表、索引建议照常可用，判瓶颈通常够用。
+  要真实指标：在命令末尾加 --run（原句执行一遍，慢 SQL 会花掉它真实的耗时）
+
+<span class="c">◆ 计划（EXPLAIN FOR，关键行）</span>
+  4 #CSCN2 T_RO_TEST(INDEX33555503)  [全扫] 预估50,000
+
+<span class="c">◆ 涉及表与关键列索引</span>
+  T_RO_TEST（行数未知：未收集统计；dmkit stat --table T_RO_TEST 可补）
+    CODE     VARCHAR        无索引 ←
+
+<span class="c">◆ 索引建议（依据自行取舍；批量复核用 dmkit ix）</span>
+  ✗ T_RO_TEST(CODE)  ←  预估全表扫描 50,000 行（ROW_NUMS）
+  CREATE INDEX IDX_T_RO_TEST_CODE ON "SYSDBA"."T_RO_TEST" ("CODE");</pre></div>
+
+    <p class="ink"><strong>完整档多出来的那一行</strong>：</p>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="c">◆ 实测（真实执行）</span>
+  耗时 6ms ｜ 逻辑读 72 ｜ 物理读 0 ｜ 返回 1 行 ｜ SQL_ID 219</pre></div>
+
+    <div class="note"><span class="tag">怎么看这一屏</span>
+      <code class="inl">CSCN2</code> = 全表扫描，<code class="inl">SSEK2</code> = 走了索引。<strong><code class="inl">CSCN2</code> + 行数很大，就是索引问题。</strong><br>
+      <strong><code class="inl">[全扫]</code> 却写「索引建议：无」时，看下面那两行解释</strong>——最常见是谓词套了函数（<code class="inl">SUBSTR(col,1,4)=...</code>、<code class="inl">NVL(...)</code>、<code class="inl">col+1</code>），普通索引天然用不上，要改写谓词或建函数索引。这种情况工具不会瞎给 <code class="inl">CREATE INDEX</code>。<br>
+      「行数未知」表示这张表还没收集统计信息，不代表表是空的。
+    </div>
+
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+      <tr><td><code class="inl">--read-only</code></td><td>默认即为它</td><td>显式指定只读档（与 <code class="inl">--run</code> 互斥）</td></tr>
+      <tr><td><code class="inl">--run</code></td><td>关</td><td>完整档：真实执行一次，多出实测指标</td></tr>
+      <tr><td><code class="inl">--min-rows</code></td><td>10000</td><td>全扫行数低于此值不提示建索引（小表全扫正常，避免乱建议）</td></tr>
+      <tr><td><code class="inl">--max-rows</code></td><td>20</td><td>客户端最多取回行数，只影响计数展示，不影响执行</td></tr>
+      <tr><td><code class="inl">--timeout</code></td><td>120</td><td>真实执行超时秒数（只读档不涉及）</td></tr>
+    </table>
+    </div>
+    <div class="note"><span class="tag">不写档位会怎样</span>在终端里手敲会问你一次（<strong>回车 = 只读</strong>，选 2 才执行）；写成脚本或用管道跑则<strong>一律走只读，不会静默执行</strong>。</div>
+    <div class="warn"><span class="tag">只打印不执行</span>建议的 <code class="inl">CREATE INDEX</code> 只打印，落库前请人工判断。</div>
+
+    <h3>4.2 全档：完整现场报告</h3>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">dmkit qopt --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> slow.sql <span class="k">--with-10053</span> <span class="k">--out</span> report.md</pre></div>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:5%">段</th><th style="width:44%">内容</th><th>解决什么问题</th></tr>
+      <tr><td>1</td><td>实例与环境：版本、页大小、字符集、大小写敏感</td><td>别人本地复现<strong>必须对齐</strong>，否则计划不可比</td></tr>
+      <tr><td>2</td><td>优化器参数（非默认值会标 ⚠️）</td><td>该环境的个性化配置常是计划异常的元凶</td></tr>
+      <tr><td>3</td><td>预估执行计划</td><td>优化器「以为」会怎么跑（不执行语句）</td></tr>
+      <tr><td>4</td><td>对象 DDL + 表/列注释</td><td>表结构、字段含义</td></tr>
+      <tr><td>5</td><td>统计信息：行数/NDV/NULL/直方图/收集时间 + 索引</td><td>判断「估算为什么错」</td></tr>
+      <tr><td>6</td><td>真实执行：预估 vs 实际行数 + 各算子耗时</td><td><strong>定位最贵的那一步</strong></td></tr>
+      <tr><td>7</td><td>10053 判读（说人话）</td><td>优化器为什么选了这个计划</td></tr>
+      <tr><td>8</td><td>本地复现指引</td><td>专家在自己机器上重建现场</td></tr>
+    </table>
+    </div>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="c"># 最完整（真实执行 + 优化器决策跟踪）</span>
+<span class="k">dmkit qopt --dsn</span> ... <span class="k">--file</span> slow.sql <span class="k">--with-10053 --verify-ndv --out</span> report.md
+
+<span class="c"># 只采集不执行（大表不敢跑时用；这就是不写 --run 的默认行为）</span>
+<span class="k">dmkit qopt --dsn</span> ... <span class="k">--file</span> slow.sql <span class="k">--out</span> report.md
+
+<span class="c"># 拿到 .trc 文件，离线判读（不连库）</span>
+<span class="k">dmkit qopt --trace-file</span> example.trc</pre></div>
+    <div class="warn"><span class="tag">代价</span><code class="inl">--run</code> 和 <code class="inl">--with-10053</code> <strong>会真实执行</strong>目标 SQL，大表注意代价。不加时<strong>零副作用</strong>（<code class="inl">EXPLAIN</code> 只走优化器，不产生结果集）。</div>
+    <div class="danger"><span class="tag">先建目录对象</span><code class="inl">--with-10053</code> 需要 DBA 权限，且依赖一个 <code class="inl">UTL_FILE</code> 目录对象 <code class="inl">PLN_TRC</code>：<strong>首次使用要先跑一次 <code class="inl">dmkit qopt --setup-dir ...</code> 把它建出来</strong>（这是库级写操作）。不先建的话，<code class="inl">--with-10053</code> 只会告警、跳过这一段，不会偷偷替你建。</div>
+
+    <h3>4.3 进阶档：批量查漏建索引</h3>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="k">dmkit ix --dsn</span> 'dm://SYSDBA@192.0.2.10:5236' <span class="k">--file</span> top_list.txt <span class="k">--yes</span></pre></div>
+    <div class="warn"><span class="tag">格式要求</span><code class="inl">dmkit ix</code> 的输入是 <strong><code class="inl">dmsqlq -o</code> 导出的清单格式</strong>，不是随便一个普通 <code class="inl">.sql</code> 文件。手上只有普通 SQL 文件时，先确认格式能不能被识别。</div>
+    <div class="danger"><span class="tag">会逐条真跑</span>清单里如果有 <code class="inl">UPDATE</code>/<code class="inl">DELETE</code>，<strong>先剔掉</strong>。生成的 DDL <strong>不要盲跑</strong>，逐条核对后再建。</div>
+
+    <h3>4.4 发出前自检 · 4 问</h3>
+    <ul class="check">
+      <li><input type="checkbox"><span><strong>SQL 是完整的吗？</strong>有没有被截断、有没有省略号</span></li>
+      <li><input type="checkbox"><span><strong>有执行计划吗？</strong>哪怕只是 <code class="inl">CSCN2</code> 一行也算</span></li>
+      <li><input type="checkbox"><span><strong>有量化指标吗？</strong>逻辑读 / 耗时，光说「很慢」没用</span></li>
+      <li><input type="checkbox"><span><strong>表有多大？</strong>几万行还是几亿行，结论完全不同</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════ 5 送出结果 ══════ -->
+<section id="toai">
+  <div class="card">
+    <h2><span class="num">5</span>把结果送出去 · 这一步才是目的地</h2>
+
+    <h3>5.1 怎么发</h3>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th>采集方式</th><th>怎么发</th></tr>
+      <tr><td><code class="inl">at</code> 终端输出</td><td>直接复制文字（比截图好：可搜索、可引用、不丢格式）；不方便复制就截图</td></tr>
+      <tr><td><code class="inl">at --out at_report.md</code></td><td>上传 <code class="inl">.md</code> 文件，或粘内容</td></tr>
+      <tr><td><code class="inl">qopt --out report.md</code></td><td><strong>上传整个文件</strong>，这是信息最全的形态</td></tr>
+    </table>
+    </div>
+
+    <h3>5.2 附带说明（复制这段，把括号填掉）</h3>
+    <div class="prompt">【背景】达梦 DM8，业务系统（什么业务）
+【现象】这条 SQL 平时（X 秒），现在（Y 秒）；（一直慢 / 最近突然变慢）
+【表规模】（约多少万 / 亿行）
+【已尝试】（没试过就写「没试过」）
+【想要】请判断瓶颈在第几步，给出可执行的优化动作，并说明改完预期能快多少
+【附件】上面是 dmkit 采集的执行计划与实测指标</div>
+    <div class="note"><span class="tag">最关键的一句</span>「一直慢 / 突然变慢」——一直慢多半是设计问题（缺索引、谓词写法），突然变慢多半是数据量涨了、统计信息过期、或锁。<strong>方向完全不同。</strong></div>
+
+    <h3>5.3 发之前：建议处理掉这些</h3>
+    <ul>
+      <li>表名/字段名 → 可保留（不影响判断），如涉及敏感信息就换成 <code class="inl">T1/T2</code>、<code class="inl">C1/C2</code></li>
+      <li><strong>具体数据值</strong>（身份证、手机号、金额）→ 替换或删掉</li>
+      <li><strong>IP、主机名、实例名</strong> → 建议替换</li>
+      <li><strong>账号密码</strong> → 永远不要发</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════ 6 故障 ══════ -->
+<section id="trouble">
+  <div class="card">
+    <h2><span class="num">6</span>常见故障对照表</h2>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:30%">现象</th><th style="width:32%">原因</th><th>处置</th></tr>
+      <tr><td>双击 exe 窗口一闪就没</td><td>程序跑完自动关窗</td><td>必须在终端里跑</td></tr>
+      <tr><td><code class="inl">'dmkit' 不是内部或外部命令</code></td><td>不在 PATH / 没 cd 到目录</td><td>cd 到目录后 PowerShell 用 <code class="inl">.\dmkit.exe</code></td></tr>
+      <tr><td><code class="inl">The system cannot find the file specified</code></td><td>路径有中文或空格</td><td>换到 <code class="inl">C:\dmkit</code></td></tr>
+      <tr><td>连不上，报 DNS</td><td>主机名解析失败</td><td>改用 IP</td></tr>
+      <tr><td>连不上，报 TCP</td><td>端口不通</td><td>查防火墙 / 实例是否在跑</td></tr>
+      <tr><td>端口通但报「连接被对端强制关闭」</td><td>端口有东西在听，但不是达梦实例</td><td>确认端口是否被别的程序占用</td></tr>
+      <tr><td>认证失败</td><td>账号密码错 / 密码含特殊字符</td><td>含 <code class="inl">?</code> 末尾补 <code class="inl">?</code>；不要用 <code class="inl">%40</code> 编码</td></tr>
+      <tr><td>提示权限不足 / 指标缺失</td><td>用的是普通账号</td><td>换 DBA 只读账号</td></tr>
+      <tr><td>中文显示成乱码</td><td>终端编码不是 UTF-8</td><td><code class="inl">chcp 65001</code> 后重跑；或把输出写到文件再看</td></tr>
+      <tr><td>SQL 里有引号，命令报语法错</td><td>shell 吃掉了引号</td><td><strong>改用 <code class="inl">--file slow.sql</code></strong></td></tr>
+      <tr><td><code class="inl">at</code> 跑了很久没反应</td><td>在真实执行这条慢 SQL</td><td>正常，等它跑完；或加 <code class="inl">--timeout</code></td></tr>
+      <tr><td>提示「未发现达阈值的全表扫描」</td><td>表行数低于 <code class="inl">--min-rows</code>（默认 1 万）</td><td>小表全扫正常；确实要建议就加 <code class="inl">--min-rows 1000</code></td></tr>
+    </table>
+    </div>
+    <h3>通用兜底</h3>
+    <ul>
+      <li><code class="inl">dmkit help &lt;命令&gt;</code> 看完整参数；<code class="inl">dmkit help all</code> 一页看全</li>
+      <li>报错日志：Windows 在 <code class="inl">C:\Users\&lt;用户名&gt;\.dmkit\logs\</code>；Linux 在 <code class="inl">~/.dmkit/logs/</code></li>
+      <li>一行命令跑不通，先拆成最小片段试（比如先只跑 <code class="inl">dmkit version</code>）</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════ 7 速查卡 ══════ -->
+<section id="cheat">
+  <div class="card">
+    <h2><span class="num alt">7</span>命令速查卡 · 贴在屏幕上</h2>
+    <div class="note"><strong>PowerShell 下每条命令前面加 <code class="inl">.\</code></strong>（<code class="inl">.\dmkit.exe ...</code>）；cmd 或 Linux 直接 <code class="inl">dmkit ...</code>。</div>
+    <div class="codebox"><button class="cp">复制</button><pre><span class="c"># 0) 验证安装</span>
+<span class="k">dmkit</span> version
+
+<span class="c"># 1) 验证能连库（不写密码，回车后暗文输入）</span>
+<span class="k">dmkit q --ping --dsn</span> 'dm://SYSDBA@IP:5236'
+
+<span class="c"># 2) 不知道哪条慢 → 找最慢的（SQL 先存 find_top20.sql）</span>
+<span class="k">dmkit q --dsn</span> 'dm://SYSDBA@IP:5236' <span class="k">--file</span> find_top20.sql
+
+<span class="c"># 3) 快档 · 只读：一屏拍照（★ 首选，不执行你的 SQL）</span>
+<span class="k">dmkit at --dsn</span> 'dm://SYSDBA@IP:5236' <span class="k">--file</span> slow.sql <span class="k">--out</span> at_report.md
+
+<span class="c"># 3') 快档 · 完整：想看实测耗时/逻辑读时才加 --run（会真实执行一遍）</span>
+<span class="k">dmkit at --dsn</span> 'dm://SYSDBA@IP:5236' <span class="k">--file</span> slow.sql <span class="k">--run --out</span> at_report.md
+
+<span class="c"># 4) 全档：完整报告（疑难杂症）</span>
+<span class="k">dmkit qopt --dsn</span> 'dm://SYSDBA@IP:5236' <span class="k">--file</span> slow.sql <span class="k">--with-10053 --out</span> report.md
+
+<span class="c"># 5) 进阶：批量查漏建索引（输入须为 dmsqlq 导出的清单）</span>
+<span class="k">dmkit ix --dsn</span> 'dm://SYSDBA@IP:5236' <span class="k">--file</span> top_list.txt <span class="k">--yes</span>
+
+<span class="c"># 6) 周围环境一起打包（要留证据时）</span>
+<span class="k">dmkit dump --dsn</span> 'dm://SYSDBA@IP:5236'
+
+<span class="c"># 7) 看不明白就问工具自己</span>
+<span class="k">dmkit help</span> at</pre></div>
+  </div>
+</section>
+
+<!-- ══════ 附录 ══════ -->
+<section id="appendix">
+  <div class="card">
+    <h2><span class="num">附</span>判断慢查询的五个方向 · 速记</h2>
+    <p>拿到执行计划后按这个顺序看：<strong>先改天花板，再看放大系数，最后才怀疑统计</strong>。</p>
+    <div class="tbl-wrap">
+    <table>
+      <tr><th style="width:6%">序</th><th style="width:32%">计划里的信号</th><th style="width:38%">说明</th><th>动作</th></tr>
+      <tr><td>①</td><td><code class="inl">CSCN2</code> 全表扫 + 行数巨大</td><td>没索引，在读全表</td><td>建索引</td></tr>
+      <tr><td>②</td><td>有索引但仍 <code class="inl">CSCN2</code></td><td>谓词写法让索引用不上（列上函数 / 隐式转换 / <code class="inl">LIKE '%x'</code>）</td><td>改写谓词</td></tr>
+      <tr><td>③</td><td><code class="inl">NL</code> 方向反 / 多余物化</td><td>驱动表选错</td><td>调连接顺序 / 换 <code class="inl">HASH</code></td></tr>
+      <tr><td>④</td><td>预估行数 vs 实际差一个数量级</td><td>统计信息过期</td><td>收统计（<strong>先验证逻辑读是否真降</strong>）</td></tr>
+      <tr><td>⑤</td><td>计划正常但仍慢</td><td>锁等待 / 高水位 / 资源竞争</td><td>查锁、查资源</td></tr>
+    </table>
+    </div>
+
+    <h3>两条实测铁律 · 省你两天</h3>
+    <div class="danger"><span class="tag">铁律 1</span><strong>收统计不是万能药。</strong>实测某慢查询从「无统计」收到「精确」：耗时 5921 → 5894 ms（<strong>-0.5%</strong>），逻辑读 15,596,271 <strong>一点没变</strong>。收统计只解决「估算错」，不解决「该读的数据本来就多」。</div>
+    <div class="ok"><span class="tag">铁律 2</span><strong>谓词改写才是大头。</strong>同一案例，<code class="inl">LIKE CONCAT(前缀,'%')</code> → <code class="inl">SUBSTR(CODE,1,4)=前缀</code>：耗时 5921 → 462 ms（<strong>-92%</strong>），逻辑读 <strong>-98.7%</strong>。<strong>「读多少」由谓词决定，「怎么读」由索引决定——先改谓词，再谈索引。</strong></div>
+  </div>
+</section>
+
+<footer>
+  dmkit 慢查询采集操作手册 · 适用 dmkit V0.7.45+ / 达梦 DM8 · 参数以 <code class="inl">dmkit help</code> 为准
+  <div style="margin-top:8px;font-size:13px">
+    <a href="../index.html" style="color:#2b5fd9;text-decoration:none">← 返回目录</a>
+    &nbsp;·&nbsp;
+    <a href="../posts/dmkit-slow-query-collect.html" style="color:#2b5fd9;text-decoration:none">图文版</a>
+    &nbsp;·&nbsp;
+    <a href="../about.html" style="color:#2b5fd9;text-decoration:none">本站说明</a>
+    &nbsp;·&nbsp;
+    <a href="https://gitee.com/jiangchuang/dm-tools" style="color:#2b5fd9;text-decoration:none">历史版本与 issue</a>
+    &nbsp;·&nbsp;
+    <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="color:#8a929e;text-decoration:none">渝ICP备2026027352号-1</a>
+  </div>
+</footer>
+
+</div><!-- /right -->
+</div><!-- /layout -->
+
+<script>
+document.querySelectorAll('.cp').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var pre = btn.parentElement.querySelector('pre');
+    var text = pre.innerText;
+    var done = function () {
+      btn.textContent = '已复制';
+      btn.classList.add('done');
+      setTimeout(function () { btn.textContent = '复制'; btn.classList.remove('done'); }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallback(text, done); });
+    } else {
+      fallback(text, done);
+    }
+  });
+});
+function fallback(text, done) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) {}
+  document.body.removeChild(ta);
+}
+</script>
+</body>
+</html>

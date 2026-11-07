@@ -98,6 +98,21 @@ ssh "$TARGET" "set -e
   ls -d $WEBROOT.old-* 2>/dev/null | sort | head -n -2 | xargs -r rm -rf
 " || die "换目录失败，检查 $WEBROOT.old-$STAMP 与 $WEBROOT.new"
 
+# ---- 4.5 下载站首页（/dl/）----
+# 发布包本身不进 git（二进制、几十 MB），由人手 scp 到 /var/www/download/；
+# 这里只同步它上面那个索引页。那个目录不在 $WEBROOT 里，所以不受上面的
+# 目录交换影响 —— 这是有意的：换站点版本不该把下载页连带删掉。
+if [ -f infra/dl-index.html ]; then
+  log "同步下载站首页 → $DL_DIR/index.html"
+  ssh "$TARGET" "mkdir -p $DL_DIR"
+  scp -q infra/dl-index.html "$TARGET:$DL_DIR/index.html" \
+    || die "下载站首页同步失败（站点本体已发布，仅这一页没更新）"
+  # 有人会把 zip 直链往回删一段来「找目录」，别让他撞见 403：
+  # /dl/dmkit/ 复用同一页，软链只建一次、内容随上面那份自动更新。
+  ssh "$TARGET" "mkdir -p $DL_DIR/dmkit && ln -sfn ../index.html $DL_DIR/dmkit/index.html" \
+    || log "警告：/dl/dmkit/ 索引页软链未更新（不影响下载）"
+fi
+
 # ---- 5. 抽样验收（不是 echo done）----
 log "验收"
 FAIL=0

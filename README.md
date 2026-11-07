@@ -23,6 +23,7 @@
 
 | 交互版 | 长文版 | 分类 |
 |---|---|---|
+| [慢查询采集：一条命令把现场拍清楚（dmkit）](interactive/dmkit-slow-query-handbook.html) | [达梦慢查询：一条命令把现场拍清楚，再去谈优化](posts/dmkit-slow-query-collect.html) | 性能优化 |
 | 主备集群：重启与主备切换 | [达梦主备集群：重启与切换的完整操作](posts/dm-reboot-switchover.html) | 高可用与集群 |
 | 在线更换授权文件 dm.key（不停机） | [达梦数据库在线更换授权文件（不停机版）](posts/dm-license-update.html) | 日常运维 |
 | 利用备份恢复误删表（dmrman 时间点恢复） | [达梦利用备份恢复误删表（时间点恢复）](posts/dm-backup-recover.html) | 故障恢复 |
@@ -46,7 +47,7 @@
 | 工具 | 干什么 |
 |---|---|
 | `dmsqlq` | 把 `dmsql_*.log` 里带 `?` 的 SQL 按 `PARAMS` 行还原成真实参数，导出可执行 SQL，按累计耗时排优化优先级 |
-| `dmkit` | 运维诊断工具箱：P0 巡检、ASH 体检、锁阻塞树、执行计划、故障取证包 |
+| `dmkit` | 运维诊断工具箱：P0 巡检、ASH 体检、锁阻塞树、执行计划、慢查询采集（`at` / `qopt`）、故障取证包 |
 
 ## 站点结构
 

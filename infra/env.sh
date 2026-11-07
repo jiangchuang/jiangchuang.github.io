@@ -18,6 +18,9 @@ ACME_WEBROOT="/var/www/blog"         # webroot 模式：challenge 文件写在�
 SERVER="root@CHANGE-ME.invalid"      # 占位，被 env.local 覆盖
 SERVER_NEW=""                        # 迁移时填新机 IP，其余脚本用 --to new 切换
 WEBROOT="/var/www/blog"
+# 工具下载目录：nginx 用 /dl/ 映射到这里。刻意不放在 WEBROOT 下——
+# 站点发布是「目录交换」，放里面会在每次发版时被整棵替换掉。
+DL_DIR="/var/www/download"
 APP_DIR="/opt/budget"
 APP_PORT="8082"
 
