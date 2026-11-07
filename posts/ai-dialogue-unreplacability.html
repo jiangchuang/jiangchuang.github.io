@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我和 AI 的对话：我们的不可替代性是什么？ · 达梦手记</title>
+<meta name="description" content="AI 答得很顺，也可能顺手错。三个亲手抓到的现场：主备切换稿里一句「从哪台连都一样」、iostat 13 个指标手算复原、以及我自己那五条基因。真正的不可替代不是「AI 不会」，是「出了事算谁的」——手感、判据、担责，只有中间那样它学不会。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    t = norm(t);
+    if (THEMES.indexOf(t) < 0) { t = 'ink'; }
+    document.documentElement.setAttribute('data-theme', t);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[t] || t; }
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../index.html#cat-工作方法">工作方法</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">
+  <div class="art-head">
+    <div class="meta">2026-11-07 &nbsp;·&nbsp; 工作方法</div>
+    <h1>我和 AI 的对话：我们的不可替代性是什么？</h1>
+    <span class="cat">工作方法</span>
+  </div>
+  <div class="content">
+<blockquote><p>这篇不打算给你打气。只想把这个问题换个问法。</p></blockquote>
+<h3>一、先承认：这个焦虑是真的</h3>
+<p>我做达梦售后。最近这一年，我明显感觉到一件事在松动：</p>
+<p>以前客户问我一个问题，是他<b>不懂</b>；现在客户问我一个问题，常常是他<b>已经用 AI 问过一轮了</b>，然后拿着答案来找我，说"它这么说的，对吗？"</p>
+<p>后一种比前一种难答得多。</p>
+<p>难在你要承认三件事：</p>
+<ol><li>它给的答案，多数时候<b>确实像那么回事</b>——结构完整、语气笃定、还会给你分点。</li><li>它错的时候，<b>错得很顺</b>。不是结巴地错，是流畅地错。</li><li>客户拿着它来找我，说明<b>他不信它</b>——但这句话他不会明说。</li></ol>
+<p>第三条是关键。他不明说，是因为说破了对大家都不体面。但这恰恰说明：<b>你在的位置没变，变的只是——你得先看得懂它在胡扯什么。</b></p>
+<p>所以第一句话我说完：这个焦虑不是矫情，也不是你跟不上。它是真实的、结构性的。但下一段我要泼冷水了。</p>
+<h3>二、"不可替代性"这个词，你问错了</h3>
+<p>"我还有什么不可替代的？"——这句话里藏着一个假设：<b>我要找到一个 AI 做不了的东西，然后守着它。</b></p>
+<p>守着。</p>
+<p>这个动词就有问题。<b>防御是默认态，不是策略。</b> 你不可能靠"守住某件 AI 做不到的事"活过十年，因为 AI 一直在往这边挪，今天是它做不了的，明年它就学会了。</p>
+<p>那问什么？</p>
+<p>我现在的问法是这个：</p>
+<blockquote><p><b>这件事，有没有人愿意为它负责？</b></p></blockquote>
+<p>AI 不会负责。它会输出，但不认账。你把一段 SQL 丢给它，它给你一个优化方案，跑崩了——它不会半夜三点被叫起来，不会写事故报告，不会在下一次评审会上被人指着问"你当时怎么想的"。</p>
+<p><b>负责，是目前唯一确定推不到机器身上的东西。</b></p>
+<p>所以与其问"我还有什么不可替代"，不如问这三个：</p>
+<ol><li>这件事，<b>出了事算谁的？</b>——算你的，那你就在。</li><li>这件事，<b>AI 的答案我能不能验？</b>——能验，那你不危险；验不了，才是真危险。</li><li>这件事，<b>客户是在买答案，还是在买担责？</b>——买答案的那部分，迟早免费。</li></ol>
+<h3>三、三个当场抓现行的现场（有名字有数字）</h3>
+<p>空讲没意思。说我今年亲手抓到的三次。</p>
+<p><b>第一次：主备切换那篇。</b></p>
+<p>AI 帮我起的操作稿里写了一句——"从哪个节点连进去都一样"。句子很顺，逻辑闭合，读起来一个错字都没有。</p>
+<p>我上机器实测。<b>备库那台有 <code>dmmonitor</code> 程序、有 <code>manual.ini</code>，但 <code>ps</code> 出来没有进程；主库那台有进程，是 <code>DmMonitorServiceDBMM</code> 拉起来的。</b></p>
+<p>也就是说：按它那句话做，你连在哪台机上，得到的结果完全不同。它把"看起来成立"写成了"实际上成立"。</p>
+<p>同一篇里还有一处：<code>dmonitor</code> 少写了一个 <code>m</code>。全篇 25 处。<b>命令少一个字母，粘贴进终端就是另一条东西。</b> AI 不会手抖打错，但 AI 也不会真的知道那个字母为什么重要——它不知道那是达梦的监视器叫 "d<b>m</b>monitor"，因为它没有在凌晨两点对着一堆 <code>ps</code> 输出数过这几个字母。</p>
+<p><b>第二次：iostat 那 13 个数。</b></p>
+<p>AI 能把 iostat 的 13 个指标定义背给你听，一条不差，还能给你画表格。</p>
+<p>但我干了一件事：把每一个指标都还原回 <code>/proc/diskstats</code> 的原始计数器，<b>手算</b>。13 个指标 × 6 组场景，算下来和 iostat 的输出逐项对。累计口径误差 &lt;0.3%，区间口径 &lt;1%。</p>
+<p>然后我发现 6 个反直觉的现象——比如 <code>%util</code> 接近 100% <b>不等于</b>盘饱和了；比如 <code>avgrq-sz</code> 的单位不是你想的那个；比如 <code>svctm</code> 早就失真了但还是有人拿它下结论；比如 Little's Law 在这个场景里是失效的。</p>
+<p>这 6 条，<b>没有一条是 AI 主动告诉我的</b>。是我在手算的时候、数字对不上的时候，一个一个抠出来的。</p>
+<p>定义它知道。物体？NO。<b>定义和真相之间，还隔着一次"我亲手算了一遍"。</b></p>
+<p><b>第三次：我自己给自己定的五个东西。</b></p>
+<p>我给自己写过五条，贴在每次动手之前过一遍：</p>
+<div class="tbl-wrap"><table><thead><tr><th></th><th>基因</th><th>为什么 AI 天生缺</th></tr></thead><tbody><tr><td>1</td><td><b>求真</b></td><td>它的默认行为是把话说圆，不是把话说对</td></tr><tr><td>2</td><td><b>幽默</b></td><td>它能编段子，但不知道拿什么开玩笑会伤人</td></tr><tr><td>3</td><td><b>共情不迎合</b></td><td>它倾向于让你当场舒服</td></tr><tr><td>4</td><td><b>责任感</b></td><td>它不会认账</td></tr><tr><td>5</td><td><b>长期复利</b></td><td>它没有"明天还要见你"的压力</td></tr></tbody></table></div>
+<p>写完之后我盯着看了半天，突然觉得有点讽刺：<b>这五条，恰恰是我天生最缺的五样东西才对——我得写在最显眼的地方提醒自己。</b> 而它们也恰恰是 AI 最缺的。</p>
+<p>人和 AI 缺的东西撞车了。这才是让我真正警觉的地方：<b>不是它要取代你，是你要退化。</b></p>
+<h3>四、所以答案是什么</h3>
+<p>我不相信"不可替代"这回事。我相信的是<b>可替换的速度</b>。</p>
+<p>你值钱的程度，等于别人（或别的东西）把你换掉需要花的时间。这个时间由三样东西撑着：</p>
+<ul><li><b>手感</b>：你已经亲手摔过的跤。上面那三次，每一次都是"我到了机器上，才发现不对"。这个数据量是别人搬不走的——<b>它没被写进任何公共语料。写进去的那部分，它都会；没写进去的那部分，才是你的。</b></li><li><b>判据</b>：你知道什么时候<b>不做</b>。我这行有个五问：官方能答的不做；自助代价大过发工单的不做；跟版本强绑定的就做成轻形态；错误不可复现或根因非结构性的不做；盯回流率，不盯触达量。<b>知道什么时候不做，比知道怎么做值钱一百倍——因为这一步 AI 一步都替不了你。</b></li><li><b>担责</b>：只有你签名。</li></ul>
+<p>这三样里有一样是 AI 能学会的吗？第一样它大概率会超过你。第三样它结构上不会。<b>中间那一样——"不做"——是最保险的，因为它不是一个能力，是一个选择。</b></p>
+<p>机器不会选择不做。机器只会选择"尽量答"。</p>
+<h3>五、最后，一个我不想替你回答的问题</h3>
+<p>写到这里，我发现我把"该怎么办"藏起来了。</p>
+<p>不是我不会给。是给了就没意思了——如果你愿意，我想把这个当个钩子，问在读的你一个问题：</p>
+<blockquote><p><b>在你最近一次被 AI 帮到的忙之后，你有没有做过一件它没法做的事？</b></p><p>如果没有，那真的要警觉了。<br>如果有，那件事的名字是什么？</p></blockquote>
+<p>先堵一条路：别答"创造力""同理心""责任心"。</p>
+<p>这些是形容词，不是事。谁都能说，说完心里舒服，第二天什么也不会变。而且"创造力"恰恰是它这几年挪得最快的一块地——你守着它，守的是一块正在被攻下来的地。</p>
+<p>我要的是动词。上个星期，你做的哪一件事，它做不了？</p>
+<p>把那个动词想清楚。想不出来，就再去干一件。</p>
+<p>别让别人替你想。</p>
+  </div>
+  <section class="contact" hidden>
+  <details class="contact-fold">
+      <summary>要我微信？点开看二维码（不点也行）</summary>
+      <div class="contact-qr">
+        <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+        <span>扫了备注「达梦」<br>不备注我也加</span>
+      </div>
+    </details>
+  <div class="contact-body">
+    <h3>有不同看法？</h3>
+    <p>这篇讲的是方法，不是标准答案。你要是按它试过、发现哪条不成立，或者你自己有更好用的拆法，欢迎说 —— 把<b>具体那件事</b>和<b>你当时怎么处理的</b>说一下就行。</p>
+    <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p class="contact-fine">想让讨论别人也能看到？在 <a href="https://gitee.com/jiangchuang/blog/issues" target="_blank" rel="noopener">Gitee 仓库</a> 提 issue，回复公开可查。</p>
+  </div>
+</section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+    <a href="ai-collaboration-judgment-verification.html">AI 协作的两把钥匙：判断与验证 →</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+</body>
+</html>
