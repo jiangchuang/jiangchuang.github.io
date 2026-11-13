@@ -313,8 +313,14 @@ a:hover{text-decoration:underline}
 
 /* ================= 页脚 ================= */
 footer{border-top:1px solid var(--line);margin-top:40px;padding:32px 0}
-.foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+/* 页脚两行：第一行「引言 / 导航 / 联系」，第二行备案号居中。
+   实测四条内容合计 925px + 间距 48px = 973px，而容器只有 844px，flex 换行是必然的；
+   改成 grid 后行数由结构决定，不再随内容长短忽上忽下（加个图标也不会突然掉一行）。 */
+.foot{display:grid;grid-template-columns:1fr auto auto;column-gap:24px;row-gap:10px;align-items:center}
 .foot p{font-size:12.5px;color:var(--text-3);letter-spacing:.06em}
+.foot p:last-child{grid-column:1/-1;text-align:center}
+/* 备案号必须整串不断：否则窄屏会从「渝公网安备5001…」中间断开，一串数字被切成两半 */
+.foot p:last-child a{white-space:nowrap}
 .foot .quote{font-family:var(--font-title);letter-spacing:.18em}
 
 /* 远山只有水墨主题才画 */
@@ -334,7 +340,9 @@ html[data-theme="dark"] .mountains{display:none}
   .content table{font-size:13px}
   .posts a{flex-wrap:wrap;gap:8px}
   .posts .t{flex-basis:100%;order:3}
-  .foot{flex-direction:column;text-align:center}
+  .foot{grid-template-columns:1fr;row-gap:8px;text-align:center}
+  /* 小屏把备案号缩半档，让它尽量仍在一行内，而不是折成两行 */
+  .foot p:last-child{font-size:11.5px}
 }
 
 /* ================= 搜索：导航入口 ================= */
