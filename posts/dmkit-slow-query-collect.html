@@ -174,71 +174,45 @@ select sql_id, sql_plan from v$pln_history where sql_id = '上一步的ID';</cod
 <p>普通账号能拿到执行计划和表结构，但<strong>拿不到 <code>V$SQL_HISTORY</code> 里的逻辑读</strong>，等于少了一半证据。而且不是「少一点」——实测业务账号查 <code>V$SQL_HISTORY</code> 直接报 <code>-5504</code> 无权限，一条都拿不到。工具遇到权限不足会自动降级并如实提示，不会假装采到了——但你最好别让它降级。</p>
 
 <h2>达梦的统计信息，默认是关着的</h2>
-<p>这一节要解释另一件经常被误判的事：为什么同一个库，单表查询挺快，一 JOIN 就慢十倍。</p>
-<p>Oracle、MySQL 装完就有后台任务在收统计，用的人感知不到有这个东西。达梦不是。新初始化的库，自动收集是关的，也不会自己长出一个任务来。你不配，它就一直是空的。</p>
+<p>另一个常被误判的现象：同一个库，单表查询挺快，一 JOIN 就慢十倍。索引也建了，SQL 也没写错，就是慢。这种先查统计信息，别急着改 SQL。</p>
+<p>Oracle、MySQL 装完就有后台任务在收统计，用的人感知不到有这个东西。达梦不是。新初始化的库，自动收集是关的，也不会自己长出一个任务来。</p>
 
-<h3>三条命令，先看自己库的现状</h3>
-<pre class="code"><code class="lang-sql">-- 1. 自动收集开关：0 不监控、1 监控全库、2 只监控配置过的表
-select para_name, para_value from v$dm_ini where para_name = 'AUTO_STAT_OBJ';
+<h3>先确认自己的库</h3>
+<pre class="code"><code class="lang-sql">-- 1. 自动收集开关：0 关，1 全库开，2 只监控配过的表
+select para_value from v$dm_ini where para_name = 'AUTO_STAT_OBJ';
 
--- 2. 有没有自动收集任务（新库应该是 0 行）
-select count(*) from sysobjects where name like '%AUTO_STAT%';
-
--- 3. 表的统计现状
+-- 2. 这张表收过没有：两个字段空着就是没收集过
 select table_name, num_rows, last_analyzed
   from user_tables
  where table_name = 'T_SLOW_TEST';</code></pre>
-<p>我在一台新装的 DM8 上跑出来是 <code>AUTO_STAT_OBJ = 0</code>、任务数 0、<code>NUM_ROWS</code> 和 <code>LAST_ANALYZED</code> 全空。手工建表、灌 30 万行，再查还是空。</p>
+<p>新装的库跑出来是 <code>0</code>，两个字段全空，灌 30 万行还是空。</p>
+<p>这种情况下<strong>表有多少行它大概知道</strong>（从段和块上推算），所以单表查询预估是准的，这也是单表看着没毛病的原因。<strong>列里有多少个不同的值、一个条件能命中多少行，它全靠猜</strong>，达梦就按经验值算：等值 2.5%、范围 3.75%。实测 <code>code = 'CODE500'</code> 实际 1 行、预估 7500 行；JOIN 里一个全是 1 的 <code>flag</code> 列，实际 1 万行、预估 250 行。它以为过滤完只剩 250 行，就选了嵌套循环，实际拿一万行去驱动，慢几十倍。</p>
+<p>这种错不报错，只是慢，最容易被误判成 SQL 写法的问题。判断口诀：<strong>单表快、一 JOIN 就崩、索引也建了，先收统计。</strong></p>
 
-<h3>没有统计，单表照样准，一 JOIN 就露馅</h3>
-<p>建一张 30 万行、<code>CODE</code> 列无索引的表，不做任何收集，直接看计划：<code>CSCN2</code> 全表扫，预估 300,000 行。这个数是对的。达梦会从段和块上推算表级行数，所以「表有多大」它大概知道，单表查询不会因为没统计就跑偏。</p>
-<p>错在列级。选择率没有数据可用时，优化器按经验值猜：等值 2.5%、范围 3.75%、LIKE 5%。三组实测：</p>
-<table>
-<tr><th style="width:36%">查询</th><th style="width:22%">优化器预估</th><th style="width:18%">实际</th><th>差多少</th></tr>
-<tr><td><code>code = 'CODE500'</code>（等值）</td><td>7,500 行</td><td>1 行</td><td>三个数量级以上</td></tr>
-<tr><td><code>id between 100 and 200</code></td><td>11,250 行</td><td>101 行</td><td>111 倍</td></tr>
-<tr><td>JOIN 里按 <code>flag = 1</code> 过滤（这列全是 1）</td><td>250 行</td><td>10,000 行</td><td>40 倍</td></tr>
-</table>
-<p>第三行最要命。优化器以为过滤完只剩 250 行，于是选了嵌套循环，实际要拿一万行去驱动。这种错不报错，也不慢一点点，是几十倍的量级。</p>
-<p>所以「表级行数看着有值、单表查询没毛病、一上 JOIN 就崩」这个现象，八成不是索引的问题，是列级统计从来没被收集过。</p>
-
-<h3>手动收一次</h3>
+<h3>收一次就好</h3>
 <pre class="code"><code class="lang-sql">-- 单表
 DBMS_STATS.GATHER_TABLE_STATS('SYSDBA', 'T_SLOW_TEST');
 
--- 整个模式
+-- 整个模式（表多的时候用这个）
 DBMS_STATS.GATHER_SCHEMA_STATS('SYSDBA');</code></pre>
-<p>实测 20 万行 422ms、30 万行 254ms，都是百毫秒级，业务低峰期随手就能跑（后者快是因为缓存已经热了，量级上不影响判断）。四张表一起收 462ms。</p>
-<p>收完再查那几个数：<code>code = 'CODE500'</code> 的预估从 7500 变成 1，JOIN 那一列从 250 变成 10000，列上的不同值个数也记对了。计划会跟着变。</p>
+<p>30 万行两百多毫秒，业务低峰期随手就能跑。收完再查上面那两个字段就有值了，执行计划会跟着变。</p>
 
-<h3>想让达梦自己收，三件事缺一不可</h3>
-<pre class="code"><code class="lang-sql">-- 1. 打开监控（1 = 全库，2 = 只监控配了阈值的表）
+<h3>想让达梦自己收，三条命令照抄</h3>
+<pre class="code"><code class="lang-sql">-- 1. 打开监控
 SP_SET_PARA_VALUE(1, 'AUTO_STAT_OBJ', 1);
 
--- 2. 设阈值：这张表数据变化超过 5% 才重收
+-- 2. 数据变化超过 5% 才重收（生产上写 10 到 15 更常见）
 DBMS_STATS.SET_TABLE_PREFS('SYSDBA', 'T_SLOW_TEST', 'STALE_PERCENT', 5);
 
--- 3. 建自动收集任务：每天一次，22:00 开始
+-- 3. 建任务：每天 22:00 跑一次
 SP_CREATE_AUTO_STAT_TRIGGER(1, 1, 1, 1439, '22:00', '2026/11/13', 0, 1);</code></pre>
-<p>八个参数依次是：调度类型（1 按天）、间隔频率、子频率、开始时间后每几分钟跑一次（1439 就是一整天才跑一次）、开始时间、生效日期、最长执行秒数（0 不限）、启用标志。</p>
-<p>我按每分钟触发实测了一遍：三项配齐后插 3 万行，两分钟内 <code>NUM_ROWS</code> 自动变成 350000，和真实行数一致。只配前两项、不建任务，永远没动静。三项都不配的时候，连「这张表变了多少行」都不记，<code>V$AUTO_STAT_TABLE_IDU</code> 是空的。</p>
+<p><strong>三条都要，缺一条它就不动。</strong>只打开开关不建任务，永远不跑。第三条里的 <code>1439</code> 是「隔多少分钟再跑」，按天就是 1439，别随手改成 1，那会变成每分钟收一次。</p>
+<p>我按每分钟触发实测过：三项配齐后插 3 万行，两分钟内 <code>NUM_ROWS</code> 自己从 320000 变成 350000，跟真实行数一致。</p>
 
-<h3>这个任务删起来跟普通触发器不一样</h3>
-<p>建出来之后，它在 <code>SYSOBJECTS</code> 里叫 <code>SYSTRG$_AUTO_STAT</code>，看着就是个触发器。但常规手段一律不动：</p>
-<table>
-<tr><th style="width:54%">你试的</th><th>结果</th></tr>
-<tr><td><code>DROP TRIGGER SYSTRG$_AUTO_STAT;</code></td><td><code>-2110</code></td></tr>
-<tr><td><code>DROP TRIGGER SYS.SYSTRG$_AUTO_STAT;</code></td><td><code>-5631</code></td></tr>
-<tr><td><code>ALTER TRIGGER ... DISABLE;</code></td><td><code>-3025</code></td></tr>
-<tr><td>找 <code>SP_DROP_AUTO_STAT_TRIGGER</code> 这个过程</td><td>不存在</td></tr>
-</table>
-<p>能用的只有一种：调它自己的过程，把最后一个参数传 2。</p>
+<h3>不想要了怎么删</h3>
+<p>再执行一次，最后一个参数从 <code>1</code> 改成 <code>2</code>：</p>
 <pre class="code"><code class="lang-sql">SP_CREATE_AUTO_STAT_TRIGGER(1, 1, 1, 1439, '22:00', '2026/11/13', 0, 2);</code></pre>
-<p>实测执行完，<code>SYSOBJECTS</code> 里那条记录从 1 条变成 0 条。传 0 只是关掉启用标志，对象还留着；传 2 才是删除。文档里对这三位只写了半句「0 不启用、1 启用、2 删除」，又排在一堆参数的末尾，很容易被当成可有可无的一项跳过。</p>
-<p>只想临时停掉的话，把 <code>AUTO_STAT_OBJ</code> 设回 0 更省事，任务空转但不碰库里的对象。</p>
-
-<h3>多久重收一次</h3>
-<p><code>STALE_PERCENT</code> 就是给这个用的，上面配 5% 是为了测得快，生产上 10% 到 15% 更常见。没有自动任务的时候自己判断也简单：拿 <code>NUM_ROWS</code> 跟真实行数比。我在一张 20 万行的表里灌到 35 万，不重收的话 <code>NUM_ROWS</code> 一直停在 20 万，计划也照 20 万算。</p>
+<p>传 <code>0</code> 只是停用，对象还留在库里；传 <code>2</code> 才是真删。它长得像个触发器，但 <code>DROP TRIGGER</code> 删不掉（报 <code>-2110</code>），也别去找 <code>SP_DROP_AUTO_STAT_TRIGGER</code>，没有这个过程。就这一条路，省得反复试。</p>
 
 <h2>拿到执行计划之后，按这个顺序看</h2>
 <p>计划里能出问题的方向就五个。<strong>顺序有讲究</strong>：先改天花板，再看放大系数，最后才怀疑统计。顺序错了会白折腾几小时——比如先去收统计，结果发现瓶颈是缺索引。</p>
