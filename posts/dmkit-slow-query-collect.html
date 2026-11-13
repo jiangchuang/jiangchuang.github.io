@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>达梦慢查询：一条命令把现场拍清楚，再去谈优化（dmkit）· 达梦手记</title>
-<meta name="description" content="手上只有一句「这条 SQL 很慢」：用 dmkit 分只读档/完整档两档把现场拍清楚——执行计划、涉及表索引、索引建议一条命令出，要实测耗时逻辑读再加 --run。含三处与流传写法不一致的实测更正（V$SESSIONS / SQL_ID / V$SQL_STAT 只留缓存）、PowerShell 吃 $ 的实证、判读五个方向的优先级，以及两条实测结论：收统计只降 0.5%，谓词改写降 92%。">
+<meta name="description" content="手上只有一句「这条 SQL 很慢」：用 dmkit 分只读档/完整档两档把现场拍清楚，执行计划、涉及表索引、索引建议一条命令出，要实测耗时逻辑读再加 --run。含三处与流传写法不一致的实测更正（V$SESSIONS / SQL_ID / V$SQL_STAT 只留缓存）、PowerShell 吃 $ 的实证、判读五个方向的优先级，两条实测结论（收统计只降 0.5%，谓词改写降 92%）。另有一节专讲达梦统计信息默认关闭：单表估得准、一 JOIN 就差几十倍，附自查命令与自动收集三件套。">
 <link rel="stylesheet" href="../assets/site.css">
 <script>
 (function(){
@@ -128,6 +128,7 @@
 <p>所以取舍很清楚：<strong>判「瓶颈在第几步」用只读档就够；要「改完快了多少」的对比数据，才需要完整档。</strong></p>
 <p>顺带解释两个容易看错的地方：</p>
 <p>「行数未知」不是表空，是<strong>这张表还没收集过统计信息</strong>。<code>USER_TABLES.NUM_ROWS</code> 是空的，工具如实说未知，而不是编一个数给你。</p>
+<p>顺带把 <code>NUM_ROWS</code> 的语义说准：它是<strong>上次收集统计那一刻的行数</strong>，不是实时行数。有值也可能是旧值。我测的一张表真实 35 万行，<code>NUM_ROWS</code> 还停在 20 万，优化器就照 20 万算计划。所以看到它有数，别当成表当前的行数。</p>
 <p><code>[全扫]</code> 却写「索引建议：无」，也不是矛盾——见后面那一节。</p>
 
 <h2>三处网上写法，实测对不上</h2>
@@ -172,6 +173,73 @@ select sql_id, sql_plan from v$pln_history where sql_id = '上一步的ID';</cod
 <h3>第三：尽量用一个 DBA 只读账号</h3>
 <p>普通账号能拿到执行计划和表结构，但<strong>拿不到 <code>V$SQL_HISTORY</code> 里的逻辑读</strong>，等于少了一半证据。而且不是「少一点」——实测业务账号查 <code>V$SQL_HISTORY</code> 直接报 <code>-5504</code> 无权限，一条都拿不到。工具遇到权限不足会自动降级并如实提示，不会假装采到了——但你最好别让它降级。</p>
 
+<h2>达梦的统计信息，默认是关着的</h2>
+<p>这一节要解释另一件经常被误判的事：为什么同一个库，单表查询挺快，一 JOIN 就慢十倍。</p>
+<p>Oracle、MySQL 装完就有后台任务在收统计，用的人感知不到有这个东西。达梦不是。新初始化的库，自动收集是关的，也不会自己长出一个任务来。你不配，它就一直是空的。</p>
+
+<h3>三条命令，先看自己库的现状</h3>
+<pre class="code"><code class="lang-sql">-- 1. 自动收集开关：0 不监控、1 监控全库、2 只监控配置过的表
+select para_name, para_value from v$dm_ini where para_name = 'AUTO_STAT_OBJ';
+
+-- 2. 有没有自动收集任务（新库应该是 0 行）
+select count(*) from sysobjects where name like '%AUTO_STAT%';
+
+-- 3. 表的统计现状
+select table_name, num_rows, last_analyzed
+  from user_tables
+ where table_name = 'T_SLOW_TEST';</code></pre>
+<p>我在一台新装的 DM8 上跑出来是 <code>AUTO_STAT_OBJ = 0</code>、任务数 0、<code>NUM_ROWS</code> 和 <code>LAST_ANALYZED</code> 全空。手工建表、灌 30 万行，再查还是空。</p>
+
+<h3>没有统计，单表照样准，一 JOIN 就露馅</h3>
+<p>建一张 30 万行、<code>CODE</code> 列无索引的表，不做任何收集，直接看计划：<code>CSCN2</code> 全表扫，预估 300,000 行。这个数是对的。达梦会从段和块上推算表级行数，所以「表有多大」它大概知道，单表查询不会因为没统计就跑偏。</p>
+<p>错在列级。选择率没有数据可用时，优化器按经验值猜：等值 2.5%、范围 3.75%、LIKE 5%。三组实测：</p>
+<table>
+<tr><th style="width:36%">查询</th><th style="width:22%">优化器预估</th><th style="width:18%">实际</th><th>差多少</th></tr>
+<tr><td><code>code = 'CODE500'</code>（等值）</td><td>7,500 行</td><td>1 行</td><td>三个数量级以上</td></tr>
+<tr><td><code>id between 100 and 200</code></td><td>11,250 行</td><td>101 行</td><td>111 倍</td></tr>
+<tr><td>JOIN 里按 <code>flag = 1</code> 过滤（这列全是 1）</td><td>250 行</td><td>10,000 行</td><td>40 倍</td></tr>
+</table>
+<p>第三行最要命。优化器以为过滤完只剩 250 行，于是选了嵌套循环，实际要拿一万行去驱动。这种错不报错，也不慢一点点，是几十倍的量级。</p>
+<p>所以「表级行数看着有值、单表查询没毛病、一上 JOIN 就崩」这个现象，八成不是索引的问题，是列级统计从来没被收集过。</p>
+
+<h3>手动收一次</h3>
+<pre class="code"><code class="lang-sql">-- 单表
+DBMS_STATS.GATHER_TABLE_STATS('SYSDBA', 'T_SLOW_TEST');
+
+-- 整个模式
+DBMS_STATS.GATHER_SCHEMA_STATS('SYSDBA');</code></pre>
+<p>实测 20 万行 422ms、30 万行 254ms，都是百毫秒级，业务低峰期随手就能跑（后者快是因为缓存已经热了，量级上不影响判断）。四张表一起收 462ms。</p>
+<p>收完再查那几个数：<code>code = 'CODE500'</code> 的预估从 7500 变成 1，JOIN 那一列从 250 变成 10000，列上的不同值个数也记对了。计划会跟着变。</p>
+
+<h3>想让达梦自己收，三件事缺一不可</h3>
+<pre class="code"><code class="lang-sql">-- 1. 打开监控（1 = 全库，2 = 只监控配了阈值的表）
+SP_SET_PARA_VALUE(1, 'AUTO_STAT_OBJ', 1);
+
+-- 2. 设阈值：这张表数据变化超过 5% 才重收
+DBMS_STATS.SET_TABLE_PREFS('SYSDBA', 'T_SLOW_TEST', 'STALE_PERCENT', 5);
+
+-- 3. 建自动收集任务：每天一次，22:00 开始
+SP_CREATE_AUTO_STAT_TRIGGER(1, 1, 1, 1439, '22:00', '2026/11/13', 0, 1);</code></pre>
+<p>八个参数依次是：调度类型（1 按天）、间隔频率、子频率、开始时间后每几分钟跑一次（1439 就是一整天才跑一次）、开始时间、生效日期、最长执行秒数（0 不限）、启用标志。</p>
+<p>我按每分钟触发实测了一遍：三项配齐后插 3 万行，两分钟内 <code>NUM_ROWS</code> 自动变成 350000，和真实行数一致。只配前两项、不建任务，永远没动静。三项都不配的时候，连「这张表变了多少行」都不记，<code>V$AUTO_STAT_TABLE_IDU</code> 是空的。</p>
+
+<h3>这个任务删起来跟普通触发器不一样</h3>
+<p>建出来之后，它在 <code>SYSOBJECTS</code> 里叫 <code>SYSTRG$_AUTO_STAT</code>，看着就是个触发器。但常规手段一律不动：</p>
+<table>
+<tr><th style="width:54%">你试的</th><th>结果</th></tr>
+<tr><td><code>DROP TRIGGER SYSTRG$_AUTO_STAT;</code></td><td><code>-2110</code></td></tr>
+<tr><td><code>DROP TRIGGER SYS.SYSTRG$_AUTO_STAT;</code></td><td><code>-5631</code></td></tr>
+<tr><td><code>ALTER TRIGGER ... DISABLE;</code></td><td><code>-3025</code></td></tr>
+<tr><td>找 <code>SP_DROP_AUTO_STAT_TRIGGER</code> 这个过程</td><td>不存在</td></tr>
+</table>
+<p>能用的只有一种：调它自己的过程，把最后一个参数传 2。</p>
+<pre class="code"><code class="lang-sql">SP_CREATE_AUTO_STAT_TRIGGER(1, 1, 1, 1439, '22:00', '2026/11/13', 0, 2);</code></pre>
+<p>实测执行完，<code>SYSOBJECTS</code> 里那条记录从 1 条变成 0 条。传 0 只是关掉启用标志，对象还留着；传 2 才是删除。文档里对这三位只写了半句「0 不启用、1 启用、2 删除」，又排在一堆参数的末尾，很容易被当成可有可无的一项跳过。</p>
+<p>只想临时停掉的话，把 <code>AUTO_STAT_OBJ</code> 设回 0 更省事，任务空转但不碰库里的对象。</p>
+
+<h3>多久重收一次</h3>
+<p><code>STALE_PERCENT</code> 就是给这个用的，上面配 5% 是为了测得快，生产上 10% 到 15% 更常见。没有自动任务的时候自己判断也简单：拿 <code>NUM_ROWS</code> 跟真实行数比。我在一张 20 万行的表里灌到 35 万，不重收的话 <code>NUM_ROWS</code> 一直停在 20 万，计划也照 20 万算。</p>
+
 <h2>拿到执行计划之后，按这个顺序看</h2>
 <p>计划里能出问题的方向就五个。<strong>顺序有讲究</strong>：先改天花板，再看放大系数，最后才怀疑统计。顺序错了会白折腾几小时——比如先去收统计，结果发现瓶颈是缺索引。</p>
 <table>
@@ -179,10 +247,11 @@ select sql_id, sql_plan from v$pln_history where sql_id = '上一步的ID';</cod
 <tr><td>①</td><td><code>CSCN2</code> 全表扫 + 行数巨大</td><td>没索引，在读全表</td><td>建索引</td></tr>
 <tr><td>②</td><td>有索引但仍 <code>CSCN2</code></td><td>谓词写法让索引用不上（列上函数 / 隐式转换 / <code>LIKE '%x'</code>）</td><td>改写谓词</td></tr>
 <tr><td>③</td><td><code>NL</code> 方向反 / 多余物化</td><td>驱动表选错</td><td>调连接顺序 / 换 <code>HASH</code></td></tr>
-<tr><td>④</td><td>预估行数 vs 实际差一个数量级</td><td>统计信息过期</td><td>收统计（<strong>先验证逻辑读是否真降</strong>）</td></tr>
+<tr><td>④</td><td>预估行数 vs 实际差一个数量级</td><td>统计信息缺失或过期</td><td>收统计（<strong>先验证逻辑读是否真降</strong>）</td></tr>
 <tr><td>⑤</td><td>计划正常但仍慢</td><td>锁等待 / 高水位 / 资源竞争</td><td>查锁、查资源</td></tr>
 </table>
 <p>为什么 ① 在 ② 前面？因为「读多少行」由谓词和访问路径决定，「怎么读」才轮到索引和连接方式。先堵最大的漏，再看放大。</p>
+<p>④ 有一个例外，得排到 ① 前面：如果预估错到让访问路径都变了（该走索引却全扫），它长得很像「这张表缺索引」。你按 ① 建了索引，回头一看计划照旧全扫，又去怀疑索引没生效，绕一大圈。区分办法是先看预估行数和实际行数差多少，差一个数量级以上的，先把统计收了再看计划。</p>
 
 <h2>两条实测结论，省你两天</h2>
 <p>这两条都是同一个案例上跑出来的：一条前缀匹配的慢查询，测试环境复现，5921 ms。</p>
@@ -190,6 +259,7 @@ select sql_id, sql_plan from v$pln_history where sql_id = '上一步的ID';</cod
 <p><strong>二、谓词改写才是大头。</strong>同一句，把 <code>LIKE CONCAT(前缀,'%')</code> 改成 <code>SUBSTR(CODE,1,4)=前缀</code>，耗时 5921 → 462 ms（<strong>-92%</strong>），逻辑读降了 98.7%。</p>
 <blockquote><p>一句话记：<strong>「读多少」由谓词决定，「怎么读」由索引决定——先改谓词，再谈索引。</strong></p></blockquote>
 <p>补一句边界：<code>SUBSTR(CODE,1,4)=...</code> 这种改写的前提是<strong>前缀长度固定</strong>，能写成常数。变长前缀就回到原来的问题，别硬套。</p>
+<p>第一条结论还容易被读反，再补一句：它成立的前提是「瓶颈不在统计」。那次是谓词写法卡住了，统计救不了；但统计缺失改的是访问路径，代价是几十倍量级，就是上面那节的三组数字。所以别拿「只降 0.5%」当理由跳过收统计，先看预估行数和实际差多少，再决定要不要花那两百毫秒。</p>
 
 <h2>一个反直觉的坑：全表扫，却告诉你「不用建索引」</h2>
 <p>这个我是拿一张 30 万行、<code>CODE</code> 列没索引的表测出来的，第一版就翻了车。</p>
@@ -241,7 +311,9 @@ SELECT GRANTEE, PRIVILEGE FROM DBA_SYS_PRIVS WHERE GRANTEE='你的账号名';</c
 <p>授权和撤销都要<strong>重新连接</strong>才生效，已有连接还是旧权限。</p>
 
 <h3>表显示「行数未知」怎么办？</h3>
-<p>这张表没收集统计信息。补一条：<code>dmkit stat --table T_RO_TEST</code>。但注意——按前面第二条实测铁律，收统计未必能提速，它只让估算变准。</p>
+<p>这张表没收集统计信息。补一条：<code>dmkit stat --table T_RO_TEST --execute</code>。</p>
+<p><strong>别漏 <code>--execute</code>。</strong>这个命令默认只把要跑的语句打印出来，不加它一句都不执行——你回头再查，仍然是「行数未知」，然后开始怀疑工具坏了。（上面只读档输出里那句提示也漏了这个参数，照它敲会踩空，这条已经记进工具的待修项。）</p>
+<p>但注意，按前面第二条实测结论，收统计未必能提速，它只让估算变准。而且达梦默认不会自己收，收过一次之后还得跟着数据量走，别当一劳永逸。自动收怎么配、配错了怎么退，看前面「达梦的统计信息，默认是关着的」那节。</p>
 
 <h3>报「表或视图不存在」，是不是版本不兼容？</h3>
 <p>先看错误码，这两类完全不是一回事，处理方向相反：</p>
