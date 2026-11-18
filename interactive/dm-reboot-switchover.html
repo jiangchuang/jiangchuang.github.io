@@ -49,6 +49,10 @@
   .step.opt:hover, .step.opt:focus-visible { box-shadow: 0 0 0 3px rgba(245,158,11,.16); }
   .step.opt.on { border-color: #fcd34d; box-shadow: 0 0 0 3px rgba(245,158,11,.22); }
   .step .tagopt { display: inline-block; font-size: 11px; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 999px; padding: 1px 8px; margin-left: 8px; vertical-align: 2px; }
+  /* 章节分隔：重启主线在第 6 步结束，第 7 步是另一件事。
+     不加这条，读者会顺着卡片往下点，把切换当成重启的必经一步。 */
+  .step-sep { display: flex; align-items: center; gap: 10px; margin: 2px 0; font-size: 11.5px; font-weight: 700; color: #b45309; }
+  .step-sep::before, .step-sep::after { content: ""; height: 1px; background: #fcd34d; flex: 1; }
   .branch { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 0 10px 10px 0; padding: 12px 15px; margin: 14px 0; font-size: 13.5px; line-height: 1.8; color: #78350f; }
   .branch b { color: #92400e; }
   .branch .chip { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
@@ -229,6 +233,7 @@
         <div class="d">注意：是 startup 不是 start（实测坑）</div>
         <div class="go">查看命令 →</div>
       </div>
+      <div class="step-sep"><span>重启到此结束 · 以下是可选章节</span></div>
       <div class="step opt" data-k="s7" data-name="步骤 7 · switchover：计划内主备切换（可选）" tabindex="0" role="button" aria-label="7 switchover 计划内切换，可选步骤">
         <span class="no">7</span><span class="t">switchover 计划内切换</span><span class="tagopt">可选</span>
         <div class="d">仅当本次维护要主备角色互换才做；纯重启可跳过，直接到第 8 步</div>
@@ -403,10 +408,10 @@ stop group GRP1
           <div class="cmdbox">
             <button class="cp" type="button">复制</button>
             <pre><code><span class="cm"># [monitor] 提示符下、已 login 后执行</span>
-startup group GRP1
-
-<span class="cm"># 一个监视器只配一组时，组名可省略，等价：</span>
 startup group
+
+<span class="cm"># 需要显式指定组名时（多组并存），写法等价：</span>
+startup group GRP1
 
 <span class="cm"># 实测输出是逐条日志，不是 show 那种表格：</span>
 <span class="cm"># STARTUP实例DB1[PRIMARY, SHUTDOWN, ISTAT_SAME:TRUE]的守护进程</span>
@@ -418,7 +423,7 @@ startup group
           </div>          <ul>
             <li><b>GRP1 这个组名从哪来</b>：不是随手起的，它就是监视器配置文件里的组段名——打开配置文件能看到一行 <span class="chip">[GRP1]</span>，下面列着本组的 <span class="chip">MON_DW_IP</span>（各守护进程的 IP:PORT）。组名改了，命令里的 <span class="chip">GRP1</span> 也必须跟着改。</li>
             <li><b>同段里还有 OGUID</b>：<span class="chip">MON_INST_OGUID</span> 必须与各节点 <span class="chip">dmwatcher.ini</span> 里的 <span class="chip">INST_OGUID</span> 完全一致，否则监视器连不上守护进程。</li>
-            <li><b>组名可以省略</b>：监视器自己的命令帮助写的就是 <span class="chip">startup group [group_name]</span>——方括号即可选。实时主备/读写分离一个监视器只配一组，省略与写上等价；多组并存（如 MPP 主备）时必须指定。</li>
+            <li><b>本页统一写不带组名的形式</b>，与 <span class="chip">stop group</span> 保持对称：监视器自己的命令帮助写的就是 <span class="chip">startup group [group_name]</span>——方括号即可选。实时主备/读写分离一个监视器只配一组，省略与写上等价；多组并存（如 MPP 主备）时必须指定。</li>
             <li class="warnline"><b>这条命令是让 dmwatcher 去拉起实例，不是监视器自己起进程</b>。若 dmwatcher 没在跑，会报 <span class="chip">监视器还未收到组(GRP1)的守护进程消息</span>，并以「启动组(GRP1)中的所有实例失败」告终——这时先把两节点的守护进程服务起起来，再回来敲 startup group。</li>
             <li><b>不要看到「ERROR」就以为失败</b>：启动过渡期 <span class="chip">show</span> 会短暂显示 <span class="chip">WSTATUS=STARTUP</span>、<span class="chip">ISTATUS=SHUTDOWN</span>、<span class="chip">INST_OK=ERROR</span>，这是实例还没 OPEN 的正常中间态，等 20~25 秒再看。</li>
             <li><b>实例已经在跑会怎样</b>：监视器逐个报告 <span class="chip">实例DB1[PRIMARY, OPEN, ISTAT_SAME:TRUE]已经处于运行状态</span>，末尾补一句「不符合启动组(GRP1)中的所有实例条件」——不会重启实例，也不会报错退出。</li>

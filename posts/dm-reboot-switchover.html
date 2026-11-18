@@ -180,7 +180,7 @@ Instance DB2 shutdown success, please wait</code></pre>
 <hr>
 <h2>四、启动主备集群</h2>
 <h3>第 7 步：启动整个守护组</h3>
-<pre class="code"><code>startup group GRP1</code></pre>
+<pre class="code"><code>startup group</code></pre>
 <blockquote><p>⚠️ 注意命令不对称：停用的是 <code>stop group</code>，启动用的是 <code>startup group</code>，不是 <code>start group</code>。写成 <code>start group</code> 监视器会直接回「输入命令非法」，并提示正确用法。这是实测踩过的坑。</p></blockquote>
 <p>输出（监视器会逐条推进守护进程与实例状态）：</p>
 <pre class="code"><code>STARTUP实例GRP1_RT_02[PRIMARY, SHUTDOWN]的守护进程
