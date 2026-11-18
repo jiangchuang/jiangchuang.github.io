@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦怎么看逻辑读：三步拿到那个数字，然后让它变小 · 达梦手记</title>
+<meta name="description" content="逻辑读是达梦上唯一不会被缓存和机器负载骗的指标。三种拿到它的办法：DM 管理工具的下拉选 TRACE、disql 里两行 SET AUTOTRACE、事后查 V$SQL_HISTORY。同一张 30 万行表的实测：全表扫 4548、走索引回表 911、覆盖索引 11。含三处实测更正：达梦的逻辑读不含物理读（与 Oracle 相反）、两个入口的数字对不上、explain 看不到逻辑读。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../search.html">搜索</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">  <div class="art-head">
+    <div class="meta">2026-11-15 &nbsp;·&nbsp; 性能优化</div>
+    <h1>达梦怎么看逻辑读：三步拿到那个数字，然后让它变小</h1>
+    <span class="cat">性能优化</span>
+  </div>
+  <div class="content">
+<blockquote><p><strong>三十秒版本。</strong>逻辑读 = 这条 SQL 读了多少个 8K 的页。它不像耗时那样一忙就飘，是你能自己量、自己比的那个数。三个入口：<strong>管理工具</strong>（选 SQL → 工具栏下拉选 TRACE → 执行）、<strong>命令行</strong>（<code>set autotrace traceonly</code> 加一句 SQL）、<strong>事后查</strong>（<code>V$SQL_HISTORY</code>）。</p></blockquote>
+<blockquote><p>文中每个数字都是在一台 2G 内存的单机 DM8 上跑出来的（Linux，Pack10，8K 页，30 万行表），不是抄的。三处和流传写法对不上的地方单独列了出来：<strong>达梦的逻辑读不含物理读</strong>、<strong>两个入口的数字天然对不上</strong>、<strong>explain 根本看不到逻辑读</strong>。</p></blockquote>
+
+<h2>「你优化一下这个查询」</h2>
+<p>这句话接下来怎么接，取决于你手上有什么。</p>
+<p>如果你只有一个耗时，那就很被动：同一条 SQL，机器闲的时候 200 毫秒，隔壁跑个报表就变成 3 秒。你改完了再跑一次，快了，可你不知道是自己改对了，还是这会儿机器不忙。拿着这种数据去跟人说「优化好了」，自己心里也没底。</p>
+<p>逻辑读解决的就是这件事。<strong>它数的是这条 SQL 在内存里访问了多少个数据页</strong>，跟机器忙不忙、缓存热不热都没关系。同一个 SQL 改前改后各跑一次，数字从 4548 降到 11，这话是可以拿到会上说的。</p>
+<p>所以下面先给能直接用的东西，怎么理解放到后面。赶时间的话，看到「拿到数字之后，只比三件事」就可以走了。</p>
+
+<h2>入口一：DM 管理工具，点四下</h2>
+<p>图形界面最省事，SQL 写在哪就在哪执行，不用记命令。</p>
+<table>
+<tr><th style="width:8%">步</th><th style="width:26%">做什么</th><th>在哪</th></tr>
+<tr><td>1</td><td>选中要测的那条 SQL</td><td>SQL 编辑区里用鼠标拉选中。不选，就执行整段</td></tr>
+<tr><td>2</td><td>点工具栏上那个<strong>下拉箭头</strong></td><td>「手动提交」右边那个，默认显示 <code>INDEX</code></td></tr>
+<tr><td>3</td><td>选 <code>TRACE</code> 或 <code>TRACEONLY</code></td><td>下拉里有三项：<code>INDEX</code>、<code>TRACE</code>、<code>TRACEONLY</code></td></tr>
+<tr><td>4</td><td>点执行</td><td>跟平时执行一样，快捷键也行</td></tr>
+</table>
+<p>两者的区别工具里写得很清楚：<code>TRACE</code> 会<strong>显示结果集</strong>，再加执行计划和监控信息；<code>TRACEONLY</code> 不显示结果集，只给计划和统计。只想看逻辑读，选 <code>TRACEONLY</code>，省得刷一屏数据。</p>
+<p>执行完，下面「消息」窗口先是执行计划，再往下是 <code>Statistics</code> 面板。我在测试机上执行 <code>select * from dual</code>，出来是这样：</p>
+<pre class="code"><code>Statistics
+----------------------------------------------------------
+          0  data pages changed
+          0  undo pages changed
+         59  logical reads
+          0  physical reads
+          0  redo size
+        146  bytes sent to client
+         84  bytes received from client
+          1  roundtrips to/from client
+          0  sorts (memory)
+          0  sorts (disk)
+          0  rows processed
+          0  io wait time(ms)
+      2.473  exec time(ms)</code></pre>
+<p>盯住 <code>logical reads</code> 这一行就行。连查一个 <code>dual</code> 都要 59 次，不是它读了一行数据，是每次执行都有一笔固定的基础开销（字典、系统页）。所以这个数<strong>不要横向比，要纵向比</strong>：同一个 SQL 改前改后各跑一次。</p>
+<blockquote><p>这个下拉默认停在 <code>INDEX</code>，很多人以为工具只能看执行计划，就是因为没点开过它。<code>INDEX</code> 只是把计划里的扫描方式标出来，不给统计。</p>
+<p>说明一下边界：我的测试环境是 Linux 服务器，开不了这个客户端，所以上面四步是照界面写的；数字来自下一节命令行那条路，两边 <code>Statistics</code> 的字段和含义完全一致。</p></blockquote>
+
+<h2>入口二：disql 里两行</h2>
+<p>没有图形工具，或者要连的库在服务器另一头，用命令行。打开 disql 连上库，先开统计开关，再执行 SQL：</p>
+<pre class="code"><code class="lang-sql">set autotrace traceonly;
+select * from SYSDBA.T_LR where code = 'CODE500';</code></pre>
+<p>输出是这样的（计划在上，统计在下）：</p>
+<pre class="code"><code>1   #NSET2: [8, 7500, 116]
+2     #PRJT2: [8, 7500, 116]; exp_num(5), is_atom(FALSE); INFO_BITS(0)
+3       #BLKUP2: [8, 7500, 116]; IDX_LR_CODE(T_LR); use_clu_addr(0)
+4         #SSEK2: [8, 7500, 116]; scan_type(ASC), IDX_LR_CODE(T_LR), scan_range['CODE500','CODE500'], is_global(0)
+
+300 rows got
+
+Statistics
+        -----------------------------------------------------------------
+          0   data pages changed
+          0   undo pages changed
+        963   logical reads
+          0   physical reads
+          0   redo size
+      37850   bytes sent to client
+        169   bytes received from client
+          2   roundtrips to/from client
+          0   sorts (memory)
+          0   sorts (disk)
+          0   rows processed
+      0.000   io wait time(ms)
+      1.313   exec time(ms)</code></pre>
+<p>字段名和图形工具那一屏完全一致，<code>logical reads</code> 就是你要的那个数。<code>rows got</code> 是返回了 300 行，但这不是重点，重点是它读了 963 个页。</p>
+<p>两种模式：</p>
+<table>
+<tr><th style="width:26%">命令</th><th style="width:20%">给结果集</th><th>什么时候用</th></tr>
+<tr><td><code>set autotrace traceonly;</code></td><td>不给</td><td>默认用这个。只想看数，不想刷屏</td></tr>
+<tr><td><code>set autotrace on;</code></td><td>给</td><td>要顺手看一眼查出来什么</td></tr>
+<tr><td><code>set autotrace off;</code></td><td>关掉</td><td>测完关掉，不然每条 SQL 都输出一坨</td></tr>
+</table>
+<p>注意 <code>traceonly</code> 也是<strong>真执行</strong>，不是只看计划。大表上的 SQL 在生产库里跑，该慢还是慢，该锁还是锁。这一点跟 <code>explain</code> 完全不同，后面会讲。</p>
+
+<h2>入口三：事后查历史</h2>
+<p>SQL 已经跑完了、现场没了，或者你想看「这条 SQL 最近几次都花了多少」，查 <code>V$SQL_HISTORY</code>。逻辑读的列名叫 <code>N_LOGIC_READ</code>，注意不是 <code>LOGIC_READS</code>：</p>
+<pre class="code"><code class="lang-sql">select * from (
+  select sql_id,
+         substr(top_sql_text, 1, 44) txt,
+         n_logic_read, n_phy_read, time_used, start_time
+    from v$sql_history
+   where top_sql_text like '%T_LR%'
+   order by start_time desc
+) where rownum &lt;= 8;</code></pre>
+<p>跑出来是这样（<code>time_used</code> 单位是微秒）：</p>
+<pre class="code"><code>SQL_ID  TXT                                         N_LOGIC_READ  N_PHY_READ  TIME_USED
+------  ------------------------------------------  ------------  ----------  ---------
+17      select count(*) from T_LR where code='CODE50            4           0         79
+16      select * from T_LR where code='CODE500';                772           0        515
+16      select * from T_LR where code='CODE500';                772           0        647
+13      create index IDX_LR_CODE on T_LR(code);              19830        4033     530380</code></pre>
+<p>这个入口的好处是<strong>事后也能翻</strong>，不用提前开开关，也不影响正在跑的业务。坏处是它依赖历史记录留了多久，跑得太久远的可能已经被顶掉。</p>
+
+<h2>拿到数字之后，只比三件事</h2>
+<p>不要盯着绝对值问「多少算慢」，这个问题没有答案。看三个相对关系：</p>
+<ol>
+<li><strong>同一个 SQL，改之前和改之后。</strong>加了索引、改了写法，数字变小就是变好。这是最硬的证据。</li>
+<li><strong>全表扫的逻辑读，应该约等于这张表占了多少块。</strong>对得上，说明就是老老实实扫了一遍；对不上，说明计划或者统计有问题。查块数用 <code>select blocks from user_segments where segment_name='T_LR';</code></li>
+<li><strong>别看耗时下结论。</strong>缓存一热，同一条 SQL 从 278 毫秒掉到 16 毫秒，逻辑读一个数都没变。</li>
+</ol>
+<p>第三点值得单独说一句，因为它是最常见的自欺：你改完 SQL 再跑一遍，快了十倍，很满意。其实只是第二次执行，页都在内存里了。</p>
+
+<h2>下面开始拆解，不影响你用</h2>
+<p>从这里往后是「为什么」。上面那三条够你交差了，想搞明白再往下看。</p>
+
+<h2>逻辑读数的是页，不是行</h2>
+<p>一个页 8K，这是建库时定的，查一下就知道：</p>
+<pre class="code"><code class="lang-sql">select page from v$database;</code></pre>
+<pre class="code"><code>PAGE
+----------
+      8192</code></pre>
+<p>所以 <code>logical reads = 4548</code> 的意思是：这条 SQL 在内存里摸了 4548 个页，折合 36MB 左右。跟它返回了 101 行还是 3 行没关系。</p>
+<p>我那张测试表 T_LR 灌了 30 万行，每行 116 字节，占多少：</p>
+<pre class="code"><code class="lang-sql">select segment_name, blocks, bytes/1024/1024 mb
+  from user_segments
+ where segment_name in ('T_LR','IDX_LR_CODE');</code></pre>
+<pre class="code"><code>SEGMENT_NAME  BLOCKS      MB
+------------  ------  ------
+IDX_LR_CODE      944       7
+T_LR            4560      35</code></pre>
+<p>表 4560 块，全表扫的逻辑读 4548。对得上，这就是「扫了一遍」的样子。</p>
+
+<h2>一个实验：三条 SQL，4548 / 911 / 11</h2>
+<p>同一张表，同一个过滤条件，只换写法和索引，逻辑读差了 400 多倍：</p>
+<table>
+<tr><th style="width:40%">SQL</th><th style="width:22%">执行计划</th><th style="width:12%">返回行</th><th>逻辑读</th></tr>
+<tr><td><code>select * from T_LR where id between 100 and 200</code></td><td><code>CSCN2</code> 全表扫</td><td>101</td><td><strong>4548</strong></td></tr>
+<tr><td><code>select * from T_LR where code = 'CODE500'</code></td><td><code>SSEK2</code> 索引扫 + <code>BLKUP2</code> 回表</td><td>300</td><td><strong>911</strong></td></tr>
+<tr><td><code>select code from T_LR where code = 'CODE500'</code></td><td><code>SSEK2</code> 只扫索引</td><td>300</td><td><strong>11</strong></td></tr>
+</table>
+<p>第一个结果大概会让人愣一下：<strong>返回 101 行的花了 4548 次，返回 300 行的只花了 11 次。</strong></p>
+<p>因为第一个没索引，只能从头扫到尾，读完 4548 个页才挑出 101 行。第三个走索引，而且<strong>要的列就在索引里</strong>（索引建在 <code>code</code> 上，查的也是 <code>code</code>），不用回表去拿整行，扫了 11 个索引页就完事，300 行全在里面。</p>
+<p>中间那个是常态：走索引找到位置，再回表取整行。<code>code='CODE500'</code> 命中 300 行，散落在 300 个不同的页上，于是回表就是 300 次页访问，加上索引页，九百多。</p>
+<p>这就是为什么 <code>select *</code> 有时候比 <code>select 几个字段</code> 贵一个数量级，也是「覆盖索引」这个词的实际含义：<strong>要的列全在索引里，就不用回表</strong>。</p>
+
+<h2>为什么拿它当优化目标，而不是耗时</h2>
+<p>同一条全表扫的 SQL，连跑两次，我记录下来的是这样：</p>
+<table>
+<tr><th style="width:30%">第几次</th><th style="width:16%">逻辑读</th><th style="width:16%">物理读</th><th>耗时</th></tr>
+<tr><td>重启后第一次</td><td>562</td><td>4028</td><td>278 ms</td></tr>
+<tr><td>第二次</td><td>4540</td><td>0</td><td>16 ms</td></tr>
+</table>
+<p>耗时差了 17 倍，逻辑读基本是同一个量级（这两个数为什么不一样，下一节说）。你要是拿第一次的 278 毫秒当基线，改完再测 16 毫秒，会误以为自己优化了一个数量级，其实一行代码都没改。</p>
+<p>逻辑读不受这个影响，所以它能当尺子。耗时也有用，但它说明的是「用户等了多久」，受服务器负载、缓存、网络一堆因素影响，不适合用来判断「这条 SQL 本身好不好」。</p>
+
+<h2>和 Oracle 不一样：达梦的逻辑读不含物理读</h2>
+<p>这条必须单独讲，因为它跟 Oracle 的经验是反的，而国内大部分教程是照着 Oracle 抄的。</p>
+<p>Oracle 里，逻辑读是「访问缓冲区的总次数」，物理读是其中没命中、要去磁盘的那部分，所以<strong>逻辑读包含物理读</strong>。达梦不是。上面那张表里，冷缓存那次 <code>562 + 4028 = 4590</code>，热缓存那次 <code>4540</code>，两个数差不多，说明物理读是<strong>另算的</strong>，没有摊进逻辑读里。</p>
+<p>我又拿一张 100 行的小表验了一遍，结论一样：</p>
+<table>
+<tr><th style="width:22%">执行</th><th style="width:16%">逻辑读</th><th style="width:16%">物理读</th><th>解释</th></tr>
+<tr><td>冷缓存第一次</td><td>49</td><td>1</td><td>数据页要从磁盘读 1 次，字典等基础开销 49</td></tr>
+<tr><td>第二次</td><td>1</td><td>0</td><td>页在内存里了，只摸了那 1 个页</td></tr>
+</table>
+<p>小表总共 1 个数据页，如果逻辑读包含物理读，冷缓存那次数值不该比热缓存小。实际是反过来变小了，因为页还没进内存。</p>
+<p>所以看达梦的执行统计，两个数要<strong>一起看</strong>：<code>logical reads + physical reads</code> 大约是这次执行真实访问的页数。<strong>物理读高只说明缓存冷，说明不了这条 SQL 写得烂</strong>；逻辑读高才是真要改。</p>
+
+<h2>两个入口的数字对不上，别跨着比</h2>
+<p>同一句 SQL、同一时刻，我在 disql 里看到逻辑读 904，转头查 <code>V$SQL_HISTORY</code>，同一句是 772。差 15%，不是抄错。</p>
+<p>统计口径不同：命令行的 Statistics 是客户端在会话上抓的，把解析、准备、执行整段都算进去了；历史视图记的是服务端执行那一段。具体差在哪几个阶段，我没有逐项拆开验证，但<strong>「数不一致」这件事本身就够用了</strong>：做前后对比时，从哪拿的数就一路从那拿，别改前看 AUTOTRACE、改后查历史视图。</p>
+<p>另外 <code>V$SQL_HISTORY</code> 里同一句 <code>select *</code> 记了 772，而 <code>count(*)</code> 版本只有 4，跟我在命令行看到的 904 和 11 是同一个方向的关系，倍数也接近。<strong>看相对变化没问题，看绝对值会踩坑。</strong></p>
+
+<h2>explain 看不到逻辑读</h2>
+<p>很多人第一反应是 <code>explain</code>。不行，它只给计划：</p>
+<pre class="code"><code class="lang-sql">explain select * from T_LR where code='CODE500';</code></pre>
+<pre class="code"><code>1   #NSET2: [8, 7500, 116]
+2     #PRJT2: [8, 7500, 116]; exp_num(5), is_atom(FALSE); INFO_BITS(0)
+3       #BLKUP2: [8, 7500, 116]; IDX_LR_CODE(T_LR); use_clu_addr(0)
+4         #SSEK2: [8, 7500, 116]; scan_type(ASC), IDX_LR_CODE(T_LR), scan_range['CODE500','CODE500'], is_global(0)</code></pre>
+<p>没有 Statistics 段，因为<strong>它根本没执行</strong>。逻辑读是执行出来的数，不跑就没有。</p>
+<p>这也解释了管理工具那个下拉为什么有三项：<code>INDEX</code> 就是这里的性质，只看计划；<code>TRACE</code> 和 <code>TRACEONLY</code> 是真跑。</p>
+
+<h2>没有 DBA 权限，也能用</h2>
+<p>这点值得单独说，因为不少环境开发拿不到 SYSDBA。我建了个普通用户 <code>DEV1</code>，只给了 <code>resource</code> 角色和一张表的查询权限，然后跑同样的命令：</p>
+<pre class="code"><code class="lang-sql">-- DEV1 登录后，原样可用
+set autotrace traceonly;
+select * from SYSDBA.T_LR where code='CODE500';</code></pre>
+<p>正常输出，逻辑读 925，没有报 <code>-5504</code>。原因是 <code>autotrace</code> 是 disql 客户端自己的功能，统计信息随执行结果一起回来，不额外查系统视图，所以不需要 DBA。</p>
+<p>注意表名要带模式名（<code>SYSDBA.T_LR</code>），普通用户查别人的表不加模式名会报「表或视图不存在」。</p>
+
+<h2>一次完整的优化，长什么样</h2>
+<p>把上面这些串起来，实际干活的流程是四步：</p>
+<ol>
+<li><strong>量基线。</strong><code>set autotrace traceonly;</code> 然后原样执行那条 SQL，抄下 <code>logical reads</code>。</li>
+<li><strong>改一个变量。</strong>只改一处，加索引就只加索引，改写法就只改写法。两个一起动，数字变好了也不知道是谁的功劳。</li>
+<li><strong>再量一次。</strong>还是 <code>traceonly</code>，还是同一个客户端。数字变小就成立。</li>
+<li><strong>换个场景再量。</strong>把参数换成另一种取值（上面实验里 <code>CODE500</code> 是比较均匀的值，换一个分布极端的），确认不是只对某一个值有效。</li>
+</ol>
+<p>我这边的结果：全表扫 4548，建索引后回表 911，只查索引列 11。要是业务允许只查 <code>code</code>，那就是 400 倍的差距，而且不用动任何配置。</p>
+<p>顺带一句：如果这条 SQL 在别处还有调用，改完记得看那条路径。索引会让「查得快」的同时让「写得慢一点」，批量插入的场景要留意。</p>
+
+<h2>常见问题</h2>
+
+<h3>管理工具的下拉里只有 INDEX，没有 TRACE？</h3>
+<p>那个下拉默认显示当前选中项，点一下箭头才展开。三项分别是 <code>INDEX</code>、<code>TRACE</code>、<code>TRACEONLY</code>。如果点开确实只有一项，说明工具版本较老，用 disql 那条路。</p>
+
+<h3><code>traceonly</code> 不是只看计划吗，为什么生产库要小心？</h3>
+<p>名字容易误导。<code>traceonly</code> 的 only 指的是「只输出统计，不输出结果集」，SQL 本身是<strong>真的执行</strong>。大表全扫、带 <code>FOR UPDATE</code>、调用自定义函数的语句，在生产库里跑之前先想一下。</p>
+
+<h3>同一句 SQL 每次逻辑读都不一样，正常吗？</h3>
+<p>小幅波动正常。我这边连续跑同一条，出现过 904、911、925，差 2% 左右；刚建完索引的第一次是 963。看的是量级变化（几百变几千、五千变十），不是个位数。</p>
+
+<h3>逻辑读和物理读，哪个更该管？</h3>
+<p>逻辑读。物理读高多半是缓存冷，多跑几次自己就降了。逻辑读高说明真的访问了那么多页，只有改索引或改写法才能降。</p>
+
+<h3>能不能看整个会话一共花了多少逻辑读？</h3>
+<p>这个我没实测，不写。日常判断单条 SQL 用上面三个入口就够了。</p>
+
+<h3>这个数多少算慢？</h3>
+<p>没有通用阈值，取决于你的表有多大、业务能忍多久。唯一靠谱的比较是<strong>跟自己的历史比</strong>：同一条 SQL 昨天的逻辑读和今天的比，同一张表加索引前后比。</p>
+
+<h2>最后</h2>
+<p>逻辑读这个东西的价值不在于「看懂」，在于<strong>它让你有一个不依赖别人、不依赖机器的判断依据</strong>。一台测试机、一个 30 万行的表、两行命令，十分钟就能自己把结论跑出来，不用等 DBA 排期，也不用猜。</p>
+<p>当然它只回答「这条 SQL 干了多少活」，不回答「这个活该不该干」。业务上这个查询有没有必要存在、返回的字段是不是全都用得上，那是另一件事，数字帮不了你。</p>
+<blockquote><p>想连着排查流程一起看：<a href="dmkit-slow-query-collect.html">达梦慢查询：一条命令把现场拍清楚</a>，那篇讲怎么把逻辑读、执行计划、表规模一次凑齐。</p></blockquote>
+</div>
+  <section class="contact" hidden>
+    <div class="contact-body">
+      <h3>卡在某一步了？</h3>
+      <p>先看上面三个入口哪个最接近你的环境。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、<code>select page from v$database</code> 的结果。不用发库里的数据。</p>
+      <details class="contact-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a> · <a href="https://beian.mps.gov.cn/#/query/webSearch?code=50010602505382" target="_blank" rel="noopener noreferrer"><img src="../assets/img/gongan-beian.png" alt="" style="height:16px;vertical-align:-3px;margin-right:4px">渝公网安备50010602505382号</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
