@@ -183,13 +183,13 @@ Instance DB2 shutdown success, please wait</code></pre>
 <pre class="code"><code>startup group</code></pre>
 <blockquote><p>⚠️ 注意命令不对称：停用的是 <code>stop group</code>，启动用的是 <code>startup group</code>，不是 <code>start group</code>。写成 <code>start group</code> 监视器会直接回「输入命令非法」，并提示正确用法。这是实测踩过的坑。</p></blockquote>
 <p>输出（监视器会逐条推进守护进程与实例状态）：</p>
-<pre class="code"><code>STARTUP实例GRP1_RT_02[PRIMARY, SHUTDOWN]的守护进程
-守护进程(GRP1_RT_02)状态切换 [SHUTDOWN--&gt;STARTUP]
-STARTUP实例GRP1_RT_01[STANDBY, SHUTDOWN]的守护进程
-守护进程(GRP1_RT_01)状态切换 [SHUTDOWN--&gt;STARTUP]
+<pre class="code"><code>STARTUP实例DB1[PRIMARY, SHUTDOWN]的守护进程
+守护进程(DB1)状态切换 [SHUTDOWN--&gt;STARTUP]
+STARTUP实例DB2[STANDBY, SHUTDOWN]的守护进程
+守护进程(DB2)状态切换 [SHUTDOWN--&gt;STARTUP]
 ...
-STARTUP  OK  GRP1_RT_02  OPEN  PRIMARY  VALID
-STARTUP  OK  GRP1_RT_01  OPEN  STANDBY</code></pre>
+STARTUP  OK  DB1  OPEN  PRIMARY  VALID
+STARTUP  OK  DB2  OPEN  STANDBY</code></pre>
 <p>这个先后顺序同样由监视器自动保证，不需要手工干预。备库会跟着主库走，主库没起来时它会先等待。</p>
 <blockquote><p>⚠️ 只有当你不用监视器、改用操作系统服务分别启停 <code>dmwatcher</code> / <code>dmserver</code> 时，才需要自己注意启动顺序。</p></blockquote>
 <h3>第 8 步：再确认一次状态</h3>
@@ -209,7 +209,7 @@ sed 's/^MON_DW_CONFIRM.*/MON_DW_CONFIRM = 0/' dmmonitor.ini &gt; dmmonitor_norma
 ./dmmonitor path=./dmmonitor_normal.ini</code></pre>
 <p>二、<code>DW_MODE = AUTO</code> 不影响计划内切换。<code>AUTO</code> 只决定主库故障时备库是否自动接管，与人工发起 <code>switchover</code> 无关。实测在 AUTO 模式下执行 <code>switchover</code> 完全正常。</p></blockquote>
 <p>切换命令会要求二次确认，输入 <code>YES</code> 后才真正执行：</p>
-<pre class="code"><code>此操作需谨慎, 将会导致主库发生切换, 是否继续使用GRP1.GRP1_RT_01执行SWITCHOVER操作(YES/NO/Y/N)?
+<pre class="code"><code>此操作需谨慎, 将会导致主库发生切换, 是否继续使用GRP1.DB2执行SWITCHOVER操作(YES/NO/Y/N)?
 YES</code></pre>
 <p>切换完成后同样用 <code>show</code> 确认：新的主库 <code>RSTAT</code> 变为 <code>PRIMARY</code>，原主库转为 <code>STANDBY</code>。</p>
 <hr>
