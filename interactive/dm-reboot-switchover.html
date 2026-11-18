@@ -380,9 +380,6 @@ login
             <pre><code><span class="cm"># [monitor] 提示符下、已 login 后执行</span>
 stop group
 
-<span class="cm"># 组名可省略；显式写等价</span>
-stop group GRP1
-
 <span class="cm"># 监视器按实例逐个推进（先主后备），逐条打印进度（实测输出）：</span>
 <span class="cm"># STOP实例DB1[PRIMARY, OPEN, ISTAT_SAME:TRUE]的守护进程</span>
 <span class="cm"># STOP实例DB1[PRIMARY, OPEN, ISTAT_SAME:TRUE]的守护进程成功</span>
@@ -395,7 +392,7 @@ stop group GRP1
           </div>          <ul>
             <li class="warnline"><b>这一步会真正停库，业务中断</b>。务必先确认已进入停机窗口、应用侧已断开连接。</li>
             <li>停的次序（先主后备）由监视器自动保证，<b>不需要手工干预</b>。</li>
-            <li><b>没有二次确认</b>：实测敲完 <span class="chip">stop group GRP1</span> 回车就直接执行，不会再问 Y/N——手别抖，敲之前确认窗口已开。</li>
+            <li><b>没有二次确认</b>：实测敲完 <span class="chip">stop group</span> 回车就直接执行，不会再问 Y/N——手别抖，敲之前确认窗口已开。</li>
             <li><b>耗时</b>：两节点实测约 <b>20 秒</b>（20:20:42 开始，20:21:02 输出「退出组(GRP1)中所有活动实例成功」）。</li>
             <li><b>怎么确认真的停了</b>：别只看监视器输出，回到操作系统查 <span class="chip">ps -ef | grep dmserver</span> 应无实例进程、<span class="chip">ss -lnt | grep 5666</span> 无监听，两个 <span class="chip">DmServiceDMSERVER*</span> 单元变成 <span class="chip">inactive (dead)</span>。</li>
             <li><b>守护进程（dmwatcher）不会随之消失</b>：实测停组后 watcher 进程仍在、对应 systemd 单元仍是 active——这正是下面 <span class="chip">startup group</span> 能成功的前提。</li>
@@ -410,9 +407,6 @@ stop group GRP1
             <pre><code><span class="cm"># [monitor] 提示符下、已 login 后执行</span>
 startup group
 
-<span class="cm"># 需要显式指定组名时（多组并存），写法等价：</span>
-startup group GRP1
-
 <span class="cm"># 实测输出是逐条日志，不是 show 那种表格：</span>
 <span class="cm"># STARTUP实例DB1[PRIMARY, SHUTDOWN, ISTAT_SAME:TRUE]的守护进程</span>
 <span class="cm"># 守护进程(DB1)状态切换 [SHUTDOWN-->STARTUP]</span>
@@ -421,9 +415,8 @@ startup group GRP1
 <span class="cm"># 启动组(GRP1)中的所有实例成功</span>
 <span class="cm"># 实测约 20~25 秒后恢复：DB1 OPEN/PRIMARY、DB2 OPEN/STANDBY</span></code></pre>
           </div>          <ul>
-            <li><b>GRP1 这个组名从哪来</b>：不是随手起的，它就是监视器配置文件里的组段名——打开配置文件能看到一行 <span class="chip">[GRP1]</span>，下面列着本组的 <span class="chip">MON_DW_IP</span>（各守护进程的 IP:PORT）。组名改了，命令里的 <span class="chip">GRP1</span> 也必须跟着改。</li>
+            <li><b>GRP1 这个组名从哪来</b>：不是随手起的，它就是监视器配置文件里的组段名——打开配置文件能看到一行 <span class="chip">[GRP1]</span>，下面列着本组的 <span class="chip">MON_DW_IP</span>（各守护进程的 IP:PORT）。命令里不带组名（一个监视器只配一组时省略与写上等价），组名改了，报错信息里出现的名字也会跟着变。</li>
             <li><b>同段里还有 OGUID</b>：<span class="chip">MON_INST_OGUID</span> 必须与各节点 <span class="chip">dmwatcher.ini</span> 里的 <span class="chip">INST_OGUID</span> 完全一致，否则监视器连不上守护进程。</li>
-            <li><b>本页统一写不带组名的形式</b>，与 <span class="chip">stop group</span> 保持对称：监视器自己的命令帮助写的就是 <span class="chip">startup group [group_name]</span>——方括号即可选。实时主备/读写分离一个监视器只配一组，省略与写上等价；多组并存（如 MPP 主备）时必须指定。</li>
             <li class="warnline"><b>这条命令是让 dmwatcher 去拉起实例，不是监视器自己起进程</b>。若 dmwatcher 没在跑，会报 <span class="chip">监视器还未收到组(GRP1)的守护进程消息</span>，并以「启动组(GRP1)中的所有实例失败」告终——这时先把两节点的守护进程服务起起来，再回来敲 startup group。</li>
             <li><b>不要看到「ERROR」就以为失败</b>：启动过渡期 <span class="chip">show</span> 会短暂显示 <span class="chip">WSTATUS=STARTUP</span>、<span class="chip">ISTATUS=SHUTDOWN</span>、<span class="chip">INST_OK=ERROR</span>，这是实例还没 OPEN 的正常中间态，等 20~25 秒再看。</li>
             <li><b>实例已经在跑会怎样</b>：监视器逐个报告 <span class="chip">实例DB1[PRIMARY, OPEN, ISTAT_SAME:TRUE]已经处于运行状态</span>，末尾补一句「不符合启动组(GRP1)中的所有实例条件」——不会重启实例，也不会报错退出。</li>
