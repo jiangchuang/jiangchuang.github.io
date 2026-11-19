@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>驱动日志里只有一个执行号，怎么找回那条 SQL 的执行计划 · 达梦手记</title>
+<meta name="description" content="达梦 JDBC 驱动日志里每条 SQL 后面都有 [EXEC_ID]。把这个执行号拿到库里，两条 SQL 就能换出 SQL_ID、逻辑读和完整执行计划，不用登服务器 dump 文件、不改代码、不重启。实测 DM8 8.1.5.8 与 DmJdbcDriver8 8.1.4.200，含 SF_TRACE_DUMP_PLN 的命名参数写法、V$CACHEPLN 的匹配坑、V$SQL_STAT 的会话级陷阱，以及 8.1.4.170 之前版本的降级做法。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../search.html">搜索</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">  <div class="art-head">
+    <div class="meta">2026-11-19 &nbsp;·&nbsp; 性能优化</div>
+    <h1>驱动日志里只有一个执行号，怎么找回那条 SQL 的执行计划</h1>
+    <span class="cat">性能优化</span>
+  </div>
+  <div class="content">
+<blockquote><p><strong>三十秒版本。</strong>驱动日志里有 <code>[EXEC_ID]: 67600</code>。拿这个号去库里走两步，计划全文就出来了：</p>
+<pre class="code"><code class="lang-sql">-- 第一步：执行号换 SQL_ID、逻辑读和原句
+select exec_id, sql_id, n_logic_read, top_sql_text
+from v$sql_history where exec_id = 67600;
+
+-- 第二步：用 SQL 文本在计划缓存里找到地址
+select cache_item from v$cachepln where sqlstr like '%T_ORDER%CODE500%';
+
+-- 第三步：把地址丢给函数
+select sf_trace_dump_pln(pln_id =&gt; 140545257168568) from dual;</code></pre>
+<p>不用登服务器、不用 dump 文件、不用改代码。<strong>但第二步要多看一眼，可能匹配出两条</strong>，原因在文末 FAQ。</p></blockquote>
+<blockquote><p>文中输出和数字都是在一台 CentOS 7 单机 DM8 上跑出来的（服务端 8.1.5.8，构建号 <code>03134284552-20260414-322369-20221</code>；驱动 <code>DmJdbcDriver8.jar</code> 8.1.4.200；表 5 万行）。服务端版本号是 <code>DatabaseMetaData.getDatabaseProductVersion()</code> 自报的，函数可用性以你库上 <code>v$version</code> 的构建号为准。</p></blockquote>
+
+<h2>「昨天中午那条 SQL 慢，你给看看」</h2>
+<p>这话接过来，你手上通常只有一个执行号。</p>
+<p>程序员翻日志，找到那条 800 毫秒的语句，然后要把现场交给你。他给的可能是 SQL 文本，也可能只丢一个数字，因为达梦 JDBC 驱动的日志里，每条 SQL 后面都跟着一个执行号：</p>
+<pre class="code"><code class="lang-log">[SQL   - 2026-11-19 12:00:43.103] tid:1 - [main] { conn-1, stmt-1 } executeQuery(String): rs-1;
+  [PARAMS]: "select id, pad from T_ORDER where id between 100 and 120";
+  [USED TIME]: 7.1721ms; [EXEC_ID]: 67601;</code></pre>
+<p>这个号是服务器给的。问题在于，大多数人以为它一会儿就没了，于是拿着它什么也做不了，只能回头问「你还记得是什么语句吗」。参数已经换了，语句也可能变了，一轮问答下来半小时过去了。</p>
+<p>其实它还活着，而且活得比你想象得久。下面这条链能把它一路换成计划，全程在数据库里完成。</p>
+
+<h2>先确认一件事：你的版本有没有这个函数</h2>
+<p><code>SF_TRACE_DUMP_PLN</code> 是达梦的系统函数，作用是按计划地址把缓存里的执行计划原样打出来。<strong>8.1.4.170 之后的版本才有</strong>，按官方社区的说法是 2025Q2 版本引入。一条命令确认：</p>
+<pre class="code"><code class="lang-sql">select * from v$version;</code></pre>
+<pre class="code"><code class="lang-text">LINEID     BANNER
+---------- ---------------------------------
+1          DM Database Server 64 V8
+2          DB Version: 0x7000d
+3          03134284552-20260414-322369-20221
+4          Msg Version: 1
+5          Gsu level(5) cnt: 102</code></pre>
+<p>第三行那个构建号，前 9 位 <code>03134284552</code> 里的版本段要能对到 8.1.4.170 或更高。对不上就先看文末「老版本怎么办」，那条路要多登一次服务器。</p>
+
+<h2>第一步：执行号换 SQL_ID、逻辑读和原句</h2>
+<p>一句话，一个字都不用改，把 <code>67600</code> 换成你手上的号：</p>
+<pre class="code"><code class="lang-sql">select exec_id, sql_id, sess_id, sess_seq, time_used, n_logic_read, n_phy_read, top_sql_text
+from v$sql_history
+where exec_id = 67600;</code></pre>
+<pre class="code"><code class="lang-text">LINEID  EXEC_ID  SQL_ID  SESS_ID              SESS_SEQ  TIME_USED  N_LOGIC_READ  N_PHY_READ  TXT
+------  -------  ------  -------------------  --------  ---------  ------------  ----------  ------------------------------
+1       67600    1607    140547514049216      705       206        2             0           select count(*) from T_ORDER where code='CODE500'</code></pre>
+<p>四个东西一次拿到，都值得看一眼：</p>
+<ul>
+<li><code>SQL_ID</code> 是 1607。它是这条语句在库里的身份证，比执行号稳定得多，同一个文本反复执行都归它。</li>
+<li><code>N_LOGIC_READ</code> 是 2。这条走了索引，只读两个页。</li>
+<li><code>TIME_USED</code> 是 206，<strong>单位是微秒</strong>，也就是 0.2 毫秒。而驱动日志里写的是 11.84 毫秒。差的这十几毫秒是客户端这一段：建连、硬解析、结果集在路上。两个数都对，口径不同，别拿它们互相打架。</li>
+<li><code>SESS_ID</code> 是 <code>140547514049216</code>，和驱动日志里那个 <code>sessionID-0x7fd3c4a622c0(140547514049216)</code> 是同一个数。这是一条独立的对账线索，怀疑执行号抄错时用它复核。</li>
+</ul>
+<p>顺手把旁边那条也查出来，对比更直观：</p>
+<pre class="code"><code class="lang-text">2       67601    1608    140547514049216      705       3533       895           0           select id, pad from T_ORDER where id between 100 and 120</code></pre>
+<p>同一个连接、同一秒内，一条读 2 个页，一条读 895 个页。这条 between 查询走的是全表扫，5 万行全过一遍，计划在第四步能看到。</p>
+
+<h2>第二步：SQL_ID 换不出计划，得靠 SQL 文本</h2>
+<p>很多人到这一步会顺手写 <code>where sql_id = 1607</code> 去 <code>v$cachepln</code> 里找计划。找不到，因为<strong>计划缓存里没有 SQL_ID 这一列</strong>。我用 <code>desc v$cachepln</code> 看过，能用的定位字段只有 <code>CACHE_ITEM</code>（计划地址）和 <code>SQLSTR</code>（语句原文）。</p>
+<p>所以第二步是用第一步拿到的 SQL 文本，去缓存里按文本找：</p>
+<pre class="code"><code class="lang-sql">select cache_item, substr(sqlstr, 1, 60) as s
+from v$cachepln
+where sqlstr like '%T_ORDER%CODE500%';</code></pre>
+<pre class="code"><code class="lang-text">LINEID  CACHE_ITEM          S
+------  ------------------  ------------------------------------------------------------
+1       140545257176760     select cache_item, substr(sqlstr, 1, 60) as s from v$cachepln
+2       140545257357784     select count(*) from T_ORDER where code='CODE500'</code></pre>
+<p>第一条是这条查询语句自己，因为它的文本里也带着 <code>T_ORDER</code> 和 <code>CODE500</code> 两个词。第二条才是你要的。这类自匹配几乎每次都会出现，看到两条不要慌，认出哪条是真的就行。</p>
+<p>要更准，就把 <code>like</code> 换成完全等值，把那条语句的整句抄进去：</p>
+<pre class="code"><code class="lang-sql">select cache_item from v$cachepln
+where sqlstr = 'select count(*) from T_ORDER where code=''CODE500''';</code></pre>
+<p>这样只会命中一条。代价是引号要转义，而且语句里哪怕多一个空格就对不上，所以排查时我一般先用 <code>like</code>，确认没歧义了再换等值。</p>
+
+<h2>第三步：把地址丢给函数</h2>
+<p><code>CACHE_ITEM</code> 就是一个整数地址，直接作为参数：</p>
+<pre class="code"><code class="lang-sql">select sf_trace_dump_pln(140545257168568) from dual;</code></pre>
+<p>这个函数的参数名叫 <code>PLN_ID</code>，类型 <code>BIGINT</code>，所以也可以写成命名参数的形式，两者等价：</p>
+<pre class="code"><code class="lang-sql">select sf_trace_dump_pln(pln_id =&gt; 140545257168568) from dual;</code></pre>
+<p>我是先试 <code>pln_id =&gt; 1</code>，报 <code>[-2206]:Invalid parameter value</code>，说明参数名认了、值不合法，才确信这个写法成立。传一个随便编的地址也是同样的报错，这一点在 FAQ 里说。</p>
+<p>输出比较长，disql 里先 <code>set long 100000</code>，否则会被截断。完整的一段是这样：</p>
+<pre class="code"><code class="lang-text">*** 2026-11-19 12:02:01.818000000*** start dump the infos of pln[140545257168568].
+	npln cache infos:
+        scp cache
+            type: 0
+            over flow: 0
+            disable: 0
+            fixed number: 1
+            ts value: 239
+        type: 0
+        hash val: 745726226
+        schid: 150994945
+        user id: 50331649
+        obj id: 0
+        --rs cache
+        rs can cache: 0
+        rs cache size: 0
+        tables' size: 1
+PLN_CREATE_TIME: 2026-11-19 12:00:42.000
+
+SQL_STR:
+select id, pad from T_ORDER where id between 100 and 120
+
+PLN_CMD:
+	0	savepoint
+	6	dop_try_begin	0
+	10	dop_try_begin	1
+	14	sql 0 0
+	24	nop
+	26	jmp	67
+	...
+
+sqlnode[0]::::
+1   #NSET2: [6, 1875, 68]
+2     #PRJT2: [6, 1875, 68]; exp_num(3), is_atom(FALSE); INFO_BITS(0)
+3       #SLCT2: [6, 1875, 68]; (T_ORDER.ID &gt;= var1 AND T_ORDER.ID &lt;= var2), slct_pushdown(1)
+4         #CSCN2: [6, 50000, 68]; INDEX33555466(T_ORDER); btr_scan(1); need_slct(1)
+
+end dump the infos of pln[140545257168568].</code></pre>
+<p>四段，按顺序读：</p>
+<ol>
+<li><strong>头部元信息</strong>：计划地址、哈希值、所属 schema。核对 <code>pln[...]</code> 里那个数和你要找的对不对，一眼就能看出拿错没有。</li>
+<li><strong><code>PLN_CREATE_TIME</code></strong>：2026-11-19 12:00:42。这是计划生成的时间，不是 SQL 执行的时间。同一个计划被复用一百次，这里还是第一次生成的那个时间。想看执行时间，回第一步看 <code>TIME_USED</code>。</li>
+<li><strong><code>PLN_CMD</code></strong>：计划指令序列，虚拟机码。平时不用读，怀疑优化器和你想的不一样时，它才是最终证据。</li>
+<li><strong><code>sqlnode</code></strong>：人看得懂的计划树。<code>#CSCN2</code> 是全表扫，<code>#SLCT2</code> 是过滤，方括号里三个数依次是代价 6、预估行数 50000、预估行宽 68 字节。</li>
+</ol>
+<p>计划里写的是 <code>var1</code>、<code>var2</code>，不是 100 和 120。因为驱动走的是参数化路径，计划缓存里存的是带变量的通用计划，绑定的实值不在这里。想知道具体绑定值，得回驱动日志的 <code>[PARAMS]</code>，那里有。</p>
+<p>再看那条走索引的 count：</p>
+<pre class="code"><code class="lang-text">1   #NSET2: [1, 1, 48]
+2     #PRJT2: [1, 1, 48]; exp_num(1), is_atom(FALSE); INFO_BITS(0)
+3       #AAGR2: [1, 1, 48]; grp_num(0), sfun_num(1), distinct_flag[0]; slave_empty(0)
+4         #SSEK2: [1, 1250, 48]; scan_type(ASC), IDX_ORDER_CODE(T_ORDER), is_global(0), scan_range['CODE500','CODE500']</code></pre>
+<p><code>#SSEK2</code> 是索引范围扫描，<code>scan_range['CODE500','CODE500']</code> 说明条件被收成了一个点查。这个形状配第一步的 <code>N_LOGIC_READ=2</code>，两边对得上，这条 SQL 没问题。</p>
+
+<h2>有一条更短的路，但多数时候走不了</h2>
+<p>如果目标会话开着 SQL 监控，<code>V$SQL_STAT</code> 里会直接有执行号和计划地址，一步到位：</p>
+<pre class="code"><code class="lang-sql">select exec_id, sql_id, pln_addr, logic_read_cnt from v$sql_stat where exec_id = 68200;</code></pre>
+<p>问题在「开着」这两个字。<code>MONITOR_SQL_EXEC</code> 是<strong>会话级</strong>参数，默认 0。我实测过两种情况：</p>
+<ul>
+<li>目标会话没设这个参数，执行完就退出。换个会话拿 <code>exec_id = 66802</code> 去查 <code>v$sql_stat</code>，返回 <code>no rows</code>。</li>
+<li>想图省事用 <code>sf_set_system_para_value('MONITOR_SQL_EXEC', 1, 0, 2)</code> 改系统级，执行成功了，但新开的会话查 <code>v$parameter</code> 还是 0。<strong>改了不生效，属于静默失败</strong>，这个坑比报错更费时间。</li>
+</ul>
+<p>所以这条路只适合「我自己开个会话复现一下」的场景。真拿到别人的执行号，还是走前三步，那三步不依赖任何监控参数。</p>
+<p>另外实测到一个小细节：就算开了监控，<code>PLN_ADDR</code> 也可能为 <code>NULL</code>。我这边一条 <code>select count(*)</code> 的记录就是空的，而同批次另一条有地址。遇到 NULL 不要以为参数没生效，换个执行号或者走文本匹配那条路。</p>
+
+<h2>这条链断在哪</h2>
+<p>三个地方会断，提前知道比事后猜强。</p>
+<p><strong>一、计划地址会被回收。</strong>缓存里的计划受内存和淘汰策略管，地址失效以后再传进去，报 <code>[-2206]:Invalid parameter value</code>，不会告诉你「过期了」。所以这三个步骤最好一次跑完，别隔一顿饭。</p>
+<p><strong>二、文本匹配可能命中多条。</strong>同一条语句被不同用户、不同 schema 执行，可能各有各的计划条目；语句里带注释、空白不同，也会分裂成多条。上面那个「查询语句匹配到自己」的情况每次都发生。判断依据是看 <code>SQLSTR</code> 全文，别看前缀。</p>
+<p><strong>三、缓存计划没有实际统计。</strong>这里是估算行数 50000，不是实际返回行数。达梦没有 <code>EXPLAIN ANALYZE</code>，敲了报 <code>[-2007]:Syntax error</code>。要真实数据，得用 <code>set autotrace traceonly</code>、<code>ET(执行号)</code> 或者 <code>DBMS_SQLTUNE.REPORT_SQL_MONITOR</code>，那几个都要在语句执行的那一刻抓，事后补不上。</p>
+<p>换句话说，<code>SF_TRACE_DUMP_PLN</code> 解决的是「形状」，不是「耗时」。想知道钱花在哪个算子上，它给不了。</p>
+
+<h2>常见问题</h2>
+
+<h3>执行号到底能活多久？</h3>
+<p>分两个地方看，别混。<code>V$SQL_STAT</code> 里的是内存现场，会话结束或者监控没开就没有了，这也是「一会儿就刷掉」这个印象的来源。<code>V$SQL_HISTORY</code> 是另一套东西，它由参数 <code>SQL_HISTORY_CNT</code> 控制保留条数，我这台库上是 <code>10000</code>，用环形覆盖的方式滚动。也就是说，只要没被一万条新记录挤掉，昨天的执行号现在还能查。</p>
+<p>我实测跨会话、隔了两分钟再查 <code>65902</code>，照样能出 SQL_ID 和逻辑读。至于重启之后还在不在，<strong>未实测</strong>，别拿它当长期审计用。</p>
+
+<h3>报 <code>[-2206]:Invalid parameter value</code> 是什么意思？</h3>
+<p>两种可能，都指向同一个原因：这个地址在缓存里不存在。要么抄错了，要么计划已经被回收。先回第二步确认 <code>cache_item</code> 还在不在，<code>select cache_item from v$cachepln where cache_item = 你的地址</code>，返回空就说明过期了，只能重跑那条 SQL 让它重新生成计划，再按新地址取。</p>
+
+<h3>为什么 <code>v$sql_stat</code> 一条都查不到？</h3>
+<p>九成是 <code>MONITOR_SQL_EXEC</code> 没开。检查一下当前会话：</p>
+<pre class="code"><code class="lang-sql">select name, value from v$parameter where name = 'MONITOR_SQL_EXEC';</code></pre>
+<p>要 1 才有记录。开法：<code>call sf_set_session_para_value('MONITOR_SQL_EXEC', 1);</code>，然后<strong>在同一个会话里</strong>执行目标 SQL。换个会话查不到别人的，这是实测过的。</p>
+
+<h3>能不能只用 SQL_ID 拿计划？</h3>
+<p>我这边不行。<code>v$cachepln</code> 没有 SQL_ID 列，<code>v$sql_history</code> 没有计划地址列，两边接不上。能接上的只有「SQL 文本」这个中间物，所以第二步绕不开。<code>v$sql_stat</code> 里倒是有 SQL_ID 和 PLN_ADDR 同时在，但它受监控参数限制，见上一节。</p>
+
+<h3>第一步查出来的 <code>N_LOGIC_READ</code>，和 autotrace 的对得上吗？</h3>
+<p>口径一样，都是页数，但不含物理读，这是达梦和 Oracle 相反的地方。同一批测试里我用 <code>set autotrace traceonly</code> 和这个视图对比过，数字一致。要注意的是这个字段统计的是<strong>那一次执行</strong>，不是累计值，拿它当「这条 SQL 平时读多少页」用会偏小。</p>
+
+<h3>老版本没有 <code>SF_TRACE_DUMP_PLN</code> 怎么办？</h3>
+<p>用 <code>plndump</code> 事件，输出到服务器的 trace 文件，要登机器去 <code>cat</code>：</p>
+<pre class="code"><code class="lang-sql">alter session set events 'immediate trace name plndump level 140545257168568, dump_file ''plndump_test.trc''';</code></pre>
+<p>文件落在 <code>TRACE_PATH</code> 下，路径用 <code>select * from v$dm_ini where para_name = 'TRACE_PATH'</code> 查。文件名只能给纯名字，<strong>给绝对路径会报存在父目录引用</strong>，这个限制官方社区文档里也写了。内容和新函数打出来的一致，只是多了一次登录和一次找文件。</p>
+
+<h3>只有 SQL 文本，没有执行号，还能用吗？</h3>
+<p>能，从第二步开始走。而且更省事：直接 <code>v$cachepln</code> 按文本找地址，再打计划。代价是拿不到 <code>TIME_USED</code> 和 <code>N_LOGIC_READ</code>，那两项只在执行记录里。</p>
+
+<h3>换一个达梦版本还成立吗？</h3>
+<p>函数是内置的，不在数据字典里，我用 <code>sys.sysobjects</code> 查它的名字是零行，<code>all_arguments</code> 也是零行，所以拿不到官方签名，全靠试。我在 8.1.5.8 上确认了参数名 <code>PLN_ID</code> 和 <code>BIGINT</code> 类型。<strong>换版本请先跑一次 <code>select sf_trace_dump_pln(pln_id =&gt; 1) from dual</code></strong>，报 <code>-2206</code> 说明函数在、参数名对；报「函数不存在」就得换回 plndump 那条路。</p>
+
+<h2>最后</h2>
+<p>这个用法本身没什么技术含量，两三条 SQL 而已。它改变的是取证的时间成本：以前要知道一条 SQL 用了什么计划，得登服务器、开事件、找文件、下载、打开；现在在执行号还在的时候，三条 SQL 就完事，人还在电话上就能回话。</p>
+<p>对程序员来说这也是好事。他不用为了让你看计划，专门去加日志、发一次版。把执行号和诉求一起发过来，你这边就能自己查。</p>
+<blockquote><p>执行号从哪来。驱动日志里的 <code>[EXEC_ID]</code> 是驱动自己打的，开法见这篇：<a href="dm-jdbc-explain-hook.html">达梦 JDBC 打印真实执行计划：一个类加一个连接串参数，业务代码不用改</a>。那篇讲怎么让每条 SQL 自己开口，这篇讲它开口以后怎么顺着线索往下查。</p></blockquote>
+<blockquote><p><code>N_LOGIC_READ</code> 那个数怎么判读、多少算多，见：<a href="dm-logical-reads.html">达梦怎么看逻辑读：三步拿到那个数字，然后让它变小</a>。</p></blockquote>
+</div>
+  <section class="contact" hidden>
+    <div class="contact-body">
+      <h3>卡在某一步了？</h3>
+      <p>先确认三件事：服务端构建号在 8.1.4.170 之后、执行号是 <code>v$sql_history</code> 里真能查到的、计划地址是刚从 <code>v$cachepln</code> 取出来的。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、<code>v$version</code> 的第三行。不用发库里的数据。</p>
+      <details class="contact-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a> · <a href="https://beian.mps.gov.cn/#/query/webSearch?code=50010602505382" target="_blank" rel="noopener noreferrer"><img src="../assets/img/gongan-beian.png" alt="" style="height:16px;vertical-align:-3px;margin-right:4px">渝公网安备50010602505382号</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
