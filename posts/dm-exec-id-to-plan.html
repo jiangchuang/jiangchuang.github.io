@@ -117,7 +117,7 @@ where exec_id = 67600;</code></pre>
 1       67600    1607    140547514049216      705       206        2             0           select count(*) from T_ORDER where code='CODE500'</code></pre>
 <p>四个东西一次拿到，都值得看一眼：</p>
 <ul>
-<li><code>SQL_ID</code> 是 1607。它是这条语句在库里的身份证，比执行号稳定得多，同一个文本反复执行都归它。</li>
+<li><code>SQL_ID</code> 是 1607。它是这条语句在库里的身份证，比执行号稳定得多：实测同一句连跑 10 次、换个会话再跑，都是同一个 <code>SQL_ID</code>。但实例重启后会重新分配，别把它当永久主键。</li>
 <li><code>N_LOGIC_READ</code> 是 2。这条走了索引，只读两个页。</li>
 <li><code>TIME_USED</code> 是 206，<strong>单位是微秒</strong>，也就是 0.2 毫秒。而驱动日志里写的是 11.84 毫秒。差的这十几毫秒是客户端这一段：建连、硬解析、结果集在路上。两个数都对，口径不同，别拿它们互相打架。</li>
 <li><code>SESS_ID</code> 是 <code>140547514049216</code>，和驱动日志里那个 <code>sessionID-0x7fd3c4a622c0(140547514049216)</code> 是同一个数。这是一条独立的对账线索，怀疑执行号抄错时用它复核。</li>
@@ -224,7 +224,7 @@ end dump the infos of pln[140545257168568].</code></pre>
 
 <h3>执行号到底能活多久？</h3>
 <p>分两个地方看，别混。<code>V$SQL_STAT</code> 里的是内存现场，会话结束或者监控没开就没有了，这也是「一会儿就刷掉」这个印象的来源。<code>V$SQL_HISTORY</code> 是另一套东西，它由参数 <code>SQL_HISTORY_CNT</code> 控制保留条数，我这台库上是 <code>10000</code>，用环形覆盖的方式滚动。也就是说，只要没被一万条新记录挤掉，昨天的执行号现在还能查。</p>
-<p>我实测跨会话、隔了两分钟再查 <code>65902</code>，照样能出 SQL_ID 和逻辑读。至于重启之后还在不在，<strong>未实测</strong>，别拿它当长期审计用。</p>
+<p>我实测跨会话、隔了两分钟再查 <code>65902</code>，照样能出 SQL_ID 和逻辑读。重启这条路后来补测了：实例重启后 <code>V$SQL_HISTORY</code> 是空的，<code>SQL_ID</code> 也重新分配，同一句 SQL 重启前是 <code>1682</code>，重启后变成 <code>10</code>。所以它终究是内存里的东西，别拿它当长期审计用。</p>
 
 <h3>报 <code>[-2206]:Invalid parameter value</code> 是什么意思？</h3>
 <p>两种可能，都指向同一个原因：这个地址在缓存里不存在。要么抄错了，要么计划已经被回收。先回第二步确认 <code>cache_item</code> 还在不在，<code>select cache_item from v$cachepln where cache_item = 你的地址</code>，返回空就说明过期了，只能重跑那条 SQL 让它重新生成计划，再按新地址取。</p>
