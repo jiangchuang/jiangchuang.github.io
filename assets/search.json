@@ -1,7 +1,14 @@
 {
   "site": "达梦手记",
-  "n": 22,
+  "n": 23,
   "items": [
+    {
+      "t": "达梦 JDBC 打印真实执行计划：一个类加一个连接串参数，业务代码不用改",
+      "c": "性能优化",
+      "d": "2026-11-19",
+      "u": "posts/dm-jdbc-explain-hook.html",
+      "x": "达梦 JDBC 驱动留了一个 custom_filter 参数：写一个 40 行的 ICustom 实现，连接串上加一个参数，之后每条 SQL 执行完都会打印执行计划、逻辑读、物理读和服务端耗时，业务代码一行不动。驱动自报的 124 个属性里没有任何 printPlan 开关，这是唯一那条缝。实测覆盖 Statement / PreparedStatement / UPDATE / DELETE，并给出 logLevel 与 statEnable 为什么拿不到计划。"
+    },
     {
       "t": "达梦怎么看逻辑读：三步拿到那个数字，然后让它变小",
       "c": "性能优化",
