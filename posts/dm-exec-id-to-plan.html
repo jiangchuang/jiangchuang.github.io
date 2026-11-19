@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>驱动日志里只有一个执行号，怎么找回那条 SQL 的执行计划 · 达梦手记</title>
-<meta name="description" content="达梦 JDBC 驱动日志里每条 SQL 后面都有 [EXEC_ID]。把这个执行号拿到库里，两条 SQL 就能换出 SQL_ID、逻辑读和完整执行计划，不用登服务器 dump 文件、不改代码、不重启。实测 DM8 8.1.5.8 与 DmJdbcDriver8 8.1.4.200，含 SF_TRACE_DUMP_PLN 的命名参数写法、V$CACHEPLN 的匹配坑、V$SQL_STAT 的会话级陷阱，以及 8.1.4.170 之前版本的降级做法。">
+<meta name="description" content="达梦 JDBC 驱动日志里每条 SQL 后面都有 [EXEC_ID]。把这个执行号拿到库里，三条 SQL 就能换出 SQL_ID、计划地址和完整执行计划，不用登服务器 dump 文件、不改代码、不重启。实测 DM8 8.1.5.8 与 DmJdbcDriver8 8.1.4.200，含 V$SQL_PLAN 的 PLN_ADDR 转 BIGINT、SF_TRACE_DUMP_PLN 的命名参数写法、V$CACHEPLN 的文本匹配坑、V$SQL_STAT 的会话级陷阱，以及 8.1.4.170 之前版本的降级做法。">
 <link rel="stylesheet" href="../assets/site.css">
 <script>
 (function(){
@@ -73,17 +73,17 @@
     <span class="cat">性能优化</span>
   </div>
   <div class="content">
-<blockquote><p><strong>三十秒版本。</strong>驱动日志里有 <code>[EXEC_ID]: 67600</code>。拿这个号去库里走两步，计划全文就出来了：</p>
+<blockquote><p><strong>三十秒版本。</strong>驱动日志里有 <code>[EXEC_ID]: 67600</code>。拿这个号去库里走三步，计划全文就出来了：</p>
 <pre class="code"><code class="lang-sql">-- 第一步：执行号换 SQL_ID、逻辑读和原句
 select exec_id, sql_id, n_logic_read, top_sql_text
 from v$sql_history where exec_id = 67600;
 
--- 第二步：用 SQL 文本在计划缓存里找到地址
-select cache_item from v$cachepln where sqlstr like '%T_ORDER%CODE500%';
+-- 第二步：SQL_ID 换计划地址
+select cast(pln_addr as bigint) from v$sql_plan where sql_id = 1607;
 
 -- 第三步：把地址丢给函数
-select sf_trace_dump_pln(pln_id =&gt; 140545257168568) from dual;</code></pre>
-<p>不用登服务器、不用 dump 文件、不用改代码。<strong>但第二步要多看一眼，可能匹配出两条</strong>，原因在文末 FAQ。</p></blockquote>
+select sf_trace_dump_pln(pln_id =&gt; 140480814356576) from dual;</code></pre>
+<p>不用登服务器、不用 dump 文件、不用改代码，也不用在计划缓存里按文本猜哪条是你。</p></blockquote>
 <blockquote><p>文中输出和数字都是在一台 CentOS 7 单机 DM8 上跑出来的（服务端 8.1.5.8，构建号 <code>03134284552-20260414-322369-20221</code>；驱动 <code>DmJdbcDriver8.jar</code> 8.1.4.200；表 5 万行）。服务端版本号是 <code>DatabaseMetaData.getDatabaseProductVersion()</code> 自报的，函数可用性以你库上 <code>v$version</code> 的构建号为准。</p></blockquote>
 
 <h2>「昨天中午那条 SQL 慢，你给看看」</h2>
@@ -126,9 +126,33 @@ where exec_id = 67600;</code></pre>
 <pre class="code"><code class="lang-text">2       67601    1608    140547514049216      705       3533       895           0           select id, pad from T_ORDER where id between 100 and 120</code></pre>
 <p>同一个连接、同一秒内，一条读 2 个页，一条读 895 个页。这条 between 查询走的是全表扫，5 万行全过一遍，计划在第四步能看到。</p>
 
-<h2>第二步：SQL_ID 换不出计划，得靠 SQL 文本</h2>
-<p>很多人到这一步会顺手写 <code>where sql_id = 1607</code> 去 <code>v$cachepln</code> 里找计划。找不到，因为<strong>计划缓存里没有 SQL_ID 这一列</strong>。我用 <code>desc v$cachepln</code> 看过，能用的定位字段只有 <code>CACHE_ITEM</code>（计划地址）和 <code>SQLSTR</code>（语句原文）。</p>
-<p>所以第二步是用第一步拿到的 SQL 文本，去缓存里按文本找：</p>
+<h2>第二步：SQL_ID 换计划地址，一条 SQL 就够</h2>
+<p><code>v$cachepln</code> 里确实没有 SQL_ID。我 <code>desc</code> 过，26 个字段，能定位计划的只有 <code>CACHE_ITEM</code> 和 <code>SQLSTR</code>。所以很多人到这里就转去按文本匹配，还得小心匹配到查询语句自己。</p>
+<p>不用绕。<code>V$SQL_PLAN</code> 里 SQL_ID 和计划地址都在：</p>
+<pre class="code"><code class="lang-sql">select sql_id, hash_value, pln_addr from v$sql_plan where sql_id = 49;</code></pre>
+<pre class="code"><code class="lang-text">LINEID  SQL_ID  HASH_VALUE  PLN_ADDR
+------  ------  ----------  ------------------
+1       49      23576788    0x00007FC43D50EF38</code></pre>
+<p><code>PLN_ADDR</code> 的类型是 <code>VARBINARY(8)</code>，打印出来是十六进制地址；而 <code>SF_TRACE_DUMP_PLN</code> 的 <code>PLN_ID</code> 是 <code>BIGINT</code>。中间要加一层 cast：</p>
+<pre class="code"><code class="lang-sql">select cast(pln_addr as bigint) as pln_id from v$sql_plan where sql_id = 49;</code></pre>
+<pre class="code"><code class="lang-text">LINEID  PLN_ID
+------  ------------------
+1       140480819031864</code></pre>
+<p>这个数就是 <code>v$cachepln</code> 里那条计划的 <code>CACHE_ITEM</code>，两个视图说的是同一个地址：</p>
+<pre class="code"><code class="lang-sql">select cache_item, hash_value from v$cachepln where cache_item = 140480819031864;</code></pre>
+<pre class="code"><code class="lang-text">LINEID  CACHE_ITEM          HASH_VALUE
+------  ------------------  ----------
+1       140480819031864      23576788</code></pre>
+<p>关系也干净：一个 <code>SQL_ID</code> 对应一行计划。我这边整张 <code>v$sql_plan</code> 17 行、17 个不同 <code>SQL_ID</code>，没有一对多。所以拿 SQL_ID 查，不存在「匹配到两条，哪条才是我」的问题。</p>
+<p>想一步写完也行，把第一步嵌进去：</p>
+<pre class="code"><code class="lang-sql">select sf_trace_dump_pln(pln_id =&gt; (
+  select cast(p.pln_addr as bigint) from v$sql_plan p
+   where p.sql_id = (select sql_id from v$sql_history where exec_id = 3101)
+)) from dual;</code></pre>
+<p><strong>这里更正一处。</strong>这篇最初写的是「SQL_ID 换不出计划，只能靠 SQL 文本」，理由是 <code>v$cachepln</code> 没有 SQL_ID 列。那句话只说了一半：我漏查了 <code>v$sql_plan</code>。上面这条路是实测过的，比文本匹配稳，以下面这条为主。</p>
+
+<h3>手上只有 SQL 文本、没有 SQL_ID</h3>
+<p>从文本直接找地址，跳过第一步：</p>
 <pre class="code"><code class="lang-sql">select cache_item, substr(sqlstr, 1, 60) as s
 from v$cachepln
 where sqlstr like '%T_ORDER%CODE500%';</code></pre>
@@ -137,10 +161,9 @@ where sqlstr like '%T_ORDER%CODE500%';</code></pre>
 1       140545257176760     select cache_item, substr(sqlstr, 1, 60) as s from v$cachepln
 2       140545257357784     select count(*) from T_ORDER where code='CODE500'</code></pre>
 <p>第一条是这条查询语句自己，因为它的文本里也带着 <code>T_ORDER</code> 和 <code>CODE500</code> 两个词。第二条才是你要的。这类自匹配几乎每次都会出现，看到两条不要慌，认出哪条是真的就行。</p>
-<p>要更准，就把 <code>like</code> 换成完全等值，把那条语句的整句抄进去：</p>
+<p>要更准就把 <code>like</code> 换成等值。注意 <code>SQLSTR</code> 末尾带分号，我实测长度 <code>56</code> 对应 55 个字符加一个 <code>;</code>，漏掉分号一条都查不到：</p>
 <pre class="code"><code class="lang-sql">select cache_item from v$cachepln
-where sqlstr = 'select count(*) from T_ORDER where code=''CODE500''';</code></pre>
-<p>这样只会命中一条。代价是引号要转义，而且语句里哪怕多一个空格就对不上，所以排查时我一般先用 <code>like</code>，确认没歧义了再换等值。</p>
+where sqlstr = 'select count(*) from T_SFP where id between 900 and 920;';</code></pre>
 
 <h2>第三步：把地址丢给函数</h2>
 <p><code>CACHE_ITEM</code> 就是一个整数地址，直接作为参数：</p>
@@ -216,7 +239,7 @@ end dump the infos of pln[140545257168568].</code></pre>
 <h2>这条链断在哪</h2>
 <p>三个地方会断，提前知道比事后猜强。</p>
 <p><strong>一、计划地址会被回收。</strong>缓存里的计划受内存和淘汰策略管，地址失效以后再传进去，报 <code>[-2206]:Invalid parameter value</code>，不会告诉你「过期了」。所以这三个步骤最好一次跑完，别隔一顿饭。</p>
-<p><strong>二、文本匹配可能命中多条。</strong>同一条语句被不同用户、不同 schema 执行，可能各有各的计划条目；语句里带注释、空白不同，也会分裂成多条。上面那个「查询语句匹配到自己」的情况每次都发生。判断依据是看 <code>SQLSTR</code> 全文，别看前缀。</p>
+<p><strong>二、按文本匹配会命中多条，能拿到 SQL_ID 就别走这条。</strong>同一条语句被不同用户、不同 schema 执行，可能各有各的计划条目；语句里带注释、空白不同，也会分裂成多条。「查询语句匹配到自己」的情况每次都发生。判断依据是看 <code>SQLSTR</code> 全文，别看前缀。有 SQL_ID 时走 <code>v$sql_plan</code>，一条对一行，没有这个烦恼。</p>
 <p><strong>三、缓存计划没有实际统计。</strong>这里是估算行数 50000，不是实际返回行数。达梦没有 <code>EXPLAIN ANALYZE</code>，敲了报 <code>[-2007]:Syntax error</code>。要真实数据，得用 <code>set autotrace traceonly</code>、<code>ET(执行号)</code> 或者 <code>DBMS_SQLTUNE.REPORT_SQL_MONITOR</code>，那几个都要在语句执行的那一刻抓，事后补不上。</p>
 <p>换句话说，<code>SF_TRACE_DUMP_PLN</code> 解决的是「形状」，不是「耗时」。想知道钱花在哪个算子上，它给不了。</p>
 
@@ -227,7 +250,7 @@ end dump the infos of pln[140545257168568].</code></pre>
 <p>我实测跨会话、隔了两分钟再查 <code>65902</code>，照样能出 SQL_ID 和逻辑读。重启这条路后来补测了：实例重启后 <code>V$SQL_HISTORY</code> 是空的，<code>SQL_ID</code> 也重新分配，同一句 SQL 重启前是 <code>1682</code>，重启后变成 <code>10</code>。所以它终究是内存里的东西，别拿它当长期审计用。</p>
 
 <h3>报 <code>[-2206]:Invalid parameter value</code> 是什么意思？</h3>
-<p>两种可能，都指向同一个原因：这个地址在缓存里不存在。要么抄错了，要么计划已经被回收。先回第二步确认 <code>cache_item</code> 还在不在，<code>select cache_item from v$cachepln where cache_item = 你的地址</code>，返回空就说明过期了，只能重跑那条 SQL 让它重新生成计划，再按新地址取。</p>
+<p>两种可能，都指向同一个原因：这个地址在缓存里不存在。要么抄错了，要么计划已经被回收。先回第二步确认这个地址还在不在，<code>select cache_item from v$cachepln where cache_item = 你的地址</code>，返回空就说明过期了，只能重跑那条 SQL 让它重新生成计划，再按新地址取。</p>
 
 <h3>为什么 <code>v$sql_stat</code> 一条都查不到？</h3>
 <p>九成是 <code>MONITOR_SQL_EXEC</code> 没开。检查一下当前会话：</p>
@@ -235,7 +258,7 @@ end dump the infos of pln[140545257168568].</code></pre>
 <p>要 1 才有记录。开法：<code>call sf_set_session_para_value('MONITOR_SQL_EXEC', 1);</code>，然后<strong>在同一个会话里</strong>执行目标 SQL。换个会话查不到别人的，这是实测过的。</p>
 
 <h3>能不能只用 SQL_ID 拿计划？</h3>
-<p>我这边不行。<code>v$cachepln</code> 没有 SQL_ID 列，<code>v$sql_history</code> 没有计划地址列，两边接不上。能接上的只有「SQL 文本」这个中间物，所以第二步绕不开。<code>v$sql_stat</code> 里倒是有 SQL_ID 和 PLN_ADDR 同时在，但它受监控参数限制，见上一节。</p>
+<p>能，走 <code>v$sql_plan</code>。这个视图里 <code>SQL_ID</code> 和 <code>PLN_ADDR</code> 在同一行，<code>cast</code> 成 <code>bigint</code> 就能直接喂给函数。我最早写这条「不行」，是只 <code>desc</code> 了 <code>v$cachepln</code>、没查 <code>v$sql_plan</code>，属于漏查，别按老印象记。<code>v$sql_stat</code> 那条也能拿，但它要先开会话级监控，不如 <code>v$sql_plan</code> 稳。</p>
 
 <h3>第一步查出来的 <code>N_LOGIC_READ</code>，和 autotrace 的对得上吗？</h3>
 <p>口径一样，都是页数，但不含物理读，这是达梦和 Oracle 相反的地方。同一批测试里我用 <code>set autotrace traceonly</code> 和这个视图对比过，数字一致。要注意的是这个字段统计的是<strong>那一次执行</strong>，不是累计值，拿它当「这条 SQL 平时读多少页」用会偏小。</p>
@@ -246,7 +269,7 @@ end dump the infos of pln[140545257168568].</code></pre>
 <p>文件落在 <code>TRACE_PATH</code> 下，路径用 <code>select * from v$dm_ini where para_name = 'TRACE_PATH'</code> 查。文件名只能给纯名字，<strong>给绝对路径会报存在父目录引用</strong>，这个限制官方社区文档里也写了。内容和新函数打出来的一致，只是多了一次登录和一次找文件。</p>
 
 <h3>只有 SQL 文本，没有执行号，还能用吗？</h3>
-<p>能，从第二步开始走。而且更省事：直接 <code>v$cachepln</code> 按文本找地址，再打计划。代价是拿不到 <code>TIME_USED</code> 和 <code>N_LOGIC_READ</code>，那两项只在执行记录里。</p>
+<p>能，按文本去 <code>v$cachepln</code> 找地址，写法在第二步末尾那个小节。代价是拿不到 <code>TIME_USED</code> 和 <code>N_LOGIC_READ</code>，那两项只在执行记录里。</p>
 
 <h3>换一个达梦版本还成立吗？</h3>
 <p>函数是内置的，不在数据字典里，我用 <code>sys.sysobjects</code> 查它的名字是零行，<code>all_arguments</code> 也是零行，所以拿不到官方签名，全靠试。我在 8.1.5.8 上确认了参数名 <code>PLN_ID</code> 和 <code>BIGINT</code> 类型。<strong>换版本请先跑一次 <code>select sf_trace_dump_pln(pln_id =&gt; 1) from dual</code></strong>，报 <code>-2206</code> 说明函数在、参数名对；报「函数不存在」就得换回 plndump 那条路。</p>
