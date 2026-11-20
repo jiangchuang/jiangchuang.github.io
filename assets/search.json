@@ -1,7 +1,14 @@
 {
   "site": "达梦手记",
-  "n": 24,
+  "n": 25,
   "items": [
+    {
+      "t": "达梦开通信加密，不用配证书：改一个参数，重启，验证",
+      "c": "日常运维",
+      "d": "2026-11-20",
+      "u": "posts/dm-enable-encrypt-4.html",
+      "x": "达梦 ENABLE_ENCRYPT=4 只加密、不验证证书，适合只要求传输无明文的等保测评场景。用 SYSDBA 改参数（ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE），重启服务，再查 v$dm_ini 确认取值。含 systemd、服务脚本、手动进程、Windows 四种重启方式，以及为什么不重启不生效、应用连接串为什么不用改、怎么用 openssl 证明通道是 TLS。"
+    },
     {
       "t": "驱动日志里只有一个执行号，怎么找回那条 SQL 的执行计划",
       "c": "性能优化",

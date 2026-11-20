@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦开通信加密，不用配证书：改一个参数，重启，验证 · 达梦手记</title>
+<meta name="description" content="达梦 ENABLE_ENCRYPT=4 只加密、不验证证书，适合只要求传输无明文的等保测评场景。包含用 SYSDBA 改参数、重启数据库服务（systemd、服务脚本、手动进程、Windows 四种情况）、验证取值和连通性的完整步骤，附 DM8 实测输出。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../search.html">搜索</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">  <div class="art-head">
+    <div class="meta">2026-11-20 &nbsp;·&nbsp; 日常运维</div>
+    <h1>达梦开通信加密，不用配证书：改一个参数，重启，验证</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+<blockquote><p><strong>三十秒版本。</strong>用 SYSDBA 登录，改一个参数，重启服务，再查一眼取值。三步：</p>
+<pre class="code"><code class="lang-sql">-- 第一步：改参数（只写进配置文件，重启才生效）
+ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE;</code></pre>
+<pre class="code"><code class="lang-bash"># 第二步：重启服务，服务名按你机器上的实际名字替换
+systemctl restart DmServiceDMSERVER</code></pre>
+<pre class="code"><code class="lang-sql">-- 第三步：确认内存里的值已经是 4
+select para_name, para_value from v$dm_ini where para_name = 'ENABLE_ENCRYPT';</code></pre>
+<p>全程不需要生成 CA、不需要签发证书、不需要给每个用户配证书目录。应用侧的连接串也不用改。</p></blockquote>
+<blockquote><p>本文的输出来自一台 CentOS 7 单机 DM8（服务端构建号 <code>03134284552-20260414-322369-20221</code>，<code>MIN_SSL_VERSION</code> 默认 771 即 TLSv1.2），JDBC 用 <code>DmJdbcDriver8.jar</code> 8.1.4.200 验证。主备、DSC 这类多节点环境每个节点都要改，本文的多节点部分<strong>未实测</strong>。</p></blockquote>
+
+<h2>测评问的是「有没有明文」，不是「证书链完不完整」</h2>
+<p>等保测评到数据库这一项，通常会问一句：客户端和数据库之间的传输加密了吗。</p>
+<p>默认情况下，答案是「没有」。DM8 的 <code>ENABLE_ENCRYPT</code> 出厂值是 0，SQL 语句在网络上就是明文。我在测试机上抓过一次，一条 <code>select</code> 的完整文本连引号都在包里躺着，一眼就能读出来。</p>
+<p>要加密，达梦给了几个档位。大家一般先查到的是一档，也就是 <code>ENABLE_ENCRYPT=1</code>，但那一档要证书：生成 CA、签服务端证书、给每个数据库用户签客户端证书、部署到 <code>server_ssl</code> 和 <code>client_ssl</code> 目录，连接时还要带 <code>SSL_PATH</code> 和 <code>SSL_PWD</code>。证书有过期时间，换人、加用户都得重签，一个环节没对上，连接直接失败。</p>
+<p>如果诉求只是「测评别看到明文」，那这些活可以全省掉。<code>ENABLE_ENCRYPT=4</code> 这一档就是给这个场景准备的：</p>
+<pre class="code"><code class="lang-text">0: 不加密，也不验证证书（默认值）
+1: 加密，双方交换并验证对方证书
+2: 不加密，但双方交换并验证对方证书
+4: 加密，但双方都不验证证书
+5: 加密，仅客户端验证服务端证书（较新版本才有）
+6: 商密 TLCP 认证与加密</code></pre>
+<p>4 这一档下面这行注释写得很直白，就在 <code>dm.ini</code> 里：</p>
+<pre class="code"><code class="lang-text">ENABLE_ENCRYPT = 4  #Encrypt Mode For Communication, ... 4: Only SSL Encryption</code></pre>
+<p><strong>它用的是服务端自带的一张自签名证书。</strong>这张证书跟着安装包来，你不用生成，也不用管它什么时候过期，因为客户端压根不验证它。所以准确说法是「不需要你配证书」，而不是「握手时没有证书」。测评老师如果追问证书哪来的，答案就是这一句。</p>
+<p>代价也要说清楚：不验证证书，就防不了中间人冒充服务端。它能挡住的是「同网段抓包直接读到 SQL」，挡不住「有人在你和目标库之间架一台假服务器」。内网过测评、防的是前者，这就够用。如果哪天要求防中间人，再升级到 1 或 5，参数改一下的事。</p>
+
+<h2>第一步：改参数</h2>
+<p>这个参数只有 DBA 能改，用 <code>SYSDBA</code> 登录就行。达梦装完默认口令也是 <code>SYSDBA</code>，如果你改过，换成自己的。</p>
+<pre class="code"><code class="lang-bash">cd /home/dmdba/dmdbms/bin
+./disql SYSDBA/SYSDBA@127.0.0.1:5236</code></pre>
+<p>进去以后执行这一句：</p>
+<pre class="code"><code class="lang-sql">ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE;</code></pre>
+<pre class="code"><code class="lang-text">SQL&gt; ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE;
+DMSQL executed successfully
+used time: 80.857(ms). Execute id is 1301.</code></pre>
+<p>看到 <code>DMSQL executed successfully</code> 就算改成功了。<strong>但此时去查参数值，还是原来的 0</strong>，这不是没改上，是 <code>SPFILE</code> 的含义：只写进配置文件，不动内存。我实测过一次，把 4 改成 0 之后立刻查，内存里仍然是 4，重启完才变 0。</p>
+<p>如果你不喜欢敲 SQL，也可以直接编辑配置文件。库停掉以后，打开 <code>dm.ini</code>，找到这一行改成 4：</p>
+<pre class="code"><code class="lang-text">ENABLE_ENCRYPT = 4                     #Encrypt Mode For Communication</code></pre>
+<p>这两种做法的结果一样，都是改文件。<strong>改完都必须重启</strong>，没有第二条路。这个参数是静态的，达梦不会热加载。</p>
+<p>还有一条容易踩的：<code>SPFILE</code> 换成了 <code>MEMORY</code> 会变成「只改内存」，当时查着是 4，下次重启就回到 0，人走了才出问题。所以命令里那个 <code>SPFILE</code> 别省。</p>
+
+<h2>第二步：重启服务</h2>
+<p>小白最容易卡在这一步，因为「重启数据库」这句话在不同安装方式下长得完全不一样。先花十秒确认你的库是怎么起的，再选对应的那条。</p>
+
+<h3>先找服务名</h3>
+<p>达梦的服务名是安装时定的，一般是 <code>DmService</code> 加上实例名，但实例名不一定叫 <code>DMSERVER</code>。查一下就知道：</p>
+<pre class="code"><code class="lang-bash">systemctl list-units --type=service --all | grep -i DmService</code></pre>
+<pre class="code"><code class="lang-text">  DmServiceDMSERVER.service   loaded    active   running   DM Instance Service(DmServiceDMSERVER).</code></pre>
+<p>冒号前面那个带 <code>.service</code> 的就是你要的名字，用的时候可以省略后缀。下面统一写成 <code>DmServiceDMSERVER</code>，你换成自己查到的。</p>
+
+<h3>情况一：注册成了系统服务（最常见）</h3>
+<pre class="code"><code class="lang-bash">systemctl restart DmServiceDMSERVER</code></pre>
+<p>这条命令没有任何输出是正常的。确认起没起来：</p>
+<pre class="code"><code class="lang-bash">systemctl status DmServiceDMSERVER --no-pager</code></pre>
+<pre class="code"><code class="lang-text">● DmServiceDMSERVER.service - DM Instance Service(DmServiceDMSERVER).
+   Loaded: loaded (/usr/lib/systemd/system/DmServiceDMSERVER.service; enabled)
+   Active: active (running) since Fri 2026-11-20 10:20:45 CST; 22s ago
+ Main PID: 2475 (dmserver)
+   CGroup: /system.slice/DmServiceDMSERVER.service
+           └─2475 /home/dmdba/dmdbms/bin/dmserver path=/dmdata/DAMENG/dm.ini -noconsole</code></pre>
+<p>看到 <code>active (running)</code> 和有 <code>dmserver</code> 主进程，就是起来了。再补一眼端口，5236 在监听才算真的对外服务：</p>
+<pre class="code"><code class="lang-bash">ss -lntp | grep 5236</code></pre>
+<pre class="code"><code class="lang-text">LISTEN  0  128  [::]:5236  [::]:*  users:(("dmserver",pid=2475,fd=3))</code></pre>
+
+<h3>情况二：机器上没有 systemd 服务，但有服务脚本</h3>
+<p>达梦每个实例都会在 <code>bin</code> 下生成一个同名脚本，参数和 systemd 那套一样：</p>
+<pre class="code"><code class="lang-bash">/home/dmdba/dmdbms/bin/DmServiceDMSERVER restart</code></pre>
+<p>脚本会打印启动过程，最后出现 <code>SYSTEM IS READY</code> 就是好了。</p>
+
+<h3>情况三：手动起的进程，没注册过服务</h3>
+<p>临时环境、测试机、或者当初用 <code>./dmserver</code> 直接拉起来的库，属于这种。先找到进程：</p>
+<pre class="code"><code class="lang-bash">ps -ef | grep dmserver | grep -v grep</code></pre>
+<pre class="code"><code class="lang-text">dmdba  2475  1  0 10:20 ?  00:00:12 /home/dmdba/dmdbms/bin/dmserver path=/dmdata/DAMENG/dm.ini -noconsole</code></pre>
+<p>第二列是进程号，杀掉再重新拉起，注意换成你自己的库路径：</p>
+<pre class="code"><code class="lang-bash">kill 2475
+sleep 10
+su - dmdba -c 'nohup /home/dmdba/dmdbms/bin/dmserver /dmdata/DAMENG/dm.ini &gt; /tmp/dm_start.log 2&gt;&amp;1 &amp;'</code></pre>
+<p>然后看日志最后几行，出现 <code>SYSTEM IS READY</code> 就是起来了：</p>
+<pre class="code"><code class="lang-bash">tail -5 /tmp/dm_start.log</code></pre>
+<pre class="code"><code class="lang-text">nsvr_process_before_open begin.
+nsvr_process_before_open success.
+SYSTEM IS READY.</code></pre>
+<p>这种起法机器一重启就没了，正式环境建议还是注册成服务，注册命令在 <code>$DM_HOME/script/root/dm_service_installer.sh</code>。</p>
+
+<h3>情况四：Windows</h3>
+<p>Windows 上达梦同样注册成服务，名字也一样。<strong>这一节我没有实测</strong>，命令是通用的，你执行时留意报错原文：</p>
+<pre class="code"><code class="lang-bash">net stop DmServiceDMSERVER
+net start DmServiceDMSERVER</code></pre>
+<p>或者用图形界面：<code>Win + R</code> 输入 <code>services.msc</code>，找到 <code>DmServiceDMSERVER</code>，右键「重新启动」。达梦自己也带一个「DM 服务查看器」，在开始菜单里，能直接点停止和启动。</p>
+
+<h2>第三步：验证</h2>
+<p>重启完，先用 <code>disql</code> 连进去，确认能连上：</p>
+<pre class="code"><code class="lang-bash">./disql SYSDBA/SYSDBA@127.0.0.1:5236</code></pre>
+<pre class="code"><code class="lang-text">Server[127.0.0.1:5236]:mode is normal, state is open
+login used time : 7.182(ms)</code></pre>
+<p>然后查参数，重点看 <code>PARA_VALUE</code> 是不是 4：</p>
+<pre class="code"><code class="lang-sql">select para_name, para_value from v$dm_ini where para_name = 'ENABLE_ENCRYPT';</code></pre>
+<pre class="code"><code class="lang-text">LINEID     PARA_NAME        PARA_VALUE
+---------- ---------------- ----------
+1          ENABLE_ENCRYPT   4</code></pre>
+<p>到这里服务端就完事了。应用侧不用动，连接串保持原样：</p>
+<pre class="code"><code class="lang-text">jdbc:dm://127.0.0.1:5236</code></pre>
+<p>我用 8.1.4.200 的驱动实测过，<strong>连接串里没加任何 SSL 相关参数</strong>，直接连上，查询正常返回。客户端不需要证书目录，也不需要 <code>SSL_PATH</code>。这是 4 这一档最省事的地方：改的是服务端，客户端零改动。</p>
+<p>如果应用用了连接池，记得重启应用。数据库重启那一刻所有连接都断了，连接池会自己重连，但有些池配置了较长的重试间隔，看起来像「改完更慢了」，其实是还在重连。</p>
+
+<h2>我在测试机上跑了一遍</h2>
+<p>为了让「必须重启」这句话有证据，我把整个来回走了一次，输出原样贴上来。先改 0，不重启：</p>
+<pre class="code"><code class="lang-text">[1] 初始值:
+1          ENABLE_ENCRYPT 4
+[2] 改 SPFILE=0，不重启:
+SQL&gt; DMSQL executed successfully
+  内存值仍为: 1          ENABLE_ENCRYPT 4</code></pre>
+<p>执行成功，内存里还是 4。<code>SPFILE</code> 只写文件，这一点在这里看得很清楚。接着重启：</p>
+<pre class="code"><code class="lang-text">[3] systemctl restart 后:
+  内存值: 1          ENABLE_ENCRYPT 0</code></pre>
+<p>值变成 0 了。<code>systemctl restart</code> 这一条命令确实把参数从文件带进了内存。再改回 4，再重启：</p>
+<pre class="code"><code class="lang-text">[4] 改回 SPFILE=4:
+SQL&gt; DMSQL executed successfully
+[5] 再 restart 后:
+  内存值: 1          ENABLE_ENCRYPT 4
+[6] 连通性:
+login used time : 7.182(ms)
+1          CONN_OK
+used time: 2.070(ms). Execute id is 801.</code></pre>
+<p>全程没有生成过任何证书文件，<code>bin</code> 目录下也没有 <code>server_ssl</code> 或 <code>client_ssl</code>。</p>
+
+<h2>顺带说一句怎么证明它真的在加密</h2>
+<p>这一步测评时可能用得上，不需要抓包工具，机器上有 <code>openssl</code> 就行：</p>
+<pre class="code"><code class="lang-bash">openssl s_client -connect 127.0.0.1:5236 -brief &lt; /dev/null</code></pre>
+<pre class="code"><code class="lang-text">CONNECTION ESTABLISHED
+Protocol version: TLSv1.2
+Ciphersuite: ECDHE-RSA-AES256-GCM-SHA384
+Peer certificate: C = cn, ST = hubei, O = dameng, OU = developer, CN = server</code></pre>
+<p>能握上手、看到协议版本和加密套件，说明通道已经是 TLS。最后那行 <code>Peer certificate</code> 就是服务端自带的那张自签名证书，<code>CN</code> 是 <code>server</code>，签发者写的是 <code>dameng</code>。它同时会报一句 <code>self signed certificate in certificate chain</code>，这是预期的：4 这一档不验证证书，所以 DM 客户端不会因为这个报错，而 <code>openssl</code> 是照规矩提醒你一句。</p>
+<p>要更硬一点的证据，就在数据库服务器上抓一次包，对比开关前后包里还有没有 <code>select</code> 的字样。我这边实测的结果是：改成 4 之前，一条 <code>select</code> 的完整文本在包里出现 4 次；改成 4 之后，同样一条语句 0 次，包里出现的是 TLS 记录。</p>
+
+<h2>FAQ</h2>
+
+<h3>4 和 1 到底差在哪，测评能过吗</h3>
+<p>差在「验不验对方身份」。1 是加密加双向验证，要证书；4 是加密，双方都不验证，服务端用自带的证书完成握手。测评关注的是「传输是否加密、是否能看到明文」，4 能满足；如果测评问卷里明确写了「应采用证书进行身份认证」这类条款，那就得走 1 或 5。拿不准就把问卷那一条发我，我帮你对。</p>
+
+<h3>要不要先生成证书</h3>
+<p>不要。4 这一档不需要你生成、部署、更新任何证书文件。达梦安装时会自带 SSL 运行库和那张自签名证书，<code>bin</code> 下本来就有 <code>server_ssl</code> 的话也不用管它。</p>
+
+<h3>改完不重启，行不行</h3>
+<p>不行。<code>ENABLE_ENCRYPT</code> 是静态参数，只认重启。我实测过，<code>SPFILE</code> 改完查内存值还是旧的，重启才变。</p>
+
+<h3>应用要不要改连接串</h3>
+<p>不用。用 8.1.4.200 驱动实测，原始连接串直接连上，不加 <code>SSL_PATH</code>、不加 <code>sslFilesPath</code>。老驱动、其他语言的驱动<strong>未实测</strong>，如果连不上，报错里通常会提到 SSL 或握手，先换一个新一点的驱动试。</p>
+
+<h3>改完连不上了怎么办</h3>
+<p>先看报错。<code>[-70019]</code> 一类的通信错误、或者连接直接被断开，多半是客户端太老，不认识 TLS 握手。临时回退很干脆：把参数改回 0，重启一次，立刻恢复原状。改回 0 也是 <code>ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 0 SPFILE;</code> 这一句加一次重启。</p>
+
+<h3>服务端起不来了</h3>
+<p>如果重启后 <code>SYSTEM IS READY</code> 一直不出现，先看日志里有没有 SSL 相关的报错。精简安装（只装了 server 包、缺 SSL 运行库）的机器上会遇到。这种要么补装，要么先改回 0 把库起起来再排查。日志位置在 <code>dm.ini</code> 同目录下，或者用 <code>select * from v$dm_ini where para_name = 'SVR_LOG'</code> 看开关。</p>
+
+<h3>主备、DSC 这种多节点的怎么改</h3>
+<p>每个节点都要改，而且顺序有讲究：先改备机、重启备机，最后改主机。我这台是单机，<strong>多节点未实测</strong>，别照抄顺序，动手前先在测试环境走一遍。数据守护环境下 <code>dmwatcher</code> 会感知实例重启，可能触发一次切换，选低峰期做。</p>
+
+<h3>还有别的写法吗</h3>
+<p>有，<code>sp_set_para_value(2, 'ENABLE_ENCRYPT', 4)</code> 也能写进配置文件。<strong>这条我没实测</strong>，建议用上面那个 <code>ALTER SYSTEM</code>，输出明确，成功后有一行 <code>DMSQL executed successfully</code>，好确认。</p>
+
+<h3>改完要不要重新登录才能确认</h3>
+<p>不需要。重启之后新建立的连接就是加密的，直接 <code>disql</code> 连一次，查参数看值就够了。老连接在重启那一刻已经全断了，不存在「混合状态」。</p>
+
+<h2>最后</h2>
+<p>这个参数的价值不在于技术难度，在于它把「要不要上加密」从一道证书工程题，变成了一次改配置加一次重启。很多现场卡住不是因为不想加密，是因为没人愿意为了过一项测评去维护一套证书的生命周期。</p>
+<p>要提醒的只有一句：4 挡的是窃听，不是冒充。知道自己在买什么，就不会在测评答辩时被问住。</p>
+</div>
+  <section class="contact" hidden>
+    <div class="contact-body">
+      <h3>卡在某一步了？</h3>
+      <p>先确认三件事：改的参数是不是带了 <code>SPFILE</code>、服务是不是真的重启过、查参数时连的是不是那台库。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、<code>select para_name, para_value from v$dm_ini where para_name = 'ENABLE_ENCRYPT'</code> 的结果。不用发库里的数据。</p>
+      <details class="contact-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a> · <a href="https://beian.mps.gov.cn/#/query/webSearch?code=50010602505382" target="_blank" rel="noopener noreferrer"><img src="../assets/img/gongan-beian.png" alt="" style="height:16px;vertical-align:-3px;margin-right:4px">渝公网安备50010602505382号</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
