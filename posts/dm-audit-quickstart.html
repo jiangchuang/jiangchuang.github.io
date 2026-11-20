@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>达梦审计怎么开：5 条命令能抄，先知道它记不到什么 · 达梦手记</title>
-<meta name="description" content="达梦 DM8 开启审计的最小可用集：SP_SET_ENABLE_AUDIT 加 4 类 SP_AUDIT_STMT，粘贴即用。附实测记录样例、审计员口令默认沿用 SYSDBA 的坑与分设方法、以及五处「配了却查不到」的真实原因（缺 INSERT TABLE、count(*) 不留痕、update 多记一条 SELECT、SYSDBA 查记录报 -5504）。">
+<meta name="description" content="达梦 DM8 开启审计的最小可用集：SP_SET_ENABLE_AUDIT 加 4 类 SP_AUDIT_STMT，粘贴即用。附 V$AUDITRECORDS 实测记录样例、审计员口令为什么常和管理员一样、以及五处「配了却查不到」的真实原因（缺 INSERT TABLE、count(*) 不留痕、update 多记一条 SELECT、SYSDBA 查记录报 -5504）。另附忘记口令时用 disql / AS SYSDBA 免密进库改口令的完整实测，含 -2512 权限边界与 -839 静态参数报错。">
 <link rel="stylesheet" href="../assets/site.css">
 <script>
 (function(){
@@ -104,13 +104,15 @@ SP_AUDIT_STMT('SELECT TABLE', 'NULL', 'ALL');</code></pre>
 <p><strong>但这 5 条没有覆盖插入。</strong>要连 <code>insert</code> 一起记，得自己补一条 <code>SP_AUDIT_STMT('INSERT TABLE', 'NULL', 'ALL');</code>。为什么它值得单拎出来说，见「它记不到什么」。</p></blockquote>
 
 <hr>
-<h2>先解决登录：审计员的密码，很可能就是超级管理员的密码</h2>
+<h2>先解决登录：审计员的密码，可能和管理员是同一个</h2>
 <p><code>SYSAUDITOR</code> 是达梦内置的审计管理员账户，跟 <code>SYSDBA</code> 分权：开关、配规则、看记录都得用它，<code>SYSDBA</code> 反而看不了记录。</p>
-<p>但它的初始口令不是独立生成的。<strong>安装时这一项留空，安装程序会直接沿用 <code>SYSDBA</code> 的口令。</strong>我这台实例的安装日志把这件事写在明面上：</p>
-<pre class="code"><code class="lang-text">SYSAUDITOR_PWD 留空，已沿用 SYSDBA_PWD
+<p>它<strong>没有默认口令</strong>。<code>dminit</code> 里 <code>SYSAUDITOR_PWD</code> 是必填项（实测 <code>dminit help</code> 标的是 <code>REQUIRED</code>，默认值 <code>NOTHING</code>），口令在建库那一刻由人填进去。</p>
+<p>但现场十有八九两个口令是一样的。原因很朴素：<strong>装库的人不想多记一个密码</strong>，就把审计员口令填成了和管理员一样的。我这台实例正是这么来的——安装脚本发现 <code>SYSAUDITOR_PWD</code> 留空，顺手拿 <code>SYSDBA</code> 的口令顶上，只留了一条告警：</p>
+<pre class="code"><code class="lang-text">[warn] SYSAUDITOR_PWD 留空，已沿用 SYSDBA_PWD
 （影响：审计账号与管理员同口令将失去审计独立性
  处置：装完 alter user SYSAUDITOR identified by "&lt;独立口令&gt;" 分设）</code></pre>
-<p>实测就能验：把登录 <code>SYSDBA</code> 的那个口令原样拿来登 <code>SYSAUDITOR</code>，直接进去了（下面这行的 <code>SYSDBA的口令</code> 换成你登录 <code>SYSDBA</code> 时敲的那串）：</p>
+<p>所以准确的说法不是「达梦的默认口令是 SYSDBA」，而是「<strong>图省事的人把它设成了 SYSDBA</strong>」。这两件事在测评现场分量完全不同：前者你没法改，后者改一下就好。</p>
+<p>最快的判断办法：拿登录 <code>SYSDBA</code> 的口令直接试一次 <code>SYSAUDITOR</code>（下面这行的 <code>SYSDBA的口令</code> 换成你登录 <code>SYSDBA</code> 时敲的那串），能进就说明当初填的一样：</p>
 <pre class="code"><code class="lang-bash">./disql SYSAUDITOR/SYSDBA的口令@127.0.0.1:5236</code></pre>
 <pre class="code"><code class="lang-text">Server[127.0.0.1:5236]:mode is normal, state is open
 login used time : 2.638(ms)
@@ -131,6 +133,50 @@ DMSQL executed successfully</code></pre>
 [-70028]:Create SOCKET connection failure.
 DISQL-10029: Can not connect to SERVER after three tries, exit DISQL</code></pre>
 <p>这个报错看着像网络断了。<strong>看到 <code>-70028</code> 先回头确认口令</strong>，别去查防火墙。我在这上面绕过一次弯。</p>
+
+<hr>
+<h2>口令忘了怎么办：用操作系统认证进去</h2>
+<p>DBA 交接、老项目接手、同事离职，最常见的就是「库还在跑，口令没人知道」。达梦有一条本地免密通道，前提是<strong>你能用装库的那个操作系统账号（一般是 <code>dmdba</code>）登到服务器上</strong>。</p>
+<p>命令一行，三个地方不能省：</p>
+<pre class="code"><code class="lang-bash">./disql /@127.0.0.1:5236 AS SYSDBA</code></pre>
+<ul>
+<li><strong>斜杠后面必须跟 <code>@主机:端口</code>。</strong>只写 <code>/</code> 会去连默认的 5236，实例端口不是 5236 时直接连不上——报出来的还是那句 <code>[-70028] Create SOCKET connection failure</code>，很容易误判成认证没开。</li>
+<li><strong>必须带 <code>AS SYSDBA</code>。</strong>只写 <code>/@主机:端口</code> 不带身份，实测报 <code>[-2501]:Invalid username or password.</code></li>
+<li>用 <code>dmdba</code> 执行，别用 <code>root</code>，原因见下面的边界表。</li>
+</ul>
+<p>进去先看自己是谁（这张表就是实测输出）：</p>
+<pre class="code"><code class="lang-text">SQL&gt; select user as who from dual;
+LINEID     WHO
+---------- ----------
+1          SYSDBA</code></pre>
+<p>确认是 <code>SYSDBA</code>，口令就能直接改，不需要知道旧的：</p>
+<pre class="code"><code class="lang-text">SQL&gt; alter user SYSDBA identified by "新口令";
+DMSQL executed successfully</code></pre>
+<p>这条路我完整跑过一遍：改成临时口令 → 用新口令正常登录 → 再改回原口令 → 原口令验证通过。全程不停库。</p>
+
+<h3>它能进到什么程度，都是实测</h3>
+<div class="tbl-wrap"><table><thead><tr><th>试法</th><th>结果</th></tr></thead><tbody>
+<tr><td><code>dmdba</code> + <code>AS SYSDBA</code></td><td>成功，身份 <code>SYSDBA</code></td></tr>
+<tr><td><code>dmdba</code> + <code>AS AUTO</code></td><td>成功，等同于 <code>SYSDBA</code>（自动匹配到有 DBA 权限的账户）</td></tr>
+<tr><td><code>dmdba</code> + <code>AS SYSAUDITOR</code></td><td><code>[-2512]:Unauthorized user .</code> —— <strong>拿不到审计员身份</strong></td></tr>
+<tr><td><code>root</code> + <code>AS SYSDBA</code></td><td><code>[-2512]:Unauthorized user .</code></td></tr>
+<tr><td><code>dmdba</code> + <code>AS USERS</code> / <code>AS SYSSSO</code></td><td><code>[-2512]:Unauthorized user .</code>（企业版没有 SYSSSO 账户）</td></tr>
+</tbody></table></div>
+<p>两个结论。第一，<strong>只有装库的那个操作系统用户能用，<code>root</code> 也不行</strong>，这算一道天然的门。第二，<strong>审计员的口令忘了，这条路救不回来</strong>：你进得去 <code>SYSDBA</code>，但 <code>SYSDBA</code> 改不了 <code>SYSAUDITOR</code> 的口令（就是前面那条 <code>-5549</code>）。这点我特意验过，因为最容易想当然。</p>
+<p>安全上的话也得说一句：这条通道意味着<strong>谁能登 <code>dmdba</code> 系统账号，谁就是数据库管理员</strong>，跟知不知道口令无关。所以服务器账号管控、<code>su</code> 到 <code>dmdba</code> 的口令或密钥，就是最后一道门。测评问到「数据库账号安全」时，这一层也该一起答。</p>
+
+<h3>它靠哪个参数：我关不掉</h3>
+<p>相关的是两个参数，默认值实测如下，两个都不在 <code>dm.ini</code> 里：</p>
+<div class="tbl-wrap"><table><thead><tr><th>参数</th><th>默认</th><th>管什么</th></tr></thead><tbody>
+<tr><td><code>ENABLE_LOCAL_OSAUTH</code></td><td>1</td><td>本地操作系统认证，默认就是开的</td></tr>
+<tr><td><code>ENABLE_REMOTE_OSAUTH</code></td><td>0</td><td>远程操作系统认证，默认关（所以只能在本机免密）</td></tr>
+</tbody></table></div>
+<p>想把它关掉，<strong>我没有成功</strong>，过程如实记下：</p>
+<ul>
+<li><code>alter system set 'ENABLE_LOCAL_OSAUTH' = 0 both;</code> 报 <code>[-839]:Try to alter static ini parameter.</code>，静态参数不让动态改。</li>
+<li>停库，手工在 <code>dm.ini</code> 里加 <code>ENABLE_LOCAL_OSAUTH = 0</code>，重启后查 <code>v$dm_ini</code>，值<strong>仍然是 1</strong>。插在文件中间和追加在末尾都试过，一样。</li>
+</ul>
+<p>所以「关掉这个参数就安全了」这句话我不敢写，这里标<strong>未实测</strong>。反过来提醒一句：如果你在测评答疑时说「我们已经关了 OS 认证」，最好先当场查一次值，别把没生效的改动说成已完成。</p>
 
 <hr>
 <h2>这 5 条各管什么</h2>

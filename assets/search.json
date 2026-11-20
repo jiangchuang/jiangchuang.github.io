@@ -7,7 +7,7 @@
       "c": "日常运维",
       "d": "2026-11-20",
       "u": "posts/dm-audit-quickstart.html",
-      "x": "达梦 DM8 开启审计的最小可用集：SP_SET_ENABLE_AUDIT(1) 加 CONNECT、TABLE、DELETE TABLE、UPDATE TABLE、SELECT TABLE 四条规则，粘贴即用，附 V$AUDITRECORDS 记录样例。重点写清五处配了却查不到的原因：素材缺 INSERT TABLE、count(*) 聚合不留痕、一条 update 多记一条 SELECT、删用户记成 EXECUTE、SYSDBA 查记录报 -5504。另含审计员口令默认沿用 SYSDBA 的坑与分设方法（SYSDBA 改报 -5549）、VSYSAUDITRULES 为空时怎么判断规则在不在、-5302/-5301/-5313/-6860 报错原文、审计文件 100MB 预分配与留存参数建议。"
+      "x": "达梦 DM8 开启审计的最小可用集：SP_SET_ENABLE_AUDIT(1) 加 CONNECT、TABLE、DELETE TABLE、UPDATE TABLE、SELECT TABLE 四条规则，粘贴即用，附 V$AUDITRECORDS 记录样例。重点写清五处配了却查不到的原因：素材缺 INSERT TABLE、count(*) 聚合不留痕、一条 update 多记一条 SELECT、删用户记成 EXECUTE、SYSDBA 查记录报 -5504。另含审计员口令常被设成和管理员一样的原因与分设方法（SYSDBA 改报 -5549），以及忘记口令时用操作系统认证 disql / AS SYSDBA 免密进库改口令的完整实测（含 -2512 权限边界）、VSYSAUDITRULES 为空时怎么判断规则在不在、-5302/-5301/-5313/-6860 报错原文、审计文件 100MB 预分配与留存参数建议。"
     },
     {
       "t": "达梦开通信加密，不用配证书：改一个参数，重启，验证",
