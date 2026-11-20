@@ -24,6 +24,7 @@
 | 交互版 | 长文版 | 分类 |
 |---|---|---|
 | [慢查询采集：一条命令把现场拍清楚（dmkit）](interactive/dmkit-slow-query-handbook.html) | [达梦慢查询：一条命令把现场拍清楚，再去谈优化](posts/dmkit-slow-query-collect.html) | 性能优化 |
+| — | [达梦审计怎么开：5 条命令能抄，先知道它记不到什么](posts/dm-audit-quickstart.html) | 日常运维 |
 | — | [达梦开通信加密，不用配证书：改一个参数，重启，验证](posts/dm-enable-encrypt-4.html) | 日常运维 |
 | — | [达梦怎么看逻辑读：三步拿到那个数字，然后让它变小](posts/dm-logical-reads.html) | 性能优化 |
 | — | [达梦 JDBC 打印真实执行计划：一个类加一个连接串参数，业务代码不用改](posts/dm-jdbc-explain-hook.html) | 性能优化 |
