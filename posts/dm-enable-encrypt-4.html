@@ -117,6 +117,7 @@ used time: 80.857(ms). Execute id is 1301.</code></pre>
 
 <h2>第二步：重启服务</h2>
 <p>小白最容易卡在这一步，因为「重启数据库」这句话在不同安装方式下长得完全不一样。先花十秒确认你的库是怎么起的，再选对应的那条。</p>
+<p>不想分辨自己是哪一种，就直接看情况二：<code>dmdba</code> 登录、进 <code>bin</code>、敲 <code>./DmS</code> 按 Tab 补全、空格加 <code>restart</code>。这条在哪种安装上都能用。</p>
 
 <h3>先找服务名</h3>
 <p>达梦的服务名是安装时定的，一般是 <code>DmService</code> 加上实例名，但实例名不一定叫 <code>DMSERVER</code>。查一下就知道：</p>
@@ -138,10 +139,36 @@ used time: 80.857(ms). Execute id is 1301.</code></pre>
 <pre class="code"><code class="lang-bash">ss -lntp | grep 5236</code></pre>
 <pre class="code"><code class="lang-text">LISTEN  0  128  [::]:5236  [::]:*  users:(("dmserver",pid=2475,fd=3))</code></pre>
 
-<h3>情况二：机器上没有 systemd 服务，但有服务脚本</h3>
-<p>达梦每个实例都会在 <code>bin</code> 下生成一个同名脚本，参数和 systemd 那套一样：</p>
-<pre class="code"><code class="lang-bash">/home/dmdba/dmdbms/bin/DmServiceDMSERVER restart</code></pre>
-<p>脚本会打印启动过程，最后出现 <code>SYSTEM IS READY</code> 就是好了。</p>
+<h3>情况二：用 dmdba 账号进 bin 目录，跑服务脚本（最通用）</h3>
+<p>达梦每个实例都会在 <code>bin</code> 下生成一个同名脚本。不管有没有注册成 systemd 服务，这个脚本都在，所以换台机器、换个发行版都能用。不想记 systemd 那套的话，只记这一种也够。</p>
+<p>先用 <code>dmdba</code> 登录。这个账号是装库时建的，库的文件、进程、日志都归它：</p>
+<pre class="code"><code class="lang-bash">su - dmdba</code></pre>
+<p>进达梦家目录下面的 <code>bin</code>：</p>
+<pre class="code"><code class="lang-bash">cd /home/dmdba/dmdbms/bin</code></pre>
+<p>然后敲 <code>./DmS</code>，注意大小写：<strong>大写 <code>D</code>、小写 <code>m</code>、大写 <code>S</code></strong>。按一下 <strong>Tab</strong> 键，shell 会把服务名补全，接着打一个空格和 <code>restart</code>，回车：</p>
+<pre class="code"><code class="lang-bash">./DmServiceDMSERVER restart</code></pre>
+<p>为什么不直接抄整串名字：服务名是安装时定的，有人叫 <code>DMSERVER</code>，有人叫 <code>DM01</code>、<code>PROD</code>，敲错一个字母就是 <code>No such file or directory</code>。敲前三个字母按 Tab 让 shell 自己补，不用记、也不会错。</p>
+<p>机器上只有一个实例时，Tab 一次就补全。有多个实例的时候，<code>bin</code> 下会躺着好几个 <code>DmService</code> 开头的脚本，Tab 会把候选列出来，你再补几个字母区分：</p>
+<pre class="code"><code class="lang-text">$ ls DmS*
+DmServicePROD  DmServiceTEST</code></pre>
+<p>重启的输出就两行，看到两个 <code>[ OK ]</code> 就是执行完了：</p>
+<pre class="code"><code class="lang-text">Stopping DmServiceDMSERVER: [ OK ]
+Starting DmServiceDMSERVER: [ OK ]</code></pre>
+<p>这两行是脚本自己打的，不代表数据库已经对外服务。想知道真起来没有，用脚本自己的 <code>status</code>：</p>
+<pre class="code"><code class="lang-bash">./DmServiceDMSERVER status</code></pre>
+<pre class="code"><code class="lang-text">DmServiceDMSERVER (pid 4780) is running.</code></pre>
+<p>忘了怎么写，不带参数敲一下这个脚本，它会把用法打出来：</p>
+<pre class="code"><code class="lang-text">Usage: ./DmServiceDMSERVER { start [ mount ] | stop [ -s signal ] | stop_all | status | condrestart | restart [ mount ] }</code></pre>
+
+<h3>这条和 systemctl 是两套，别混着用</h3>
+<p>脚本重启和 <code>systemctl restart</code> 干的是同一件事，但「谁在管这个进程」不一样。如果这台库已经注册成 systemd 服务，你又用 <code>bin</code> 下的脚本重启，会看到一个很吓人的现象：库明明在跑、能连、端口在听，<code>systemctl status</code> 却说它没起来。</p>
+<pre class="code"><code class="lang-text">$ ss -lntp | grep 5236
+LISTEN 0 128 [::]:5236 [::]:* users:(("dmserver",pid=4780,fd=3))
+
+$ systemctl is-active DmServiceDMSERVER
+inactive</code></pre>
+<p>这不是库没起来，是脚本直接把 <code>dmserver</code> 拉起来了，没告诉 systemd；systemd 那边记录的进程已经退出，于是把服务标成 <code>inactive</code>。库照常能用，但「谁在管它」就对不上了，后面再拿 <code>systemctl</code> 看状态、停库，都会对不上号。</p>
+<p>所以一条路用到底：注册了 systemd 服务的库，统一走 <code>systemctl</code>；没注册服务的、或者 systemd 本身出毛病的，走 <code>bin</code> 下这个脚本。两条路要换的时候，先确认进程真的停了再换。</p>
 
 <h3>情况三：手动起的进程，没注册过服务</h3>
 <p>临时环境、测试机、或者当初用 <code>./dmserver</code> 直接拉起来的库，属于这种。先找到进程：</p>
@@ -208,7 +235,7 @@ login used time : 3.954(ms)
 <p>和开启时一模一样：文件改了、内存没动，重启才生效。回滚没有「立刻恢复」的捷径，这一次重启躲不掉。</p>
 
 <h3>情况二：库起不来，SQL 也执行不了</h3>
-<p>这种时候没有会话可用，只能直接改 <code>dm.ini</code>。Linux 上四步，一条 <code>sed</code> 就够，不用打开编辑器：</p>
+<p>这种时候没有会话可用，只能直接改 <code>dm.ini</code>。Linux 上四步，一条 <code>sed</code> 就够，不用打开编辑器。下面拿 <code>systemctl</code> 举例，如果你的库是用 <code>bin</code> 脚本管的，把停和启换成 <code>./DmServiceXXX stop</code> 和 <code>./DmServiceXXX start</code> 就行：</p>
 <pre class="code"><code class="lang-bash"># 1 先停服务，别让它一边拉起来一边被你改文件
 systemctl stop DmServiceDMSERVER
 
