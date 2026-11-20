@@ -73,7 +73,7 @@
     <span class="cat">日常运维</span>
   </div>
   <div class="content">
-<blockquote><p><strong>三十秒版本。</strong>用 SYSDBA 登录，改一个参数，重启服务，再查一眼取值。三步：</p>
+<blockquote><p><strong>三十秒版本。</strong>用 SYSDBA 登录（口令是装库时你设的那个，<strong>不是</strong> <code>SYSDBA</code>），改一个参数，重启服务，再查一眼取值。三步：</p>
 <pre class="code"><code class="lang-sql">-- 第一步：改参数（只写进配置文件，重启才生效）
 ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE;</code></pre>
 <pre class="code"><code class="lang-bash"># 第二步：重启服务，服务名按你机器上的实际名字替换
@@ -101,9 +101,12 @@ select para_name, para_value from v$dm_ini where para_name = 'ENABLE_ENCRYPT';</
 <p>代价也要说清楚：不验证证书，就防不了中间人冒充服务端。它能挡住的是「同网段抓包直接读到 SQL」，挡不住「有人在你和目标库之间架一台假服务器」。内网过测评、防的是前者，这就够用。如果哪天要求防中间人，再升级到 1 或 5，参数改一下的事。</p>
 
 <h2>第一步：改参数</h2>
-<p>这个参数只有 DBA 能改，用 <code>SYSDBA</code> 登录就行。达梦装完默认口令也是 <code>SYSDBA</code>，如果你改过，换成自己的。</p>
+<p>这个参数只有 DBA 能改，用 <code>SYSDBA</code> 登录就行。<strong>但 <code>SYSDBA</code> 是用户名，不是口令。</strong>达梦没有出厂口令，<code>SYSDBA</code> 的密码是装库时你自己设的那个。这一点跟有些数据库「装完就有一个众所周知的默认密码」不一样，实测 <code>dminit help</code> 里写得很死：</p>
+<pre class="code"><code class="lang-text">SYSDBA_PWD    set SYSDBA password    NOTHING    REQUIRED</code></pre>
+<p>默认值 <code>NOTHING</code>，要求 <code>REQUIRED</code>——不给口令根本建不出库。所以网上那些 <code>SYSDBA/SYSDBA</code> 的示例，是作者建库时口令恰好填了 <code>SYSDBA</code>，不是达梦发的默认值（我这台测试机也是这么填的）。换成你自己的：</p>
 <pre class="code"><code class="lang-bash">cd /home/dmdba/dmdbms/bin
-./disql SYSDBA/SYSDBA@127.0.0.1:5236</code></pre>
+./disql SYSDBA/你的口令@127.0.0.1:5236</code></pre>
+<p>口令里带 <code>#</code>、<code>$</code>、<code>&amp;</code> 这类 shell 特殊符号时，用单引号把口令段包住，比如 <code>SYSDBA/'Your#Pwd'@127.0.0.1:5236</code>。不包的话 shell 先把它们吃掉了，报出来的错却像是口令不对。连不上先怀疑口令和引号这两件事，别怀疑加密参数——这会儿还没重启，参数根本没生效。</p>
 <p>进去以后执行这一句：</p>
 <pre class="code"><code class="lang-sql">ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE;</code></pre>
 <pre class="code"><code class="lang-text">SQL&gt; ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE;
@@ -193,7 +196,7 @@ net start DmServiceDMSERVER</code></pre>
 
 <h2>第三步：验证</h2>
 <p>重启完，先用 <code>disql</code> 连进去，确认能连上：</p>
-<pre class="code"><code class="lang-bash">./disql SYSDBA/SYSDBA@127.0.0.1:5236</code></pre>
+<pre class="code"><code class="lang-bash">./disql SYSDBA/你的口令@127.0.0.1:5236</code></pre>
 <pre class="code"><code class="lang-text">Server[127.0.0.1:5236]:mode is normal, state is open
 login used time : 7.182(ms)</code></pre>
 <p>然后查参数，重点看 <code>PARA_VALUE</code> 是不是 4：</p>
