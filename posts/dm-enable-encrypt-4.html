@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>达梦开通信加密，不用配证书：改一个参数，重启，验证 · 达梦手记</title>
-<meta name="description" content="达梦 ENABLE_ENCRYPT=4 只加密、不验证证书，适合只要求传输无明文的等保测评场景。包含用 SYSDBA 改参数、重启数据库服务（systemd、服务脚本、手动进程、Windows 四种情况）、验证取值和连通性的完整步骤，附 DM8 实测输出。">
+<meta name="description" content="达梦 ENABLE_ENCRYPT=4 只加密、不验证证书，适合只要求传输无明文的等保测评场景。包含用 SYSDBA 改参数、重启数据库服务（systemd、服务脚本、手动进程、Windows 四种情况）、验证取值和连通性、以及出问题时改回 0 回滚的完整步骤，附 DM8 实测输出。">
 <link rel="stylesheet" href="../assets/site.css">
 <script>
 (function(){
@@ -80,7 +80,8 @@ ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE;</code></pre>
 systemctl restart DmServiceDMSERVER</code></pre>
 <pre class="code"><code class="lang-sql">-- 第三步：确认内存里的值已经是 4
 select para_name, para_value from v$dm_ini where para_name = 'ENABLE_ENCRYPT';</code></pre>
-<p>全程不需要生成 CA、不需要签发证书、不需要给每个用户配证书目录。应用侧的连接串也不用改。</p></blockquote>
+<p>全程不需要生成 CA、不需要签发证书、不需要给每个用户配证书目录。应用侧的连接串也不用改。</p>
+<p>如果连不上、或者库起不来，把同样的位置改回 0 再重启一次就恢复原状，回滚步骤见「出问题了怎么回滚」一节。</p></blockquote>
 <blockquote><p>本文的输出来自一台 CentOS 7 单机 DM8（服务端构建号 <code>03134284552-20260414-322369-20221</code>，<code>MIN_SSL_VERSION</code> 默认 771 即 TLSv1.2），JDBC 用 <code>DmJdbcDriver8.jar</code> 8.1.4.200 验证。主备、DSC 这类多节点环境每个节点都要改，本文的多节点部分<strong>未实测</strong>。</p></blockquote>
 
 <h2>测评问的是「有没有明文」，不是「证书链完不完整」</h2>
@@ -178,6 +179,72 @@ login used time : 7.182(ms)</code></pre>
 <p>我用 8.1.4.200 的驱动实测过，<strong>连接串里没加任何 SSL 相关参数</strong>，直接连上，查询正常返回。客户端不需要证书目录，也不需要 <code>SSL_PATH</code>。这是 4 这一档最省事的地方：改的是服务端，客户端零改动。</p>
 <p>如果应用用了连接池，记得重启应用。数据库重启那一刻所有连接都断了，连接池会自己重连，但有些池配置了较长的重试间隔，看起来像「改完更慢了」，其实是还在重连。</p>
 
+<h2>出问题了怎么回滚</h2>
+<p>动手之前先把退路想清楚。回滚就是把参数改回 0，但「怎么改」分两种：库还能连上，一条 SQL；库起不来，SQL 执行不了，只能直接动文件。</p>
+
+<h3>什么时候该回滚</h3>
+<p>三个信号，碰到任何一个都先回滚、再排查：</p>
+<ul>
+<li>应用连不上，报错里带 SSL 或者握手字样。多半是客户端驱动太老，不认识 TLS。</li>
+<li>重启后 <code>SYSTEM IS READY</code> 一直不出现，服务起不来。</li>
+<li>测评做完了要恢复原状，或者有第三方系统还在用改不动的老客户端。</li>
+</ul>
+<p>回滚不动数据，这个参数只管连接通道，改了不会丢东西。所以判断标准很简单：加密这件事已经挡住业务了，就先回 0 把业务恢复，别在现场研究 TLS 版本。</p>
+
+<h3>情况一：库能连上，一条 SQL 加一次重启</h3>
+<pre class="code"><code class="lang-sql">alter system set 'ENABLE_ENCRYPT' = 0 spfile;</code></pre>
+<p><code>SPFILE</code> 不能写成 <code>MEMORY</code>。这是静态参数，写内存不生效，重启之后还会被文件里的 4 顶回去。改完按第二步用过的那种方式重启一次：<code>systemctl restart</code>、服务脚本、或者 kill 掉进程重起，哪个顺手用哪个。</p>
+<p>重启完验证两件事，值和连通，一次查完：</p>
+<pre class="code"><code class="lang-text">[B] SQL 改 SPFILE=0（不重启）
+SQL&gt; DMSQL executed successfully
+  dm.ini: ENABLE_ENCRYPT = 0
+  内存值: 4
+[C] 重启服务
+  服务状态: active
+  内存值: 0
+[D] 连通性
+login used time : 3.954(ms)
+1          ROLLBACK_OK</code></pre>
+<p>和开启时一模一样：文件改了、内存没动，重启才生效。回滚没有「立刻恢复」的捷径，这一次重启躲不掉。</p>
+
+<h3>情况二：库起不来，SQL 也执行不了</h3>
+<p>这种时候没有会话可用，只能直接改 <code>dm.ini</code>。Linux 上四步，一条 <code>sed</code> 就够，不用打开编辑器：</p>
+<pre class="code"><code class="lang-bash"># 1 先停服务，别让它一边拉起来一边被你改文件
+systemctl stop DmServiceDMSERVER
+
+# 2 备份，改错了能退回（路径按你实际的 dm.ini 所在目录改）
+cd /home/dmdba/dmdbms/data/DAMENG
+cp dm.ini dm.ini.bak
+
+# 3 只改 ENABLE_ENCRYPT 这一行，参数名写进表达式里，不会误伤别的行
+sed -i 's/ENABLE_ENCRYPT *= *4/ENABLE_ENCRYPT = 0/' dm.ini
+grep -n 'ENABLE_ENCRYPT' dm.ini
+
+# 4 启动，然后按第三步验证
+systemctl start DmServiceDMSERVER</code></pre>
+<p>那句 <code>sed</code> 是按「原来写的是 4」写的。如果你中途试过别的值（比如 5），把表达式里等号后面的 4 换成当前值就行，改完一定要用 <code>grep</code> 看一眼是不是真变成 0 了，别改完就重启。</p>
+<p><code>grep</code> 出来的那行长这样，值应该是 0，后面那一长串是原文件自带的注释，不用管：</p>
+<pre class="code"><code class="lang-text">613:		ENABLE_ENCRYPT                  = 0                     #Encrypt Mode For Communication, 0: Without Encryption; 1: SSL Encryption; 2: Only SSL Authentication; 3: GmSSL; 4: Only SSL Encryption</code></pre>
+<p>我把「停服务、改文件、再启动」这套走了一遍，库能起来，值是 0，登录正常：</p>
+<pre class="code"><code class="lang-text">[1] 停服务
+  状态: inactive
+  端口已释放
+[3] 直接改文件 4 -&gt; 0
+613:		ENABLE_ENCRYPT                  = 0                     #Encrypt Mode For ...
+[4] 启动服务
+  状态: active
+[5] 验证参数与连通
+1          ENABLE_ENCRYPT 0
+1          FILE_EDIT_OK</code></pre>
+<p>Windows 上同理：服务管理器里把达梦服务停掉，用记事本打开 <code>dm.ini</code>，找到 <code>ENABLE_ENCRYPT</code> 那一行把 4 改成 0，保存，再启动服务。<strong>Windows 这一节我没实测</strong>，但动的是同一个文件的同一行，没有别的差别。</p>
+<p>两个细节。一是先停服务再改文件，否则服务脚本可能在你改到一半时又把它拉起来。二是只盯着 <code>ENABLE_ENCRYPT</code> 这一行改，不要全局替换数字 4，这个文件里 4 到处都是。</p>
+
+<h3>回滚后应用侧要做什么</h3>
+<p>连接串不用改回去，因为开启时你就没动过它。要处理的是连接池：数据库重启那一刻连接全断了，池子会自己重连，但有的池重试间隔长，表面上像是「回滚了还是慢」。把应用重启一次最干脆。</p>
+
+<h3>一个实测的小意外</h3>
+<p>我试过把值填成 9（一个不存在的取值），库照样起得来，也没报参数非法（当时没细查它实际按哪个模式在跑）。所以别指望「填错了会报错」这层保护：改完一定按第三步查一次，看的是内存里的 <code>PARA_VALUE</code>，不是你以为写进去的那个数。</p>
+
 <h2>我在测试机上跑了一遍</h2>
 <p>为了让「必须重启」这句话有证据，我把整个来回走了一次，输出原样贴上来。先改 0，不重启：</p>
 <pre class="code"><code class="lang-text">[1] 初始值:
@@ -197,7 +264,13 @@ SQL&gt; DMSQL executed successfully
 login used time : 7.182(ms)
 1          CONN_OK
 used time: 2.070(ms). Execute id is 801.</code></pre>
-<p>全程没有生成过任何证书文件，<code>bin</code> 目录下也没有 <code>server_ssl</code> 或 <code>client_ssl</code>。</p>
+<p>有一点要说明白，免得你到 <code>bin</code> 目录下一看觉得被骗了：<code>server_ssl</code> 和 <code>client_ssl</code> 这两个目录是<strong>安装包自带的</strong>，文件日期还是 2023 年，不是这次操作生成的。4 这一档握手用的就是 <code>server_ssl/server-cert.pem</code>，我把它和 <code>openssl</code> 握手拿到的证书对过指纹，同一个值：</p>
+<pre class="code"><code class="lang-bash">openssl x509 -in server-cert.pem -noout -subject -fingerprint -dates</code></pre>
+<pre class="code"><code class="lang-text">subject= /C=cn/ST=hubei/O=dameng/OU=developer/CN=server/emailAddress=server@demeng.com
+SHA1 Fingerprint=3B:5A:80:51:AA:C0:62:70:6A:77:2F:E5:68:DB:B5:47:58:41:6E:D7
+notBefore=Jan  1 00:00:00 2022 GMT
+notAfter=Jan  1 00:00:00 2032 GMT</code></pre>
+<p>所以「不用配证书」的意思是<strong>不用你生成、不用你分发、不用你续期</strong>，不是说机器上没有证书文件。那张证书的有效期到 2032 年，而且 4 这一档客户端不验证它，所以你全程不用管它什么时候过期。</p>
 
 <h2>顺带说一句怎么证明它真的在加密</h2>
 <p>这一步测评时可能用得上，不需要抓包工具，机器上有 <code>openssl</code> 就行：</p>
@@ -215,7 +288,7 @@ Peer certificate: C = cn, ST = hubei, O = dameng, OU = developer, CN = server</c
 <p>差在「验不验对方身份」。1 是加密加双向验证，要证书；4 是加密，双方都不验证，服务端用自带的证书完成握手。测评关注的是「传输是否加密、是否能看到明文」，4 能满足；如果测评问卷里明确写了「应采用证书进行身份认证」这类条款，那就得走 1 或 5。拿不准就把问卷那一条发我，我帮你对。</p>
 
 <h3>要不要先生成证书</h3>
-<p>不要。4 这一档不需要你生成、部署、更新任何证书文件。达梦安装时会自带 SSL 运行库和那张自签名证书，<code>bin</code> 下本来就有 <code>server_ssl</code> 的话也不用管它。</p>
+<p>不要。4 这一档不需要你生成、部署、更新任何证书文件。安装包自带 SSL 运行库，也自带 <code>bin/server_ssl</code>（一张 2023 年签发、2032 年到期的自签名证书）和按用户分目录的 <code>bin/client_ssl</code>，这些都用不着你动，客户端也不会拿它们做校验。</p>
 
 <h3>改完不重启，行不行</h3>
 <p>不行。<code>ENABLE_ENCRYPT</code> 是静态参数，只认重启。我实测过，<code>SPFILE</code> 改完查内存值还是旧的，重启才变。</p>
@@ -224,7 +297,7 @@ Peer certificate: C = cn, ST = hubei, O = dameng, OU = developer, CN = server</c
 <p>不用。用 8.1.4.200 驱动实测，原始连接串直接连上，不加 <code>SSL_PATH</code>、不加 <code>sslFilesPath</code>。老驱动、其他语言的驱动<strong>未实测</strong>，如果连不上，报错里通常会提到 SSL 或握手，先换一个新一点的驱动试。</p>
 
 <h3>改完连不上了怎么办</h3>
-<p>先看报错。<code>[-70019]</code> 一类的通信错误、或者连接直接被断开，多半是客户端太老，不认识 TLS 握手。临时回退很干脆：把参数改回 0，重启一次，立刻恢复原状。改回 0 也是 <code>ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 0 SPFILE;</code> 这一句加一次重启。</p>
+<p>先看报错。<code>[-70019]</code> 一类的通信错误、或者连接直接被断开，多半是客户端太老，不认识 TLS 握手。临时回退很干脆：把参数改回 0，重启一次，立刻恢复原状。完整步骤在「出问题了怎么回滚」那一节，库起不来、SQL 都执行不了的情况也写了。</p>
 
 <h3>服务端起不来了</h3>
 <p>如果重启后 <code>SYSTEM IS READY</code> 一直不出现，先看日志里有没有 SSL 相关的报错。精简安装（只装了 server 包、缺 SSL 运行库）的机器上会遇到。这种要么补装，要么先改回 0 把库起起来再排查。日志位置在 <code>dm.ini</code> 同目录下，或者用 <code>select * from v$dm_ini where para_name = 'SVR_LOG'</code> 看开关。</p>
