@@ -73,7 +73,7 @@
     <span class="cat">性能优化</span>
   </div>
   <div class="content">
-<blockquote><p><strong>三十秒版本。</strong>逻辑读 = 这条 SQL 读了多少个 8K 的页。它不像耗时那样一忙就飘，是你能自己量、自己比的那个数。三个入口：<strong>管理工具</strong>（选 SQL → 工具栏下拉选 TRACE → 执行）、<strong>命令行</strong>（<code>set autotrace traceonly</code> 加一句 SQL）、<strong>事后查</strong>（<code>V$SQL_HISTORY</code>）。</p></blockquote>
+<blockquote><p><strong>三十秒版本。</strong>逻辑读 = 这条 SQL 读了多少个页（页大小按建库值，常见 8K）。它不像耗时那样一忙就飘，是你能自己量、自己比的那个数。三个入口：<strong>管理工具</strong>（选 SQL → 工具栏下拉选 TRACE → 执行）、<strong>命令行</strong>（<code>set autotrace traceonly</code> 加一句 SQL）、<strong>事后查</strong>（<code>V$SQL_HISTORY</code>）。</p></blockquote>
 <blockquote><p>文中每个数字都是在一台 2G 内存的单机 DM8 上跑出来的（Linux，Pack10，8K 页，30 万行表），不是抄的。三处和流传写法对不上的地方单独列了出来：<strong>达梦的逻辑读不含物理读</strong>、<strong>两个入口的数字天然对不上</strong>、<strong>explain 根本看不到逻辑读</strong>。</p></blockquote>
 
 <h2>「你优化一下这个查询」</h2>
@@ -108,7 +108,8 @@
           0  rows processed
           0  io wait time(ms)
       2.473  exec time(ms)</code></pre>
-<p>盯住 <code>logical reads</code> 这一行就行。连查一个 <code>dual</code> 都要 59 次，不是它读了一行数据，是每次执行都有一笔固定的基础开销（字典、系统页）。所以这个数<strong>不要横向比，要纵向比</strong>：同一个 SQL 改前改后各跑一次。</p>
+<p>盯住 <code>logical reads</code> 这一行就行。连查一个 <code>dual</code> 都要 59 次，不是它读了一行数据，而是<strong>这个会话里第一次执行</strong>要先把解析结果和字典页摸一遍——同一条再执行第二次就归零了。所以这个数<strong>不要横向比，要纵向比</strong>：同一个 SQL 改前改后各跑一次。</p>
+<p>顺带说一个总被问的字段：<code>rows processed</code> 对 SELECT 恒为 0，达梦在这一栏只记 DML 影响行数；返回了多少行看上面的 <code>rows got</code>（管理工具里看结果集）。</p>
 <blockquote><p>这个下拉默认停在 <code>INDEX</code>，很多人以为工具只能看执行计划，就是因为没点开过它。<code>INDEX</code> 只是把计划里的扫描方式标出来，不给统计。</p>
 <p>说明一下边界：我的测试环境是 Linux 服务器，开不了这个客户端，所以上面四步是照界面写的；数字来自下一节命令行那条路，两边 <code>Statistics</code> 的字段和含义完全一致。</p></blockquote>
 
@@ -181,7 +182,7 @@ Statistics
 <p>从这里往后是「为什么」。上面那三条够你交差了，想搞明白再往下看。</p>
 
 <h2>逻辑读数的是页，不是行</h2>
-<p>一个页 8K，这是建库时定的，查一下就知道：</p>
+<p>一个页 8K，这是建库时定的，查一下就知道（<code>PAGE</code> 返回的是<strong>字节数</strong>，不是固定 8K：8K 页的库查出来是 <code>8192</code>，32K 页的库是 <code>32768</code>，按你库里查到的值换算）：</p>
 <pre class="code"><code class="lang-sql">select page from v$database;</code></pre>
 <pre class="code"><code>PAGE
 ----------
@@ -229,7 +230,8 @@ T_LR            4560      35</code></pre>
 <tr><td>冷缓存第一次</td><td>49</td><td>1</td><td>数据页要从磁盘读 1 次，字典等基础开销 49</td></tr>
 <tr><td>第二次</td><td>1</td><td>0</td><td>页在内存里了，只摸了那 1 个页</td></tr>
 </table>
-<p>小表总共 1 个数据页，如果逻辑读包含物理读，冷缓存那次数值不该比热缓存小。实际是反过来变小了，因为页还没进内存。</p>
+<p>这张表真正说明的是<strong>「第一次执行更贵」</strong>，不是「逻辑读含不含物理读」：小表总共 1 个数据页，冷缓存那次的 49 里绝大多数不是数据页，是这个会话第一次执行的解析和字典开销，第二次就只剩 0。</p>
+<p>要判「包含不包含」，看上面那张大表就够了：冷缓存那次逻辑读 562、物理读 4028，<strong>逻辑读比物理读还小</strong>。要是逻辑读包含物理读，这个关系根本不可能出现。</p>
 <p>所以看达梦的执行统计，两个数要<strong>一起看</strong>：<code>logical reads + physical reads</code> 大约是这次执行真实访问的页数。<strong>物理读高只说明缓存冷，说明不了这条 SQL 写得烂</strong>；逻辑读高才是真要改。</p>
 
 <h2>两个入口的数字对不上，别跨着比</h2>
@@ -275,7 +277,7 @@ select * from SYSDBA.T_LR where code='CODE500';</code></pre>
 <p>名字容易误导。<code>traceonly</code> 的 only 指的是「只输出统计，不输出结果集」，SQL 本身是<strong>真的执行</strong>。大表全扫、带 <code>FOR UPDATE</code>、调用自定义函数的语句，在生产库里跑之前先想一下。</p>
 
 <h3>同一句 SQL 每次逻辑读都不一样，正常吗？</h3>
-<p>小幅波动正常。我这边连续跑同一条，出现过 904、911、925，差 2% 左右；刚建完索引的第一次是 963。看的是量级变化（几百变几千、五千变十），不是个位数。</p>
+<p>小幅波动正常。我这边连续跑同一条，出现过 904、911、925，差 2% 左右；刚建完索引的第一次是 963。换个环境波动会大些，一两成也见过。看的是量级变化（几百变几千、五千变十），不是个位数。</p>
 
 <h3>逻辑读和物理读，哪个更该管？</h3>
 <p>逻辑读。物理读高多半是缓存冷，多跑几次自己就降了。逻辑读高说明真的访问了那么多页，只有改索引或改写法才能降。</p>

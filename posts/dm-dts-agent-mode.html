@@ -330,7 +330,7 @@ LISTEN  0  50  *:9099  *:*  users:(("java",pid=22688,fd=253))</code></pre>
 <h2>几条容易忽略的安全事项</h2>
 <table>
 <tr><th>事项</th><th>建议</th></tr>
-<tr><td>校验 KEY</td><td>别用 <code>666666</code> 这类示例值；用完换掉。它是明文写在 <code>service.key</code> 里的，顺手检查文件权限</td></tr>
+<tr><td>校验 KEY</td><td>代理自带一个缺省 KEY <code>888888</code>，<strong>不改等于没设</strong>。安装时自己给一个 6~16 位的值（官方限制），用完换掉；它是明文写在 <code>service.key</code> 里的，顺手检查文件权限</td></tr>
 <tr><td>代理端口（示例 9099）</td><td>只对运维客户端 IP 开放；<strong>代理不是加密通道</strong>，别直接暴露到公网。已经开过端口段的，复用段内端口</td></tr>
 <tr><td>用完即停</td><td>代理是常驻 Java 进程，占约 1 GB 堆。迁完 <code>kill &lt;pid&gt;</code> 并撤掉防火墙放行规则</td></tr>
 <tr><td>内存</td><td>代理跑在数据库服务器上，会跟数据库抢内存。小内存机器上别同时开多个迁移任务（DTS 默认并发数 2）</td></tr>
