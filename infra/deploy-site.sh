@@ -51,8 +51,13 @@ fi
 # C:\Users\...\Temp/tmp.xxx 这种混合路径，传给它自带的 tar 会直接失败。
 # 而且**不要**把 tar 的 stderr 丢进 /dev/null —— 那样失败会伪装成「什么都没发生」。
 TARBALL="/tmp/deploy-$$.tar.gz"
+LIST="/tmp/deploy-list-$$.z"
 ls -d $DEPLOY_PATHS > /dev/null 2>&1 || die "DEPLOY_PATHS 里有路径不存在，检查 env.sh"
-tar czf "$TARBALL" --exclude='.DS_Store' --exclude='*.bak*' $DEPLOY_PATHS \
+# 清单以 git 已跟踪的文件为准：工作区里还没 git add 的草稿（例如 posts/xxx.html）
+# 不该被顺手推上线。NUL 分隔，文件名带空格也不会被拆开。
+git ls-files -z $DEPLOY_PATHS > "$LIST" || die "生成文件清单失败"
+[ -s "$LIST" ] || die "清单为空，检查 DEPLOY_PATHS 与 git 跟踪状态"
+tar czf "$TARBALL" --exclude='.DS_Store' --exclude='*.bak*' --null -T "$LIST" \
   || die "打包失败（上面是 tar 的原始报错）"
 SIZE="$(du -h "$TARBALL" | awk '{print $1}')"
 # 只数文件，不数目录条目 —— tar 的列表里目录也占一行，拿它跟 find 的文件数比必然不符

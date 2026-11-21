@@ -1,7 +1,35 @@
 {
   "site": "达梦手记",
-  "n": 22,
+  "n": 26,
   "items": [
+    {
+      "t": "达梦审计怎么开：5 条命令能抄，先知道它记不到什么",
+      "c": "日常运维",
+      "d": "2026-11-20",
+      "u": "posts/dm-audit-quickstart.html",
+      "x": "达梦 DM8 开启审计的最小可用集：SP_SET_ENABLE_AUDIT(1) 加 CONNECT、TABLE、DELETE TABLE、UPDATE TABLE、SELECT TABLE 五条规则（另需补 INSERT TABLE），粘贴即用，附 V$AUDITRECORDS 记录样例。重点写清五处配了却查不到的原因：素材缺 INSERT TABLE、count(*) 聚合不留痕、一条 update 多记一条 SELECT、删用户记成 EXECUTE、SYSDBA 查记录报 -5504。另含口令相关实测：SYSDBA 口令不可能等于用户名（-2160）、审计员口令常被设成和管理员一样（SYSDBA 改报 -5549）、忘记口令时 disql /@ip:port AS SYSDBA 免密进库，以及给 dmdba 加 dmauditor 组后 AS SYSAUDITOR 免密、经 OS 认证三步重置审计员口令（含 -2512 组映射、-5533 只能删自己建的账户）、VSYSAUDITRULES 为空时怎么判断规则在不在、-5302/-5301/-5313/-6860 报错原文、审计文件 100MB 预分配与留存参数建议。"
+    },
+    {
+      "t": "达梦开通信加密，不用配证书：改一个参数，重启，验证",
+      "c": "日常运维",
+      "d": "2026-11-20",
+      "u": "posts/dm-enable-encrypt-4.html",
+      "x": "达梦 ENABLE_ENCRYPT=4 只加密、不验证证书，适合只要求传输无明文的等保测评场景。用 SYSDBA 改参数（ALTER SYSTEM SET 'ENABLE_ENCRYPT' = 4 SPFILE），重启服务，再查 v$dm_ini 确认取值。含 systemd、服务脚本、手动进程、Windows 四种重启方式，以及为什么不重启不生效、应用连接串为什么不用改、怎么用 openssl 证明通道是 TLS。"
+    },
+    {
+      "t": "驱动日志里只有一个执行号，怎么找回那条 SQL 的执行计划",
+      "c": "性能优化",
+      "d": "2026-11-19",
+      "u": "posts/dm-exec-id-to-plan.html",
+      "x": "达梦 JDBC 驱动日志里每条 SQL 后面都有 [EXEC_ID]。把这个执行号拿到库里，两步换出 SQL_ID、逻辑读和完整执行计划：V$SQL_HISTORY 查执行记录，V$CACHEPLN 按文本找计划地址，SF_TRACE_DUMP_PLN(PLN_ID) 打印全文。不用登服务器 dump 文件、不改代码。含命名参数写法、三条断点、V$SQL_STAT 的会话级陷阱，以及 8.1.4.170 之前版本的 plndump 降级做法。"
+    },
+    {
+      "t": "达梦 JDBC 打印真实执行计划：一个类加一个连接串参数，业务代码不用改",
+      "c": "性能优化",
+      "d": "2026-11-19",
+      "u": "posts/dm-jdbc-explain-hook.html",
+      "x": "达梦 JDBC 驱动留了一个 custom_filter 参数：写一个 40 行的 ICustom 实现，连接串上加一个参数，之后每条 SQL 执行完都会打印执行计划、逻辑读、物理读和服务端耗时，业务代码一行不动。驱动自报的 124 个属性里没有任何 printPlan 开关，这是唯一那条缝。实测覆盖 Statement / PreparedStatement / UPDATE / DELETE，并给出 logLevel 与 statEnable 为什么拿不到计划。"
+    },
     {
       "t": "达梦怎么看逻辑读：三步拿到那个数字，然后让它变小",
       "c": "性能优化",

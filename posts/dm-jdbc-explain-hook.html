@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦 JDBC 打印真实执行计划：一个类加一个连接串参数，业务代码不用改 · 达梦手记</title>
+<meta name="description" content="线上 SQL 慢了，想在生产看真实执行计划，又不想为了查一条 SQL 发一次版。达梦 JDBC 驱动留了一个 custom_filter 参数：写一个 40 行的 ICustom 实现，连接串上加一个参数，之后每条 SQL 执行完都会打印执行计划、逻辑读、物理读和服务端耗时。开关在配置里，业务代码一行不动。含完整可复制代码、实测输出，以及为什么 logLevel 和 statEnable 拿不到计划。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../search.html">搜索</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">  <div class="art-head">
+    <div class="meta">2026-11-19 &nbsp;·&nbsp; 性能优化</div>
+    <h1>达梦 JDBC 打印真实执行计划：一个类加一个连接串参数，业务代码不用改</h1>
+    <span class="cat">性能优化</span>
+  </div>
+  <div class="content">
+<blockquote><p><strong>三十秒版本。</strong>把下面那个 <code>PlanLogger</code> 类放进项目（四十行），连接串末尾加 <code>?custom_filter=dm.debug.PlanLogger</code>，之后这个连接上每执行一条 SQL，控制台就会打出它的执行计划、逻辑读、物理读和服务端耗时。<strong>业务代码一行不动，不用重新发版</strong>，开关就在配置里。</p></blockquote>
+<blockquote><p>文中输出和数字都是在一台 2G 内存的单机 DM8 上跑出来的（Linux，8K 页，30 万行表，驱动 <code>DmJdbcDriver8.jar</code> 8.1.4.200），不是抄的。驱动自报 124 个连接属性，里面<strong>没有任何叫 printPlan / showPlan 的开关</strong>，<code>custom_filter</code> 是唯一那条缝。</p></blockquote>
+
+<h2>「这条 SQL 线上慢，你 EXPLAIN 一下」</h2>
+<p>这句话听着简单，做起来有几步都要卡人。</p>
+<p>日志里只有一句 SQL 和一个 800 毫秒，参数是问号。你要 EXPLAIN，得先把参数换成实值，再找一个库去跑。测试库的表只有两万行，生产有三百万，计划根本不是一回事，跑出来的东西没法用。想去生产库跑，得有权限，还得挑时间，最好别在业务高峰。</p>
+<p>那就不如在自己代码里打一下。于是你打开 IDE，在 DAO 层加几行日志，连测试环境验证，提 MR，等评审，合并，发版。为了看一条 SQL 的计划，走了一整套发布流程。第二天那条 SQL 又慢了，这次参数不一样，你还得再来一遍。</p>
+<p>MySQL 那边至少有个慢查询日志，达梦这边也有服务端的 SQL 日志，但那是 DBA 的地盘，拿计划还得再折腾一轮。所以这件事真正的痛点不是「怎么拿到计划」，是<strong>「怎么在不改代码、不发版的前提下拿到，而且下次还能用」</strong>。</p>
+<p>下面就是这个答案：让驱动自己在每次执行后把计划打出来。</p>
+
+<h2>第一步：把这个类放进项目</h2>
+<p>整个类四十行，只有 <code>afterExecute</code> 一个有内容，其余三个钩子照原样返回。</p>
+<pre class="code"><code class="lang-java">package dm.debug;
+
+import dm.jdbc.driver.DmdbConnection;
+import dm.jdbc.filter.custom.ICustom;
+
+import java.sql.Statement;
+import java.util.Map;
+
+public class PlanLogger implements ICustom {
+
+    // 防止 getExplainInfo 内部又触发一次钩子，造成递归
+    private static final ThreadLocal&lt;Boolean&gt; IN = new ThreadLocal&lt;Boolean&gt;();
+
+    public boolean beforePrepare(Map&lt;String, Object&gt; m) { return true; }
+
+    public void afterPrepare(Map&lt;String, Object&gt; m) { }
+
+    public boolean beforeExecute(Map&lt;String, Object&gt; m) { return true; }
+
+    public void afterExecute(Map&lt;String, Object&gt; m) {
+        if (Boolean.TRUE.equals(IN.get())) return;
+        Object o = m.get(KEY_STATEMENT);
+        if (!(o instanceof Statement)) return;
+        Statement st = (Statement) o;
+        try {
+            IN.set(Boolean.TRUE);
+            DmdbConnection dc = st.getConnection().unwrap(DmdbConnection.class);
+            String info = dc.getExplainInfo(st);
+            if (info == null) return;
+            System.out.println("==== PLAN ==== " + m.get(KEY_SQL));
+            System.out.println(info.trim());
+        } catch (Throwable t) {
+            System.out.println("[PlanLogger] " + t);
+        } finally {
+            IN.remove();
+        }
+    }
+}</code></pre>
+<p>三个地方容易卡住，先说在前面：</p>
+<ul>
+<li><strong>类必须是 <code>public</code>，并且有公开的无参构造</strong>。驱动是用 <code>Class.forName(名字).newInstance()</code> 加载它的。</li>
+<li><strong>包名随意</strong>，但要和连接串里写的一致。上面是 <code>dm.debug</code>，你换成自己项目的包也行。</li>
+<li><strong>编译期要能访问驱动 jar</strong>，因为用到了 <code>DmdbConnection</code> 和 <code>ICustom</code>。Maven 依赖就是你项目里那个达梦驱动。</li>
+</ul>
+<p>把 <code>System.out.println</code> 换成你项目的 logger 更合适，这里用标准输出只是为了让例子能直接跑。</p>
+
+<h2>第二步：连接串加一个参数</h2>
+<pre class="code"><code>jdbc:dm://127.0.0.1:5236?custom_filter=dm.debug.PlanLogger</code></pre>
+<p>原来的连接串如果要带别的参数，继续用 <code>&amp;</code> 接在后面：</p>
+<pre class="code"><code>jdbc:dm://127.0.0.1:5236?user=SYSDBA&amp;custom_filter=dm.debug.PlanLogger</code></pre>
+<p>就这样，没有别的动作。不用注册驱动属性，不用改 <code>dm.ini</code>，不用重启数据库。<strong>想关掉，把这一段删了重启应用即可</strong>。这句话的意思也是：它是个启动期参数，改完得重连才生效。</p>
+
+<h2>第三步：看输出</h2>
+<p>跑一条普通的查询，控制台会多出这样一段（制表符我换成了空格对齐，字段和数字是原样）：</p>
+<pre class="code"><code>==== PLAN ==== select * from T_ORDER where code = 'CODE500'
+1   #NSET2: [8, 7500, 116]
+2     #PRJT2: [8, 7500, 116]; exp_num(5), is_atom(FALSE); INFO_BITS(0)
+3       #BLKUP2: [8, 7500, 116]; IDX_ORDER_CODE(T_ORDER); use_clu_addr(0)
+4         #SSEK2: [8, 7500, 116]; scan_type(ASC), IDX_ORDER_CODE(T_ORDER), is_global(0), scan_range['CODE500','CODE500']
+
+Statistics
+        -----------------------------------------------------------------
+        0                   	data pages changed
+        0                   	undo pages changed
+      772                   	logical reads
+        0                   	physical reads
+        0                   	redo size
+    12786                   	bytes sent to client
+      106                   	bytes received from client
+        1                   	roundtrips to/from client
+        0                   	sorts (memory)
+        0                   	sorts (disk)
+        0                   	rows processed
+        0.000               	io wait time(ms)
+        0.716               	exec time(ms)</code></pre>
+<p>上面是计划，形如 <code>#SSEK2</code> 是索引范围扫描、<code>#BLKUP2</code> 是回表、<code>#CSCN2</code> 是全表扫，方括号里三个数依次是代价、预估行数、预估行宽。下面是这次执行的<strong>真实统计</strong>，<code>logical reads</code> 就是这条 SQL 读了多少个页。</p>
+<p>把 <code>code = 'CODE500'</code> 换成没索引的字段，同一张表会变成这样：</p>
+<pre class="code"><code>1   #NSET2: [34, 1, 4]
+2     #PRJT2: [34, 1, 4]; exp_num(1), is_atom(FALSE); INFO_BITS(0)
+3       #AAGR2: [34, 1, 4]; grp_num(0), sfun_num(1), distinct_flag[0]
+4         #SLCT2: [34, 11250, 4]; (T_ORDER.ID &gt;= 100 AND T_ORDER.ID &lt;= 200)
+5           #CSCN2: [34, 300000, 4]; INDEX33555466(T_ORDER); btr_scan(1)</code></pre>
+<p><code>#CSCN2</code> 一出，全表扫，逻辑读从 772 变成 4540。这两个数字放在一起，比任何「优化建议」都直接。</p>
+
+<h2>它为什么能成立</h2>
+<p>达梦驱动有一百多个连接属性，我把它全部倒出来看过，和「看 SQL 干了什么」相关的只有三组：<code>logLevel</code>、<code>statEnable</code>、<code>custom_filter</code>。前两个都不给计划。</p>
+<table>
+<tr><th style="width:22%">做法</th><th style="width:26%">拿到什么</th><th>拿不到什么</th></tr>
+<tr><td><code>?logLevel=all</code></td><td>每条 SQL 文本、每一步的客户端耗时</td><td><strong>没有计划</strong>。实测日志 71KB，grep 计划关键字 0 命中</td></tr>
+<tr><td><code>?statEnable=true</code></td><td>CSV：SQL、执行次数、累计耗时、单次峰值、行数</td><td>没有计划，也没有逻辑读</td></tr>
+<tr><td><code>custom_filter</code></td><td>计划 + 逻辑读 + 物理读 + 服务端耗时</td><td>要写一个类</td></tr>
+</table>
+<p><code>custom_filter</code> 做的事很朴素：驱动在每次执行前后回调你的类，把 <code>Statement</code> 对象交给你。你拿着它调 <code>getExplainInfo</code>，等于在「刚执行完的这一刻」问驱动要计划和统计。它不重跑 SQL，因为计划早就在驱动里了，统计也是服务端刚刚返回的。</p>
+
+<h2>哪些语句能抓到</h2>
+<p>四种写法我都试过，都能出计划和统计：</p>
+<table>
+<tr><th style="width:44%">写法</th><th style="width:14%">结果</th><th>说明</th></tr>
+<tr><td><code>Statement.executeQuery(String)</code></td><td>能</td><td>计划里能看到字面量条件</td></tr>
+<tr><td><code>PreparedStatement</code></td><td>能</td><td>条件显示为 <code>exp_param(no:0)</code>，<strong>看不到绑定的值</strong></td></tr>
+<tr><td><code>UPDATE</code></td><td>能</td><td>计划首行是 <code>#UPDATE</code></td></tr>
+<tr><td><code>DELETE</code></td><td>能</td><td>计划首行是 <code>#DELETE</code></td></tr>
+</table>
+<p>最后一行那条 UPDATE 我顺手看了一眼：<code>update ... where id = 100</code>，主键没建，走了全表扫，4589 次逻辑读。这种「以为按主键更新、其实全表扫」的写法，平时没人会去 EXPLAIN，日志里只会显示它花了 11 毫秒，因为表还在内存里。等表大了，它才会突然变成慢查询。</p>
+
+<h2>三个坑</h2>
+<p><strong>一、计划里的行数是估的。</strong>上面那个走索引的例子显示 7500 行，实际返回 300 行。达梦没有 <code>EXPLAIN ANALYZE</code>，敲了会报 <code>[-2007]:Syntax error</code>，所以「每个算子实际处理了多少行」这个数拿不到。计划看形状，统计看真实代价，两个结合着读。</p>
+<p><strong>二、每次执行多一次往返。</strong>取计划本身是重新发一次 EXPLAIN 请求（只解析、不执行），所以每条 SQL 会多一个网络来回。我在本机环回上测过，四组配置的稳态耗时都在 1~3 毫秒，测不出差别；如果应用和数据库跨机房，这个差额就是每次的 RTT，高频接口上要算这笔账。</p>
+<p><strong>三、它会打印所有 SQL。</strong>一个请求进来可能有几十条语句，包括框架自己的。真要用在生产，得加条件，别全量打。</p>
+
+<h2>常见问题</h2>
+
+<h3>取计划会不会把 SQL 又执行一遍？</h3>
+<p>不会。我用 <code>V$SQL_HISTORY</code> 的条数对比过，调用前后都是 12 条，没有新增。如果它真的重跑，慢 SQL 会慢一倍，那这个功能就没法用了。</p>
+
+<h3>会不会影响事务？</h3>
+<p>不影响。关掉自动提交、插一条不提交，调完取计划再 rollback，数据正常消失。取计划不碰事务状态。</p>
+
+<h3>统计里的 exec time 是服务端还是我这边等的？</h3>
+<p>服务端。它只算数据库执行这一段。用户实际等的时间还要加上网络往返和结果集传输。实测同一条 SQL，服务端 1.1 毫秒，客户端从执行到遍历完 16.6 毫秒，差的那十几毫秒是 37KB 结果集在路上。</p>
+
+<h3>生产上能一直开着吗？</h3>
+<p>不建议全量常开，理由不是它慢，是它吵。比较稳的做法是加个开关，只在排查期打开，或者只打慢的：</p>
+<pre class="code"><code>private static final ThreadLocal&lt;Long&gt; T0 = new ThreadLocal&lt;Long&gt;();
+
+public boolean beforeExecute(Map&lt;String, Object&gt; m) {
+    T0.set(System.nanoTime());
+    return true;
+}
+
+public void afterExecute(Map&lt;String, Object&gt; m) {
+    Long t0 = T0.get();
+    if (t0 == null) return;
+    T0.remove();
+    long ms = (System.nanoTime() - t0) / 1000000;
+    if (ms &lt; 500) return;          // 只关心 500ms 以上的
+    // 下面再接 getExplainInfo
+}</code></pre>
+<p>注意这里量的是<strong>客户端感知到的时间</strong>，包含了取计划和网络，和 Statistics 里那个服务端时间是两个口径，别混着比。这段是思路，我没有单独跑过压测，标在这里。</p>
+
+<h3>能不能顺便打印参数值？</h3>
+<p>钩子的 map 里有 <code>params</code> 这个 key，但我没细验它的格式。而计划里绑定变量只显示 <code>exp_param(no:0)</code>，所以想知道「具体哪个参数慢」，得靠你自己在 <code>beforeExecute</code> 里把参数记下来，跟 SQL 一起打。这一块我没做完整实现，不写结论。</p>
+
+<h3>Tomcat 或 Spring Boot 里能直接用吗？</h3>
+<p><strong>未实测。</strong>风险在类加载器：驱动是用自己的 ClassLoader 去 <code>Class.forName</code> 你的类，如果驱动在容器的公共 lib 里、你的类在应用的 <code>WEB-INF/lib</code> 或 fat-jar 里，可能找不到。稳妥的判断办法是在目标环境启动一次，看有没有 <code>ClassNotFoundException</code>；真遇到，把这个类跟驱动放进同一个加载域。</p>
+
+<h3>换个达梦版本还成立吗？</h3>
+<p><code>getExplainInfo</code> 和 <code>ICustom</code> 都是驱动里的接口，不是标准 JDBC，文档里也没承诺不删。我在 8.1.4.200 上验证通过，换版本请重新跑一次：只要 <code>dc.getExplainInfo(st)</code> 还能返回带 <code>Statistics</code> 的字符串，这套就还能用。</p>
+
+<h2>最后</h2>
+<p>这个方案的价值不在技术含量，在于它把「看计划」这件事从一次发布流程，变成了一个配置项。以前你要为一条 SQL 走一遍 MR，现在改配置、重启、看完、改回来，五分钟。</p>
+<p>顺手也能看出别的：一个平时没人注意的更新语句走了全表扫，一个接口里其实发了四十条 SQL，某个查询的逻辑读是邻居的十倍。这些东西不会报错，也不会进慢查询日志，只有在每条 SQL 都自己开口的时候才看得见。</p>
+<blockquote><p>想先把「这条 SQL 到底读了多少页」弄明白，看这篇：<a href="dm-logical-reads.html">达梦怎么看逻辑读：三步拿到那个数字，然后让它变小</a>。那篇讲三个入口和判读方法，这篇讲怎么让它自动发生。</p></blockquote>
+</div>
+  <section class="contact" hidden>
+    <div class="contact-body">
+      <h3>卡在某一步了？</h3>
+      <p>先确认三件事：类是不是 <code>public</code> 且有无参构造、连接串里的包名和类名是否完全一致、编译时 classpath 里有没有驱动 jar。还对不上，把这三样发我：<b>卡在第几步</b>、报错原文、驱动版本（<code>DmJdbcDriver8.jar</code> 还是别的）。不用发库里的数据。</p>
+      <details class="contact-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a> · <a href="https://beian.mps.gov.cn/#/query/webSearch?code=50010602505382" target="_blank" rel="noopener noreferrer"><img src="../assets/img/gongan-beian.png" alt="" style="height:16px;vertical-align:-3px;margin-right:4px">渝公网安备50010602505382号</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>

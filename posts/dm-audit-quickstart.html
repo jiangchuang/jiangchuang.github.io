@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>达梦审计怎么开：5 条命令能抄，先知道它记不到什么 · 达梦手记</title>
+<meta name="description" content="达梦 DM8 开启审计的最小可用集：SP_SET_ENABLE_AUDIT 加 5 类 SP_AUDIT_STMT，粘贴即用。附 V$AUDITRECORDS 实测记录样例、审计员口令为什么常和管理员一样、五处「配了却查不到」的真实原因（缺 INSERT TABLE、count(*) 不留痕、update 多记一条 SELECT、SYSDBA 查记录报 -5504）。另含忘记口令的完整救急实测：SYSDBA 口令不可能等于用户名（-2160）、审计员加 dmauditor 组后 disql /@ip:port AS SYSAUDITOR 免密、经 OS 认证三步重置审计员口令，以及 -2512 组映射与 -5533 删除边界。">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+(function(){
+  var THEMES = ['ink', 'dark'];
+  var NAMES = { ink: '水墨', dark: '墨夜' };
+  // 早期版本把深色主题的内部代号写成 'sar'，这里映射一次，
+  // 免得老访客 localStorage 里存着 'sar' 时主题失效。
+  var ALIAS = { sar: 'dark' };
+  var KEY = 'jc-notes-theme';
+  var cur = 'ink';
+  function norm(v){ return ALIAS[v] || v; }
+  try {
+    var s = norm(localStorage.getItem(KEY));
+    if (s && THEMES.indexOf(s) >= 0) { cur = s; }
+  } catch (e) {}
+  // 支持 ?theme=dark 直接指定配色（便于分享某个配色 / 截图预览）
+  try {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    var t = m ? norm(m[1]) : null;
+    if (t && THEMES.indexOf(t) >= 0) { cur = t; }
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', cur);
+
+  window.__applyTheme = function(t){
+    cur = norm(t);
+    if (THEMES.indexOf(cur) < 0) { cur = 'ink'; }
+    document.documentElement.setAttribute('data-theme', cur);
+    var el = document.querySelector('.theme-name');
+    if (el) { el.textContent = NAMES[cur] || cur; }
+    try { localStorage.setItem(KEY, cur); } catch (e) {}
+  };
+  window.__cycleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var i = THEMES.indexOf(cur);
+    window.__applyTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.__applyTheme(cur);
+  });
+})();
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-txt">达梦手记</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../index.html">目录</a></li>
+      <li><a href="../search.html">搜索</a></li>
+    </ul>
+    <a class="nav-search" href="../search.html" title="搜索笔记">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <span>搜索</span>
+    </a>
+    <button class="theme-btn" type="button" onclick="__cycleTheme()" title="切换配色风格">
+      <span class="theme-dot"></span><span class="theme-name">水墨</span>
+    </button>
+  </div>
+</nav>
+<main class="wrap article">  <div class="art-head">
+    <div class="meta">2026-11-20 &nbsp;·&nbsp; 日常运维</div>
+    <h1>达梦审计怎么开：5 条命令能抄，先知道它记不到什么</h1>
+    <span class="cat">日常运维</span>
+  </div>
+  <div class="content">
+
+<p>测评问到「安全审计」，要的不是一句「开了」，是能当场查出来的一条条记录：谁、什么时间、从哪来、做了什么、成没成功。</p>
+<p>达梦内置审计能给出这些。麻烦在配完那一步——规则配上去了，回头去查记录是空的，看着像没生效；换个账户查，直接报无权限。我第一次就是这么卡住的，还差点把「再配一遍规则」当成解决办法。</p>
+<p>这篇给两样东西：5 条能直接粘的命令；以及这 5 条<strong>记不到什么</strong>。前者让你十分钟内交差，后者让你在测评老师追问「那插入呢」的时候不至于当场翻车。</p>
+<p>实测环境：DM8 企业版单机，构建号 <code>03134284488-20260520-327791-20200 Pack10</code>，Linux。文中的输出都是原样贴的，实例端口不是默认的，为便于复制统一写成 <code>5236</code>。<strong>安全版</strong>另有 <code>SYSSSO</code> 账户、分权更细，本文没在安全版复跑，涉及处标「未实测」。</p>
+
+<blockquote><p><strong>三十秒版本。</strong>用 <code>SYSAUDITOR</code> 登录，把下面 5 条粘进去，然后做一次操作，再换回 <code>SYSAUDITOR</code> 查记录。就这些。</p>
+<pre class="code"><code class="lang-sql">-- 审计总开关
+SP_SET_ENABLE_AUDIT(1);
+
+-- 审计所有用户登录行为
+SP_AUDIT_STMT('CONNECT', 'NULL', 'ALL');
+
+-- 审计对表的 DDL
+SP_AUDIT_STMT('TABLE', 'NULL', 'ALL');
+
+-- 审计删除数据
+SP_AUDIT_STMT('DELETE TABLE', 'NULL', 'ALL');
+
+-- 审计修改数据
+SP_AUDIT_STMT('UPDATE TABLE', 'NULL', 'ALL');
+
+-- 审计查询表数据
+SP_AUDIT_STMT('SELECT TABLE', 'NULL', 'ALL');</code></pre>
+<p>每条都返回 <code>DMSQL executed successfully</code> 就是配上了。查记录用同一账户（<code>SYSAUDITOR</code>）执行一句：</p>
+<pre class="code"><code class="lang-sql">select username, operation, objname, succ_flag, sql_text, optime
+  from sysauditor.v$auditrecords
+ order by optime desc;</code></pre>
+<p><strong>但这 5 条没有覆盖插入。</strong>要连 <code>insert</code> 一起记，得自己补一条 <code>SP_AUDIT_STMT('INSERT TABLE', 'NULL', 'ALL');</code>。为什么它值得单拎出来说，见「它记不到什么」。</p></blockquote>
+
+<hr>
+<h2>先解决登录：审计员的密码，可能和管理员是同一个</h2>
+<p><code>SYSAUDITOR</code> 是达梦内置的审计管理员账户，跟 <code>SYSDBA</code> 分权：开关、配规则、看记录都得用它，<code>SYSDBA</code> 反而看不了记录。</p>
+<p>它<strong>没有默认口令</strong>。<code>dminit</code> 里 <code>SYSAUDITOR_PWD</code> 是必填项（实测 <code>dminit help</code> 标的是 <code>REQUIRED</code>，默认值 <code>NOTHING</code>），口令在建库那一刻由人填进去。</p>
+<p>但现场十有八九两个口令是一样的。原因很朴素：<strong>装库的人不想多记一个密码</strong>，就把审计员口令填成了和管理员一样的。我这台实例正是这么来的——装库用的那套自研脚本（不是达梦官方安装程序）发现 <code>SYSAUDITOR_PWD</code> 留空，顺手拿 <code>SYSDBA</code> 的口令顶上，只留了一条告警：</p>
+<pre class="code"><code class="lang-text">[warn] SYSAUDITOR_PWD 留空，已沿用 SYSDBA_PWD
+（影响：审计账号与管理员同口令将失去审计独立性
+ 处置：装完 alter user SYSAUDITOR identified by "&lt;独立口令&gt;" 分设）</code></pre>
+<p>还要澄清一句：<strong><code>SYSDBA</code> 这个字符串，永远不可能是它自己的口令</strong>。达梦有硬校验，实测：</p>
+<pre class="code"><code class="lang-text">SQL&gt; alter user SYSDBA identified by "SYSDBA";
+[-2160]:Error in line: 1
+Password must be different from login name.</code></pre>
+<p>建用户同理，<code>create user audit_test_user identified by "audit_test_user";</code> 报同一条 <code>-2160</code>。反过来，口令里<strong>带</strong> <code>SYSDBA</code> 字样是允许的（<code>Sysdba1234</code> 实测建用户成功），只要不等于用户名、且过得去复杂度校验——这台 <code>PWD_POLICY=15</code>，要求长度不小于 9、含大小写和数字。所以「口令恰好是 SYSDBA」这种说法从原理上就不成立。</p>
+<p>现场真实发生的是：<strong>图省事的人把审计员口令填成了和管理员一模一样的那个字符串</strong>。一样，但不是「SYSDBA」这个词。这两件事在测评现场分量不同：后者改一下就好。</p>
+<p>最快的判断办法：拿登录 <code>SYSDBA</code> 的口令直接试一次 <code>SYSAUDITOR</code>（下面这行的 <code>SYSDBA的口令</code> 换成你登录 <code>SYSDBA</code> 时敲的那串），能进就说明当初填的一样：</p>
+<pre class="code"><code class="lang-bash">./disql SYSAUDITOR/SYSDBA的口令@127.0.0.1:5236</code></pre>
+<pre class="code"><code class="lang-text">Server[127.0.0.1:5236]:mode is normal, state is open
+login used time : 2.638(ms)
+
+SQL&gt; select user as who from dual;
+LINEID     WHO
+---------- ----------
+1          SYSAUDITOR</code></pre>
+<p>这件事测评是要问的。审计员和管理员一个口令，等于三权分立没落地——管库的人能登审计账号，日志谁都能动。</p>
+<p>分设口令有个反直觉的地方：<strong><code>SYSDBA</code> 改不了审计员的口令</strong>，实测报：</p>
+<pre class="code"><code class="lang-text">SQL&gt; alter user SYSAUDITOR identified by "Auditor_2026";
+[-5549]:No alter user privilege.</code></pre>
+<p>得让审计员自己改自己，用新口令登录后再执行同一条语句，就成功了：</p>
+<pre class="code"><code class="lang-text">SQL&gt; alter user SYSAUDITOR identified by "Auditor_2026";
+DMSQL executed successfully</code></pre>
+<p>改完立刻验两件事：新口令能登；<strong>旧口令必须登不上</strong>。旧口令失败的样子有点误导——<code>disql</code> 不会直接说口令错，而是退回交互式让你重输，管道里没输入就连试三次退出去：</p>
+<pre class="code"><code class="lang-text">username:password:
+[-70028]:Create SOCKET connection failure.
+DISQL-10029: Can not connect to SERVER after three tries, exit DISQL</code></pre>
+<p>这个报错看着像网络断了。<strong>看到 <code>-70028</code> 先回头确认口令</strong>，别去查防火墙。我在这上面绕过一次弯。</p>
+
+<hr>
+<h2>口令忘了怎么办：用操作系统认证进去</h2>
+<p>DBA 交接、老项目接手、同事离职，最常见的就是「库还在跑，口令没人知道」。达梦有一条本地免密通道，前提是<strong>你能用装库的那个操作系统账号（一般是 <code>dmdba</code>）登到服务器上</strong>。</p>
+<p>命令一行，三个地方不能省：</p>
+<pre class="code"><code class="lang-bash">./disql /@127.0.0.1:5236 AS SYSDBA</code></pre>
+<ul>
+<li><strong>斜杠后面必须跟 <code>@主机:端口</code>。</strong>只写 <code>/</code> 会去连默认的 5236，实例端口不是 5236 时直接连不上——报出来的还是那句 <code>[-70028] Create SOCKET connection failure</code>，很容易误判成认证没开。</li>
+<li><strong>必须带 <code>AS SYSDBA</code>。</strong>只写 <code>/@主机:端口</code> 不带身份，实测报 <code>[-2501]:Invalid username or password.</code>——它不是口令错，是达梦不知道该把你映射成谁（<code>dmdba</code> 不在 <code>dmusers</code> 组，库里也没有同名用户）。</li>
+<li>用 <code>dmdba</code> 执行，别用 <code>root</code>，原因见下面的边界表。</li>
+</ul>
+<p>进去先看自己是谁（这张表就是实测输出）：</p>
+<pre class="code"><code class="lang-text">SQL&gt; select user as who from dual;
+LINEID     WHO
+---------- ----------
+1          SYSDBA</code></pre>
+<p>确认是 <code>SYSDBA</code>，口令就能直接改，不需要知道旧的：</p>
+<pre class="code"><code class="lang-text">SQL&gt; alter user SYSDBA identified by "新口令";
+DMSQL executed successfully</code></pre>
+<p>这条路我完整跑过一遍：改成临时口令 → 用新口令正常登录 → 再改回原口令 → 原口令验证通过。全程不停库。</p>
+
+<h3>它能进到什么程度，都是实测</h3>
+<div class="tbl-wrap"><table><thead><tr><th>试法</th><th>结果</th></tr></thead><tbody>
+<tr><td><code>dmdba</code> + <code>AS SYSDBA</code></td><td>成功，身份 <code>SYSDBA</code></td></tr>
+<tr><td><code>dmdba</code> + <code>AS AUTO</code></td><td>成功，等同于 <code>SYSDBA</code>（自动匹配到有 DBA 权限的账户）</td></tr>
+<tr><td><code>dmdba</code> + <code>AS SYSAUDITOR</code>，<strong>未加组</strong></td><td><code>[-2512]:Unauthorized user .</code> —— 默认进不去，补一个系统组就能进，见下一节</td></tr>
+<tr><td><code>dmdba</code> + <code>AS SYSAUDITOR</code>，<strong>已在 <code>dmauditor</code> 组</strong></td><td>成功，身份 <code>SYSAUDITOR</code></td></tr>
+<tr><td><code>root</code> + <code>AS SYSDBA</code></td><td><code>[-2512]:Unauthorized user .</code></td></tr>
+<tr><td><code>dmdba</code> + <code>AS DMDBA</code>（普通用户名）</td><td>不认，<code>disql</code> 直接打印用法</td></tr>
+<tr><td><code>dmdba</code> + <code>AS SYSSSO</code></td><td>连不上（企业版 <code>SYSSSO</code> 账户状态是 <code>EXPIRED</code>，安全版才有实际用途，本文未在安全版复跑）</td></tr>
+</tbody></table></div>
+<p>两个结论。第一，<strong>只有装库的那个操作系统用户能用，<code>root</code> 也不行</strong>，这算一道天然的门。第二，<strong><code>AS</code> 后面不是随便写谁就是谁</strong>，得对应到系统组或内置账户；不过审计员这条路是通的，只要补一个组——下一节。</p>
+<p>安全上的话也得说一句：这条通道意味着<strong>谁能登 <code>dmdba</code> 系统账号，谁就是数据库管理员</strong>，跟知不知道口令无关。所以服务器账号管控、<code>su</code> 到 <code>dmdba</code> 的口令或密钥，就是最后一道门。测评问到「数据库账号安全」时，这一层也该一起答。</p>
+
+<h3>审计员也能免密：差别只在一个系统组</h3>
+<p>我一开始把上面那条 <code>-2512</code> 读成了「审计员没有 OS 认证通道」，这个判断是错的。达梦判断的不是用户名，是<strong>操作系统组</strong>：</p>
+<div class="tbl-wrap"><table><thead><tr><th>操作系统组</th><th>对应数据库账户</th><th>默认有没有</th></tr></thead><tbody>
+<tr><td><code>dmdba</code></td><td><code>SYSDBA</code></td><td>装库时就有（<code>dmdba</code> 用户已在该组）</td></tr>
+<tr><td><code>dmauditor</code></td><td><code>SYSAUDITOR</code></td><td>没有，要自己建</td></tr>
+<tr><td><code>dmsso</code></td><td><code>SYSSO</code></td><td>安全版用，企业版账户是 <code>EXPIRED</code></td></tr>
+<tr><td><code>dmusers</code></td><td>与 OS 用户同名的数据库用户</td><td>没有；同名用户那条路本文没跑通，标未实测</td></tr>
+</tbody></table></div>
+<p>所以 <code>SYSDBA</code> 那条路天然通、<code>SYSAUDITOR</code> 天然 <code>-2512</code>。补上组就行，<strong>不用改参数、不用重启数据库</strong>：</p>
+<pre class="code"><code class="lang-bash">groupadd dmauditor
+usermod -a -G dmauditor dmdba
+id dmdba        # groups 里要看到 dmauditor</code></pre>
+<pre class="code"><code class="lang-bash">su - dmdba
+cd /home/dmdba/dmdbms/bin
+./disql /@127.0.0.1:5236 AS SYSAUDITOR</code></pre>
+<p>进去之后身份和权限都是真的，不是「进去了但什么都干不了」：</p>
+<pre class="code"><code class="lang-text">SQL&gt; select user as who from dual;
+LINEID     WHO
+---------- ----------
+1          SYSAUDITOR
+
+SQL&gt; select count(*) as records from sysauditor.v$auditrecords;
+LINEID     RECORDS
+---------- --------------------
+1          308</code></pre>
+<p>判据就是这个组，不含糊：把 <code>dmdba</code> 从组里删掉（<code>gpasswd -d dmdba dmauditor</code>），<strong>下一次连立刻回到 <code>-2512</code></strong>；加回去，下一次连又通。整个过程没重启库、没重新登录系统账号。</p>
+
+<h3>审计员忘口令，用这条路三步救回来</h3>
+<p>走 OS 认证进来，会话身份就是 <code>SYSAUDITOR</code> 本身，所以「改自己口令」这条语句它有权限——正是 <code>SYSDBA</code> 执行时报 <code>-5549</code> 的那条：</p>
+<pre class="code"><code class="lang-sql">-- 1. OS 认证进来，先改成临时口令
+alter user SYSAUDITOR identified by "Temp12345";
+
+-- 2. 退出，用临时口令正常登录，确认通
+
+-- 3. 再走一次 OS 认证，改回正式口令
+alter user SYSAUDITOR identified by "正式口令";</code></pre>
+<p>我完整跑过：改临时口令 → 密码登录成功 → OS 认证改回原口令 → 原口令验证通过。不停库、不需要旧口令，也不用 <code>SYSDBA</code> 帮忙。前提只有一个：<code>ENABLE_LOCAL_OSAUTH=1</code>（这台实例是 1），为 0 时先按下一节改回来。</p>
+
+<h3>顺手撞见的一条权限边界</h3>
+<p>拿到审计员身份后我多试了一步：<code>SYSAUDITOR</code> 能 <code>create user</code>，也能删自己建的用户；但 <code>SYSDBA</code> 删不掉审计员建的用户：</p>
+<pre class="code"><code class="lang-text">SQL&gt; drop user t_by_auditor;        -- 用 SYSDBA 执行
+[-5533]:Error in line: 1
+No drop user privilege.</code></pre>
+<p>反方向一样：审计员删 <code>SYSDBA</code> 建的用户，同样报 <code>-5533</code>；而各自删自己建的都成功。原因不是"管理员权限不够"：<code>SYSDBA</code> 的系统权限只有 <code>SELECT ANY TABLE</code>、<code>EXECUTE ANY PROCEDURE</code>、<code>SELECT ANY SEQUENCE</code>、<code>EXECUTE ANY PACKAGE</code>、<code>CREATE SESSION</code> 五项，建/删用户靠 <code>DBA</code> 角色（<code>CREATE USER</code> / <code>ALTER USER</code> / <code>DROP USER</code> 都在这个角色里）；<code>SYSAUDITOR</code> 靠 <code>DB_AUDIT_ADMIN</code> 角色，同样带这三个权限。真正卡住的是：<strong>达梦压根没有 <code>DROP ANY USER</code> 这种跨属主权限</strong>——我把全部 <code>DROP%</code> 权限拉了一遍，只有 <code>DROP USER</code>，没有 ANY 版本。结论很实用：<strong>别拿审计员账号去建业务用户</strong>，建出来的账户 <code>SYSDBA</code> 收拾不了，只能再登审计员删。</p>
+
+<h3>它靠哪个参数：我关不掉</h3>
+<p>相关的是两个参数。这台实例的值实测如下，两个都<strong>不在</strong> <code>dm.ini</code> 里（<code>ENABLE_LOCAL_OSAUTH</code> 的 <code>file_value</code> 显示 1，可是全文搜不到这一项，这个矛盾我还没查清，所以改它时一律以 <code>v$dm_ini</code> 为准）：</p>
+<div class="tbl-wrap"><table><thead><tr><th>参数</th><th>这台</th><th>管什么</th></tr></thead><tbody>
+<tr><td><code>ENABLE_LOCAL_OSAUTH</code></td><td>1</td><td>本地操作系统认证。官方文档写的缺省是 <strong>0</strong>，所以每台装完先查一次；为 0 时上面所有 <code>AS</code> 写法都报 <code>-2512</code></td></tr>
+<tr><td><code>ENABLE_REMOTE_OSAUTH</code></td><td>0</td><td>远程操作系统认证，默认关（所以只能在本机免密）。远程还要配 <code>ENABLE_ENCRYPT=1</code> 走 SSL，本文未实测</td></tr>
+</tbody></table></div>
+<p>查一行就够：</p>
+<pre class="code"><code class="lang-sql">select para_name, para_value, file_value from v$dm_ini
+ where para_name = 'ENABLE_LOCAL_OSAUTH';</code></pre>
+<p>如果是 0，开通两步，<strong>静态参数必须重启</strong>：</p>
+<pre class="code"><code class="lang-sql">SP_SET_PARA_VALUE(2, 'ENABLE_LOCAL_OSAUTH', 1);</code></pre>
+<p>想把它关掉，<strong>我没有成功</strong>，过程如实记下：</p>
+<ul>
+<li><code>alter system set 'ENABLE_LOCAL_OSAUTH' = 0 both;</code> 报 <code>[-839]:Try to alter static ini parameter.</code>，静态参数不让动态改。</li>
+<li>停库，手工在 <code>dm.ini</code> 里加 <code>ENABLE_LOCAL_OSAUTH = 0</code>，重启后查 <code>v$dm_ini</code>，值<strong>仍然是 1</strong>。插在文件中间和追加在末尾都试过，一样。</li>
+</ul>
+<p>所以「关掉这个参数就安全了」这句话我不敢写，这里标<strong>未实测</strong>。反过来提醒一句：如果你在测评答疑时说「我们已经关了 OS 认证」，最好先当场查一次值，别把没生效的改动说成已完成。</p>
+
+<hr>
+<h2>这 5 条各管什么</h2>
+<p>一条总开关，一条登录，三条数据操作。<code>TABLE</code> 那条最容易误读：它管的是<strong>表这个对象的 DDL</strong>（建表、改表、删表），不是表里的数据。表里的增删改查是另外四个类型，而素材里只给了三个。</p>
+<div class="tbl-wrap"><table><thead><tr><th>命令</th><th>记什么</th><th>不记什么</th></tr></thead><tbody>
+<tr><td><code>SP_SET_ENABLE_AUDIT(1)</code></td><td>打开审计总开关。关着的时候配规则，一条都落不下去</td><td>不管具体记什么，得配合下面几条</td></tr>
+<tr><td><code>'CONNECT'</code></td><td>登录（<code>LOGIN</code>）、退出（<code>LOGOUT</code>）</td><td>——</td></tr>
+<tr><td><code>'TABLE'</code></td><td>建表 <code>CREATE TABLE</code>、改表、删表</td><td>表里的数据变化</td></tr>
+<tr><td><code>'SELECT TABLE'</code></td><td>查表数据</td><td><code>count(*)</code> 这类聚合，见下一节</td></tr>
+<tr><td><code>'UPDATE TABLE'</code></td><td>改数据</td><td>——</td></tr>
+<tr><td><code>'DELETE TABLE'</code></td><td>删数据</td><td>——</td></tr>
+</tbody></table></div>
+<p>配完这 5 条，我建了一张测试表、插了一行、改了一行、查了一次、删了一行，记录原样长这样：</p>
+<div class="tbl-wrap"><table><thead><tr><th>做的操作</th><th>OPERATION</th><th>OBJNAME</th><th>SQL_TEXT</th></tr></thead><tbody>
+<tr><td>登录</td><td><code>CONNECT</code></td><td>NULL</td><td><code>LOGIN</code></td></tr>
+<tr><td>建表</td><td><code>CREATE TABLE</code></td><td>NULL</td><td><code>create table SYSDBA.T_AUDIT_PROBE2(id int, v varchar(20));</code></td></tr>
+<tr><td>插数据</td><td><code>INSERT</code></td><td><code>T_AUDIT_PROBE2</code></td><td><code>insert into ... values(9, 'insert-probe');</code></td></tr>
+<tr><td>改数据</td><td><code>UPDATE</code></td><td><code>T_AUDIT_PROBE2</code></td><td><code>update SYSDBA.T_AUDIT_PROBE2 set v = 'c' where id = 2;</code></td></tr>
+<tr><td>查数据</td><td><code>SELECT</code></td><td><code>T_AUDIT_PROBE2</code></td><td><code>select id, v from SYSDBA.T_AUDIT_PROBE2;</code></td></tr>
+<tr><td>删数据</td><td><code>DELETE</code></td><td><code>T_AUDIT_PROBE2</code></td><td><code>delete from SYSDBA.T_AUDIT_PROBE2 where id = 1;</code></td></tr>
+<tr><td>退出登录</td><td><code>DISCONNECT</code></td><td>NULL</td><td><code>LOGOUT</code></td></tr>
+</tbody></table></div>
+<p>几个细节：<code>SQL_TEXT</code> 是原样语句，<strong>口令会自动打码成 <code>******</code></strong>，明文不进审计表；DDL 的 <code>OBJNAME</code> 是 <code>NULL</code>，因为记录时对象还不存在；查审计视图这个动作本身也会留下一条 <code>SELECT</code>，<code>OBJNAME</code> 是 <code>V$AUDITRECORDS</code>——别把这行当成别人在翻你的业务表。</p>
+<p>登录和退出不用单独配 <code>DISCONNECT</code>，配了反而报错：达梦没有这个类型，但 <code>LOGOUT</code> 照样会被记下来。</p>
+
+<hr>
+<h2>它记不到什么</h2>
+<p>这一节是重点。以下每一条都在同一台实例上验过，不是推测。</p>
+
+<h3>1. 素材里没有 <code>INSERT TABLE</code>，插数据就是查不到</h3>
+<p>先把 5 条配齐、插入一行，去查记录——只有 <code>CONNECT</code> 和 <code>DISCONNECT</code> 两条，<code>INSERT</code> 没有。补上这条命令之后再插一行，记录立刻出现：</p>
+<pre class="code"><code class="lang-sql">SP_AUDIT_STMT('INSERT TABLE', 'NULL', 'ALL');</code></pre>
+<pre class="code"><code class="lang-text">SYSDBA  INSERT  T_AUDIT_PROBE2  insert into SYSDBA.T_AUDIT_PROBE2 values(9, 'insert-probe');</code></pre>
+<p>所以「数据操作」这一组是四个类型，不是三个。只抄素材那三条，改和删都有记录、唯独看不出来谁插了数据——而测评最常问的恰恰是「谁改了这条数据」。</p>
+
+<h3>2. <code>count(*)</code> 这种聚合查询不留 <code>SELECT</code> 记录</h3>
+<p>同一张表，两种查法，结果不一样。空表上 <code>select *</code>，留痕；有 4 行数据的表上 <code>select count(*)</code>，<strong>没有留痕</strong>。</p>
+<pre class="code"><code class="lang-sql">-- 有记录
+select * from SYSDBA.T_AUDIT_EMPTY;
+
+-- 没有记录
+select count(*) as c from SYSDBA.T_AUDIT_PROBE2;</code></pre>
+<p>我一开始以为是「空表不记」，把两个变量拆开重测才发现反了：空表的 <code>select *</code> 记了，有数据的 <code>count(*)</code> 没记。是不是优化器跳过了表扫描，我没再往下查，但结论可以直接用：<strong>按 <code>OPERATION='SELECT'</code> 统计「谁查了这张表」，聚合类查询会漏。</strong></p>
+
+<h3>3. 一条 update 会留两条记录，其中一条叫 <code>SELECT</code></h3>
+<p>这是最容易误判的一条。执行一次改数据，记录里出现两行，<code>SQL_TEXT</code> 一模一样：</p>
+<div class="tbl-wrap"><table><thead><tr><th>OPERATION</th><th>OBJNAME</th><th>SQL_TEXT</th></tr></thead><tbody>
+<tr><td><code>SELECT</code></td><td><code>T_AUDIT_PROBE2</code></td><td><code>update SYSDBA.T_AUDIT_PROBE2 set v = 'c' where id = 2;</code></td></tr>
+<tr><td><code>UPDATE</code></td><td><code>T_AUDIT_PROBE2</code></td><td><code>update SYSDBA.T_AUDIT_PROBE2 set v = 'c' where id = 2;</code></td></tr>
+</tbody></table></div>
+<p>删数据同理，也会多一条 <code>SELECT</code>。原因应该跟修改语句内部的按条件扫描有关，这层机制我没深挖，但影响很直接：<strong>记录条数会比你实际操作多一倍</strong>，做「操作次数」统计时不能按行数算；按 <code>SELECT</code> 追查「谁偷看了数据」时，也会把改数据的人算进去。</p>
+
+<h3>4. 删用户记成 <code>EXECUTE</code>，不是 <code>DROP USER</code></h3>
+<p>如果按账户管理来配（<code>USER</code> 类型），删用户这条在记录里是：</p>
+<div class="tbl-wrap"><table><thead><tr><th>OPERATION</th><th>OBJNAME</th><th>SQL_TEXT</th></tr></thead><tbody>
+<tr><td><code>EXECUTE</code></td><td><code>SP_DROP_CONS_AND_OBJ_REFS_WHEN_DROP_SCHEMA</code></td><td><code>drop user T_AUDIT_U;</code></td></tr>
+</tbody></table></div>
+<p>按 <code>OPERATION='DROP USER'</code> 过滤是查不到的，只能靠 <code>SQL_TEXT</code> 搜关键字。</p>
+
+<h3>5. <code>SYSDBA</code> 查不到记录，这是设计不是故障</h3>
+<pre class="code"><code class="lang-text">SQL&gt; select count(*) from sysauditor.v$auditrecords;
+[-5504]:No select privilege on object [SYSAUDITOR.V$AUDITRECORDS].</code></pre>
+<p>这个报错最容易被读成「没有审计日志」。审计记录归 <code>SYSAUDITOR</code> 所有，<code>SYSDBA</code> 看不到，这正是三权分立。</p>
+<p>顺带一个现场问到的点：<code>V$AUDITRECORDS</code> 是 17 个字段，除了上面用到的，还有 <code>IP</code>（客户端地址）、<code>SCHNAME</code>、<code>SUCC_FLAG</code>（成功 Y / 失败 N）、<code>MAC</code>、<code>SEQNO</code>、<code>BIND_INFO</code>（绑定变量）。<strong>列名是 <code>SCHNAME</code> 和 <code>DESCRIPTION</code></strong>，写成 <code>SCHEMANAME</code>、<code>DESCRIBTION</code> 会直接报无效列名。</p>
+
+<hr>
+<h2>怎么确认规则真的在</h2>
+<p>我试过最自然的那个办法：<code>select * from sysauditor.vsysauditrules;</code>——<strong>0 行</strong>。规则配上去了，这个视图照样是空的。拿它当判据会得出完全相反的结论。</p>
+<p>可靠的判据是把同一条规则再配一次，看返回什么：</p>
+<pre class="code"><code class="lang-text">-- 已经配过
+SQL&gt; SP_AUDIT_STMT('TABLE', 'NULL', 'ALL');
+[-5302]:Has defined this audit type.
+
+-- 之前没配上（比如开关当时是关的），这一次才生效
+DMSQL executed successfully</code></pre>
+<p>这个幂等报错比查任何视图都准。</p>
+<p>还有几条边界，顺便测了：</p>
+<ul>
+<li><strong>审计关着的时候配规则</strong>，报 <code>[-5301]:Audit off or not support.</code>，规则一条都落不下去。所以顺序不能反。</li>
+<li><strong>关掉再打开，规则不丢。</strong>设 <code>SP_SET_ENABLE_AUDIT(0)</code> 再开回 1，配过的 <code>TABLE</code> 仍然返回 <code>-5302</code>。</li>
+<li><strong>取消规则用 <code>SP_NOAUDIT_STMT</code></strong>，参数写法跟配的时候一样。取消之后再配同一个类型会重新成功（不再报 <code>-5302</code>），这就是「确实删掉了」的判据。</li>
+<li><strong>重启服务，开关和规则都还在。</strong>断电重启前后查 <code>ENABLE_AUDIT</code>，值都是 1；反过来先设 0 再重启，值就是 0 —— 说明这个开关是持久化的。但 <code>dm.ini</code> 里<strong>并没有</strong> <code>ENABLE_AUDIT</code> 这一项（文件修改时间也没变），也就是说它不靠配置文件记。这一点在克隆库、换机器、重建实例时值得留意：别以为拷一份 <code>dm.ini</code> 就把审计配置带走了。</li>
+</ul>
+
+<h2>会占多少磁盘，能留多久</h2>
+<p>审计文件在实例目录下的 <code>audit/</code> 里，名字形如 <code>AUDIT_DMSERVER_&lt;哈希&gt;_2026-11-20-22-16-48.log</code>。注意它跟 SQL 日志不在一个地方（SQL 日志在 <code>dmdbms/log</code>），别翻错目录。</p>
+<p>实测一件反直觉的事：<strong>文件是预分配 100MB 的</strong>。我这边只写进去 164 条记录，文件已经是 104857600 字节整。所以规划磁盘要按 <code>100MB × 文件数</code> 算，按记录条数估会严重低估。</p>
+<div class="tbl-wrap"><table><thead><tr><th>参数</th><th>实测默认</th><th>管什么</th></tr></thead><tbody>
+<tr><td><code>AUDIT_MAX_FILE_SIZE</code></td><td>100</td><td>单个审计文件上限，单位 MB</td></tr>
+<tr><td><code>AUDIT_KEEP_DAYS</code></td><td>0</td><td>最少保留天数，0 = 不按天淘汰</td></tr>
+<tr><td><code>AUDIT_SPACE_LIMIT</code></td><td>0</td><td>审计目录总空间上限（MB），0 = 不限</td></tr>
+<tr><td><code>AUDIT_FILE_FULL_MODE</code></td><td>3</td><td>写满时：1 删旧文件 / 2 停止写入 / 3 两者结合</td></tr>
+<tr><td><code>AUDIT_FLUSH_LEVEL</code></td><td>1</td><td>刷盘时机：0 按语句 / 1 按事务 / 2 延迟</td></tr>
+<tr><td><code>AUDIT_IP_STYLE</code></td><td>0</td><td>0 只记 IP / 1 记「IP(主机名)」</td></tr>
+</tbody></table></div>
+<p>一条命令全查出来：</p>
+<pre class="code"><code class="lang-sql">select para_name, para_value from v$dm_ini where para_name like '%AUDIT%' order by para_name;</code></pre>
+<p><strong>交付时该改的是 <code>AUDIT_KEEP_DAYS</code>。</strong>默认 0 意味着没有任何保留承诺，而网络安全法第二十一条要求网络日志留存不少于六个月，测评会看这一项。把它设到 180，是一条能当场查给测评看的参数。改完的淘汰行为本文没有实测，动生产参数前先在测试库验一遍。</p>
+
+<h2>对着条款说</h2>
+<p>GB/T 22239-2019 的 8.1.4.3 是安全审计，四条要求跟上面的配置基本对得上：</p>
+<ul>
+<li><strong>a) 覆盖每个用户和重要安全事件</strong> → <code>'ALL'</code> 是对所有用户生效，别为了少记点数据配成指定用户。</li>
+<li><strong>b) 记录含日期时间、用户、事件类型、是否成功</strong> → <code>OPTIME</code> / <code>USERNAME</code> / <code>OPERATION</code> / <code>SUCC_FLAG</code> 正好四列。</li>
+<li><strong>c) 定期备份、防止被删改</strong> → 内置审计自己做不到，得配合文件权限和备份策略；这也是它的边界，下面说。</li>
+<li><strong>d) 保护审计进程，防止未经授权中断</strong> → 别「测评的人走了就关掉」。按需开启、事后收敛可以，但收敛完仍要覆盖 a) 的范围；长期关着是硬伤。</li>
+</ul>
+<p>还有一条容易被忽略：审计表的权限本身也要管。上面那个 <code>[-5504]</code> 恰好是这条的正面例子——只有审计员能读，管理员读不到。</p>
+
+<hr>
+<h2>FAQ</h2>
+
+<h3>规则表 <code>VSYSAUDITRULES</code> 查出来是空的，到底配上了没有？</h3>
+<p>不能拿这个视图当判据。实测 0 行，但规则已经生效——建表、改数据、查数据全都记下来了。两个更可靠的办法：同一条规则再配一次看是否报 <code>-5302</code>；或者干脆做一次操作，去 <code>V$AUDITRECORDS</code> 里看有没有新行。</p>
+
+<h3>为什么「全配上了，建表还是没有日志」？</h3>
+<p>按可能性排，前三种都能自己排查：</p>
+<ol>
+<li>用 <code>SYSDBA</code> 查记录被权限挡住，把「无权限」读成了「没记录」</li>
+<li>配规则的时候审计开关还没开，命令报了 <code>-5301</code> 但没注意</li>
+<li>图形化界面里勾的是对象级审计，只覆盖已存在的表，新建的表不在范围内</li>
+</ol>
+<p>三条都排掉还没有，再回头确认规则类型写对了：建表是 <code>'TABLE'</code>，不是 <code>'CREATE TABLE'</code>（后者报 <code>[-5313]:Invalid audit type.</code>）。</p>
+
+<h3>第二个参数为什么必须写成 <code>'NULL'</code>？</h3>
+<p>这是函数签名要求的字符串，不是 SQL 的 NULL 值。写成不带引号的 <code>NULL</code>：</p>
+<pre class="code"><code class="lang-text">SQL&gt; SP_AUDIT_STMT('SELECT TABLE', NULL, 'ALL');
+[-6860]:Invalid parameter value in [SP_AUDIT_STMT].</code></pre>
+
+<h3>前面要不要加 <code>call</code>？</h3>
+<p>加不加都行。实测 <code>SP_SET_ENABLE_AUDIT(1);</code> 和 <code>call SP_SET_ENABLE_AUDIT(1);</code> 都能执行成功。倒是别名要注意：<code>SP_AUDIT_STMT</code> 的反操作是 <code>SP_NOAUDIT_STMT</code>，取消某条规则用它，参数写法一模一样。</p>
+
+<h3>内置审计能替代审计设备吗？</h3>
+<p>不能。它没有集中归并、实时告警，也防不住有文件权限的人删改审计文件（这一条是 8.1.4.3 c) 的要求，得靠外部措施补）。如果测评项里明确是采购「数据库审计系统」，那是另一件事。内置审计解决的是「数据库自己有没有记录、能不能查」，这也是最常见的那一问。</p>
+
+<h3>安全版呢？</h3>
+<p>企业版是 <code>SYSAUDITOR</code> 一个账户。安全版有 <code>SYSSSO</code>，账户形态和权限划分都不一样，<strong>本文没有在安全版复跑</strong>，命令不敢保证一字不差。</p>
+
+<h3>这篇不适合谁</h3>
+<p>要一键脚本、不想知道原理的：这篇给了命令，但也花了很大篇幅讲「它记不到什么」，那部分你现在可以跳过，等查不到记录时再回来。要过的是独立审计产品采购项的，也不在范围内。</p>
+
+</div>
+  <section class="contact" hidden>
+    <div class="contact-body">
+      <h3>卡在某一步了？</h3>
+      <p>把<b>卡在第几步</b>、报错原文、<code>select id_code from v$instance;</code> 的输出这三样发我，够判断了。不用发审计记录内容，那里面有账号和 SQL 原文。</p>
+      <details class="contact-fold">
+        <summary>要我微信？点开看二维码（不点也行）</summary>
+        <div class="contact-qr">
+          <img src="../assets/wechat-qr.png" alt="微信二维码" width="120" height="120" loading="lazy">
+          <span>扫了备注「达梦」<br>不备注我也加</span>
+        </div>
+        <p class="contact-mail">邮件：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+      </details>
+    </div>
+  </section>
+  <div class="art-foot">
+    <a href="../index.html">← 返回目录</a>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <p class="quote">纸上得来终觉浅，绝知此事要躬行。</p>
+    <p>达梦手记</p>
+    <p>联系：<a href="mailto:jiang-chuang@qq.com">jiang-chuang@qq.com</a></p>
+    <p><a href="../about.html">本站说明</a> · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">渝ICP备2026027352号-1</a></p>
+  </div>
+</footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
